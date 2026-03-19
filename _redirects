@@ -1,0 +1,5 @@
+# Alle Routen → App (Single Page App)
+/*    /alysee-dms.html   200
+
+# Service Worker muss vom Root ausgeliefert werden
+/sw.js  /sw.js  200

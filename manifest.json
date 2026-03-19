@@ -1,0 +1,30 @@
+{
+  "name": "alyDoc",
+  "short_name": "alyDoc",
+  "description": "Dokumentenmanagement f\u00fcr alysee GmbH",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#003D7A",
+  "theme_color": "#003D7A",
+  "lang": "de",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": [
+    "business",
+    "productivity"
+  ],
+  "screenshots": []
+}
