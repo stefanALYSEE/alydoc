@@ -127,7 +127,7 @@
     .move-row.dis{opacity:.38;cursor:not-allowed;background:#fafafa}
     .drag-bar{font-size:11px;color:#856404;padding:4px 14px;background:#FFF3CD;border-bottom:1px solid #FFE082;flex-shrink:0;display:flex;align-items:center;gap:6px}
     /* ── TABLET (iPad) ── */
-    @media(max-width:1100px){.prev-panel{display:none}}
+    @media(max-width:600px){.prev-panel{display:none}}
     @media(max-width:900px){
       .doc-hrow,.doc-row{grid-template-columns:36px 1fr 90px 72px}
       .doc-hrow>*:nth-child(5),.doc-row>*:nth-child(5){display:none}
@@ -316,6 +316,7 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
   const [reloading,setReloading]=useState(false);
   const [expandedIds,setExpandedIds]=useState({});
   const [search,setSearch]=useState('');
+  const [newFolderParent,setNewFolderParent]=useState(null);
   const toast=useContext(TC);
 
   const isCur=id=>id===curFolderId||(id==='root'&&(!curFolderId||curFolderId==='root'));
@@ -375,6 +376,17 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
 
   const select=(id,name)=>{setSelId(id);setSelName(name);};
 
+  const createMoveFolder=async(name,parentId)=>{
+    if(!name.trim()||isDemo)return;
+    try{
+      const f=await DR.mkdir(name,parentId);
+      toast('Ordner erstellt: '+name,'s');
+      await reloadFolders();
+      setSelId(f.id);setSelName(name);
+    }catch(e){toast('Fehler beim Erstellen','e');console.error(e);}
+    setNewFolderParent(null);
+  };
+
   const go=async()=>{
     if(!selId)return;
     setBusy(true);
@@ -429,7 +441,15 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
           <span style={{flex:1,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{shortName}</span>
           {isCur(d.id)&&<span style={{fontSize:10,color:'var(--mut)',background:'#F0F4F8',padding:'1px 5px',borderRadius:3,flexShrink:0}}>aktuell</span>}
           {isSelected&&<i className="fas fa-check-circle" style={{color:'var(--blue)',fontSize:12,flexShrink:0}}/>}
+          {!isDemo&&<button style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:'var(--mut)',fontSize:11,padding:'2px 6px',flexShrink:0,opacity:.4}} title="Unterordner erstellen" onClick={e=>{e.stopPropagation();setNewFolderParent(d.id);setExpandedIds(p=>({...p,[d.id]:true}));}}><i className="fas fa-plus" style={{pointerEvents:'none'}}/></button>}
         </div>
+        {/* Inline neuer Ordner */}
+        {isExp&&newFolderParent===d.id&&<div style={{padding:'4px 12px',paddingLeft:(30+indent)+'px'}}>
+          <input style={{border:'1px solid var(--blue)',borderRadius:3,fontSize:12,padding:'3px 6px',width:'100%',outline:'none'}} autoFocus placeholder="Ordnername…"
+            onKeyDown={e=>{if(e.key==='Enter'&&e.target.value.trim())createMoveFolder(e.target.value.trim(),d.id);if(e.key==='Escape')setNewFolderParent(null);}}
+            onBlur={e=>{if(e.target.value.trim())createMoveFolder(e.target.value.trim(),d.id);else setNewFolderParent(null);}}
+          />
+        </div>}
         {/* Kinder rekursiv rendern wenn aufgeklappt */}
         {isExp&&kids.map(child=>(
           <FolderRow key={child.id} d={child} depth={depth+1}/>
