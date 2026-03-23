@@ -264,7 +264,14 @@ const DR={
     console.log('allFolders:',result.length);
     return result.sort((a,b)=>a.displayName.localeCompare(b.displayName,'de'));
   },
-  prev:id=>`https://drive.google.com/file/d/${id}/preview`,
+  async prev(id){
+    const tok=gapi.client.getToken()?.access_token;
+    if(!tok)throw new Error('Nicht angemeldet');
+    const r=await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`,{headers:{Authorization:'Bearer '+tok}});
+    if(!r.ok)throw new Error('Download fehlgeschlagen: '+r.status);
+    const blob=await r.blob();
+    return URL.createObjectURL(blob);
+  },
   async me(){try{const r=await gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'});return r.result;}catch{return null;}},
   WF:'.alysee_wf.json',
   async loadWF(){try{const r=await gapi.client.drive.files.list({q:`name='${DR.WF}' and trashed=false`,fields:'files(id)',pageSize:1});if(r.result.files?.length){const c=await gapi.client.drive.files.get({fileId:r.result.files[0].id,alt:'media'});return typeof c.result==='string'?JSON.parse(c.result):c.result;}}catch{}return{tasks:[]};},
@@ -491,14 +498,29 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
 }
 
 /* ── VORSCHAU ── */
+function useBlobUrl(file,isDemo){
+  const [url,setUrl]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [err,setErr]=useState(null);
+  useEffect(()=>{
+    let revoke=null;
+    setUrl(null);setErr(null);
+    if(!file||isDemo||file.mimeType==='application/vnd.google-apps.folder')return;
+    setLoading(true);
+    DR.prev(file.id).then(u=>{revoke=u;setUrl(u);}).catch(e=>setErr(e.message)).finally(()=>setLoading(false));
+    return()=>{if(revoke)URL.revokeObjectURL(revoke);};
+  },[file?.id,isDemo]);
+  return{url,loading,err};
+}
+
 function PrevPanel({file,isDemo,onExpand,width}){
   const [tab,setTab]=useState('prev');
+  const {url:pUrl,loading,err}=useBlobUrl(file,isDemo);
   useEffect(()=>setTab('prev'),[file?.id]);
   const ps={width:width||310,minWidth:200,maxWidth:700};
   if(!file)return(<div className="prev-panel" style={ps}><div className="prev-head"><span>Vorschau</span></div><div className="ctr"><i className="fas fa-file-alt" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13,textAlign:'center'}}>Datei anklicken<br/>fuer Vorschau</p></div></div>);
   const {i,c}=mi(file.mimeType,file.name);
   const isDir=file.mimeType==='application/vnd.google-apps.folder';
-  const pUrl=!isDemo&&!isDir?DR.prev(file.id):null;
   return(
     <div className="prev-panel" style={ps}>
       <div className="prev-head">
@@ -514,6 +536,8 @@ function PrevPanel({file,isDemo,onExpand,width}){
       <div className="prev-body">
         {tab==='prev'
           ?isDir?<div className="ctr"><i className="fas fa-folder" style={{fontSize:64,color:'var(--org)'}}/><p style={{fontSize:13}}>Ordner – Doppelklick zum Oeffnen</p></div>
+            :loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>
+            :err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:32,color:'var(--org)'}}/><p style={{fontSize:12,color:'var(--red)',textAlign:'center',padding:'0 12px'}}>{err}</p></div>
             :pUrl?<iframe src={pUrl} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Vorschau"/>
               :<div className="ctr"><i className={`fas ${i}`} style={{fontSize:52,color:c}}/><p style={{fontSize:12,textAlign:'center',padding:'0 12px',wordBreak:'break-word'}}>{file.name}</p><p style={{fontSize:11,color:'var(--mut)'}}>{mi(file.mimeType,file.name).l} · {fs(file.size)}</p></div>
           :<div style={{flex:1,overflow:'auto',padding:14,minHeight:0}}>
@@ -531,9 +555,8 @@ function PrevPanel({file,isDemo,onExpand,width}){
 
 function ExpandMod({file,isDemo,onClose}){
   const {i,c}=mi(file.mimeType,file.name);
-  const isDir=file.mimeType==='application/vnd.google-apps.folder';
-  const pUrl=!isDemo&&!isDir?DR.prev(file.id):null;
-  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span><button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{pUrl?<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>:<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
+  const {url:pUrl,loading,err}=useBlobUrl(file,isDemo);
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span><button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>:<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
 }
 
 function UpMod({fid,onClose,onDone,isDemo}){
