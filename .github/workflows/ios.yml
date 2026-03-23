@@ -1,0 +1,98 @@
+name: iOS Build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # Manuell auslösbar
+
+jobs:
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Repository auschecken
+        uses: actions/checkout@v4
+
+      - name: Node.js einrichten
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Abhängigkeiten installieren
+        run: npm ci
+
+      - name: iOS-Projekt erstellen
+        run: npx cap add ios
+
+      - name: Web-Code synchronisieren
+        run: npx cap sync ios
+
+      # -------------------------------------------------------
+      # SIGNIERUNG — Aktivieren sobald Apple Developer Account vorhanden
+      # Anleitung:
+      # 1. Apple Developer Account registrieren (developer.apple.com)
+      # 2. In Xcode ein Distribution-Zertifikat + Provisioning Profile erstellen
+      # 3. Zertifikat als .p12 exportieren
+      # 4. In GitHub → Settings → Secrets folgende Secrets anlegen:
+      #    - APPLE_CERTIFICATE_BASE64  (base64-kodiertes .p12)
+      #    - APPLE_CERTIFICATE_PASSWORD
+      #    - APPLE_PROVISIONING_PROFILE_BASE64
+      #    - APPLE_TEAM_ID
+      # 5. Die folgenden Schritte einkommentieren:
+      # -------------------------------------------------------
+
+      # - name: Apple-Zertifikat installieren
+      #   env:
+      #     CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
+      #     CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+      #     PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+      #   run: |
+      #     CERTIFICATE_PATH=$RUNNER_TEMP/certificate.p12
+      #     PP_PATH=$RUNNER_TEMP/profile.mobileprovision
+      #     KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+      #
+      #     echo -n "$CERTIFICATE_BASE64" | base64 --decode -o $CERTIFICATE_PATH
+      #     echo -n "$PROVISIONING_PROFILE_BASE64" | base64 --decode -o $PP_PATH
+      #
+      #     security create-keychain -p "" $KEYCHAIN_PATH
+      #     security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+      #     security unlock-keychain -p "" $KEYCHAIN_PATH
+      #     security import $CERTIFICATE_PATH -P "$CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+      #     security list-keychain -d user -s $KEYCHAIN_PATH
+      #
+      #     mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+      #     cp $PP_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
+
+      - name: Xcode-Build (unsigned)
+        run: |
+          cd ios/App
+          xcodebuild build \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            CODE_SIGNING_ALLOWED=NO
+
+      # - name: Xcode Archive (signed) — aktivieren mit Zertifikat
+      #   run: |
+      #     cd ios/App
+      #     xcodebuild archive \
+      #       -workspace App.xcworkspace \
+      #       -scheme App \
+      #       -archivePath $RUNNER_TEMP/alyDoc.xcarchive \
+      #       -destination 'generic/platform=iOS' \
+      #       -configuration Release \
+      #       DEVELOPMENT_TEAM=${{ secrets.APPLE_TEAM_ID }}
+
+      # - name: IPA exportieren
+      #   run: |
+      #     xcodebuild -exportArchive \
+      #       -archivePath $RUNNER_TEMP/alyDoc.xcarchive \
+      #       -exportPath $RUNNER_TEMP/export \
+      #       -exportOptionsPlist ios/App/ExportOptions.plist
+
+      # - name: IPA als Artifact hochladen
+      #   uses: actions/upload-artifact@v4
+      #   with:
+      #     name: alyDoc-iOS
+      #     path: ${{ runner.temp }}/export/*.ipa

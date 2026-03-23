@@ -1,0 +1,9 @@
+{
+  "appId": "de.alysee.alydoc",
+  "appName": "alyDoc",
+  "webDir": ".",
+  "server": {
+    "hostname": "alydoc.alysee.de",
+    "iosScheme": "https"
+  }
+}

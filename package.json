@@ -1,0 +1,15 @@
+{
+  "name": "alydoc",
+  "version": "1.0.0",
+  "description": "alyDoc DMS App",
+  "private": true,
+  "scripts": {},
+  "keywords": [],
+  "author": "alysee GmbH",
+  "license": "ISC",
+  "dependencies": {
+    "@capacitor/cli": "^8.2.0",
+    "@capacitor/core": "^8.2.0",
+    "@capacitor/ios": "^8.2.0"
+  }
+}

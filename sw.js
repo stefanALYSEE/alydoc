@@ -1,10 +1,10 @@
 // alysee DMS Service Worker
-const CACHE = 'alysee-dms-v1';
-const OFFLINE_URL = '/alysee-dms.html';
+const CACHE = 'alydoc-v2';
+const OFFLINE_URL = '/index.html';
 
 // Assets die beim Install gecacht werden
 const PRECACHE = [
-  '/alysee-dms.html',
+  '/index.html',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png'
