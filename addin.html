@@ -233,8 +233,8 @@ function loadMailInfo(){
   document.getElementById('mail-subject').textContent=mailItem.subject||'(kein Betreff)';
   const from=mailItem.from;
   document.getElementById('mail-from').textContent=from?(from.displayName||from.emailAddress):'–';
-  const d=new Date();
-  document.getElementById('mail-date').textContent=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
+  const d=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
+  document.getElementById('mail-date').textContent=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
 
   // Anhänge laden
   const atts=mailItem.attachments||[];
@@ -409,41 +409,44 @@ async function ablegen(){
   showStatus('Mail wird abgelegt…','info');
 
   try{
-    // 1. Mail als EML in Drive speichern
-    setProgress(10,'Mail-Inhalt wird gelesen…');
+    // 1. Mail als EML erstellen (inkl. HTML-Body + Anhänge)
+    setProgress(10,'Mail-Inhalt und Anhänge werden gelesen…');
     const emlContent=await getEmlContent();
 
-    setProgress(30,'Wird in Google Drive gespeichert…');
+    setProgress(50,'Wird in Google Drive gespeichert…');
     const subject=mailItem.subject||'Mail';
-    const dateStr=new Date().toISOString().slice(0,10).replace(/-/g,'_');
+    const created=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
+    const dateStr=created.toISOString().slice(0,10).replace(/-/g,'_');
     const safeSubject=subject.replace(/[/\\:*?"<>|]/g,'_').substring(0,60);
     const fileName=dateStr+'_'+safeSubject+'.eml';
 
     await uploadToDrive(fileName,emlContent,'message/rfc822',selectedFolderId);
-    setProgress(60,'Mail gespeichert…');
+    setProgress(70,'EML mit Anhängen gespeichert…');
 
-    // 2. Anhänge separat speichern
+    // 2. Anhänge zusätzlich separat speichern (wenn Option aktiv)
     if(saveAtts&&mailItem.attachments&&mailItem.attachments.length>0){
-      setProgress(65,'Anhänge werden gespeichert…');
+      setProgress(72,'Anhänge werden separat gespeichert…');
       const atts=mailItem.attachments;
       for(let i=0;i<atts.length;i++){
         const att=atts[i];
-        setProgress(65+Math.round((i/atts.length)*25),'Anhang: '+att.name);
+        setProgress(72+Math.round((i/atts.length)*18),'Anhang: '+att.name);
         await saveAttachment(att,selectedFolderId);
       }
     }
 
-    setProgress(95,'Abschluss…');
+    setProgress(92,'Abschluss…');
 
     // 3. Mail löschen
     if(deleteAfter){
-      await deleteMailItem();
+      const deleted=await deleteMailItem();
+      if(!deleted)showStatus('Mail konnte nicht automatisch gelöscht werden — bitte manuell löschen.','warn');
     }
 
     setProgress(100,'Fertig!');
 
     // Erfolgsscreen
-    const msg=`Abgelegt in: ${selectedFolderName}${deleteAfter?' · Mail gelöscht':''}`;
+    const attCount=mailItem.attachments?mailItem.attachments.length:0;
+    const msg=`Abgelegt in: ${selectedFolderName}${attCount?' · '+attCount+' Anhang/Anhänge':''}${deleteAfter?' · Mail gelöscht':''}`;
     document.getElementById('success-msg').textContent=msg;
     setTimeout(()=>showScreen('scr-success'),500);
 
@@ -456,25 +459,100 @@ async function ablegen(){
 }
 
 async function getEmlContent(){
-  return new Promise((resolve,reject)=>{
-    mailItem.body.getAsync(Office.CoercionType.Text,result=>{
+  const from=mailItem.from;
+  const to=mailItem.to||[];
+  const cc=mailItem.cc||[];
+  const subject=mailItem.subject||'';
+  const date=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated).toUTCString():new Date().toUTCString();
+  const boundary='__alyDoc_'+Date.now()+'__';
+  const mixedBoundary='__alyDoc_mixed_'+Date.now()+'__';
+
+  // HTML-Body holen
+  const htmlBody=await new Promise((resolve,reject)=>{
+    mailItem.body.getAsync(Office.CoercionType.Html,result=>{
       if(result.status===Office.AsyncResultStatus.Failed){reject(new Error(result.error.message));return;}
-      // Einfaches EML zusammenbauen
-      const from=mailItem.from;
-      const to=mailItem.to||[];
-      const subject=mailItem.subject||'';
-      const body=result.value||'';
-      const date=new Date().toUTCString();
-      let eml='From: '+(from?(from.displayName||'')+' <'+(from.emailAddress||'')+'>':'')+'\r\n';
-      eml+='To: '+to.map(r=>(r.displayName||'')+' <'+(r.emailAddress||'')+'>').join(', ')+'\r\n';
-      eml+='Subject: '+subject+'\r\n';
-      eml+='Date: '+date+'\r\n';
-      eml+='MIME-Version: 1.0\r\n';
-      eml+='Content-Type: text/plain; charset=UTF-8\r\n\r\n';
-      eml+=body;
-      resolve(eml);
+      resolve(result.value||'');
     });
   });
+
+  // Text-Body als Fallback
+  const textBody=await new Promise((resolve,reject)=>{
+    mailItem.body.getAsync(Office.CoercionType.Text,result=>{
+      if(result.status===Office.AsyncResultStatus.Failed){resolve('');return;}
+      resolve(result.value||'');
+    });
+  });
+
+  // Anhänge laden
+  const attachments=[];
+  const atts=mailItem.attachments||[];
+  for(const att of atts){
+    try{
+      const content=await new Promise((resolve,reject)=>{
+        mailItem.getAttachmentContentAsync(att.id,r=>{
+          if(r.status===Office.AsyncResultStatus.Failed){reject(new Error(r.error.message));return;}
+          resolve(r.value);
+        });
+      });
+      let base64Data='';
+      if(content.format===Office.AttachmentContentFormat.Base64){
+        base64Data=content.content;
+      } else {
+        base64Data=btoa(unescape(encodeURIComponent(content.content)));
+      }
+      attachments.push({name:att.name,mimeType:att.contentType||'application/octet-stream',base64:base64Data});
+    }catch(e){console.warn('Anhang konnte nicht geladen werden:',att.name,e);}
+  }
+
+  // EML-Header
+  function encodeHeader(str){
+    if(/^[\x20-\x7E]*$/.test(str))return str;
+    return '=?UTF-8?B?'+btoa(unescape(encodeURIComponent(str)))+'?=';
+  }
+  function formatAddr(r){return(r.displayName?encodeHeader(r.displayName)+' ':'')+' <'+(r.emailAddress||'')+'>';}
+
+  let eml='From: '+(from?formatAddr(from):'')+'\r\n';
+  eml+='To: '+to.map(formatAddr).join(', ')+'\r\n';
+  if(cc.length)eml+='Cc: '+cc.map(formatAddr).join(', ')+'\r\n';
+  eml+='Subject: '+encodeHeader(subject)+'\r\n';
+  eml+='Date: '+date+'\r\n';
+  eml+='MIME-Version: 1.0\r\n';
+
+  if(attachments.length>0){
+    // Multipart/mixed mit Body + Anhängen
+    eml+='Content-Type: multipart/mixed; boundary="'+mixedBoundary+'"\r\n\r\n';
+    eml+='--'+mixedBoundary+'\r\n';
+    eml+='Content-Type: multipart/alternative; boundary="'+boundary+'"\r\n\r\n';
+    eml+='--'+boundary+'\r\n';
+    eml+='Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
+    eml+=btoa(unescape(encodeURIComponent(textBody)))+'\r\n';
+    eml+='--'+boundary+'\r\n';
+    eml+='Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
+    eml+=btoa(unescape(encodeURIComponent(htmlBody)))+'\r\n';
+    eml+='--'+boundary+'--\r\n';
+    for(const att of attachments){
+      eml+='\r\n--'+mixedBoundary+'\r\n';
+      eml+='Content-Type: '+att.mimeType+'; name="'+encodeHeader(att.name)+'"\r\n';
+      eml+='Content-Disposition: attachment; filename="'+encodeHeader(att.name)+'"\r\n';
+      eml+='Content-Transfer-Encoding: base64\r\n\r\n';
+      // Base64 in 76-Zeichen-Zeilen umbrechen
+      const b64=att.base64;
+      for(let i=0;i<b64.length;i+=76){eml+=b64.substring(i,i+76)+'\r\n';}
+    }
+    eml+='--'+mixedBoundary+'--\r\n';
+  } else {
+    // Nur Body, kein Anhang
+    eml+='Content-Type: multipart/alternative; boundary="'+boundary+'"\r\n\r\n';
+    eml+='--'+boundary+'\r\n';
+    eml+='Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
+    eml+=btoa(unescape(encodeURIComponent(textBody)))+'\r\n';
+    eml+='--'+boundary+'\r\n';
+    eml+='Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
+    eml+=btoa(unescape(encodeURIComponent(htmlBody)))+'\r\n';
+    eml+='--'+boundary+'--\r\n';
+  }
+
+  return eml;
 }
 
 async function saveAttachment(att,folderId){
@@ -525,11 +603,23 @@ async function uploadToDriveBytes(name,bytes,mimeType,folderId){
 
 async function deleteMailItem(){
   return new Promise((resolve)=>{
-    if(mailItem.moveToAsync){
-      mailItem.moveToAsync(Office.MailboxEnums.MoveToFolder.DeletedItems,r=>{resolve();});
-    } else {
-      // Fallback: Item markieren
-      resolve();
+    try{
+      if(typeof mailItem.moveToAsync==='function'){
+        mailItem.moveToAsync('DeletedItems',r=>{
+          if(r.status===Office.AsyncResultStatus.Failed){
+            console.warn('moveToAsync fehlgeschlagen:',r.error);
+            resolve(false);
+          } else {
+            resolve(true);
+          }
+        });
+      } else {
+        console.warn('moveToAsync nicht verfügbar (Requirement Set 1.7+ erforderlich)');
+        resolve(false);
+      }
+    }catch(e){
+      console.warn('deleteMailItem Fehler:',e);
+      resolve(false);
     }
   });
 }
