@@ -11,6 +11,7 @@
     .card p{color:#7F8C8D;font-size:13px;margin-bottom:20px;line-height:1.5}
     .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:7px;border:none;cursor:pointer;font-size:14px;font-weight:500;background:#0072CE;color:#fff;transition:background .15s}
     .btn:hover{background:#005faa}
+    .btn:disabled{background:#9bb3cc;cursor:not-allowed}
     .status{margin-top:16px;font-size:12px;color:#7F8C8D}
     .spin{animation:sp .8s linear infinite;display:inline-block}
     @keyframes sp{to{transform:rotate(360deg)}}
@@ -32,72 +33,84 @@
 <script>
 const CLIENT_ID='633536117262-28memlfds8btpdk8facskab8aq9msjdq.apps.googleusercontent.com';
 const SCOPES='https://www.googleapis.com/auth/drive';
-// Redirect URI = diese Seite selbst
-const REDIRECT_URI=window.location.origin+window.location.pathname;
+const CALLBACK_URL=window.location.origin+'/auth-callback.html';
 
-// ── Beim Laden: Prüfe ob wir vom OAuth-Redirect zurückkommen ──
-(function handleRedirect(){
-  // Google gibt den Token als URL-Fragment zurück (#access_token=...&...)
-  const hash=window.location.hash.substring(1);
-  if(!hash)return;
+// ── Modus erkennen: Sind wir das Office-Dialog-Fenster oder das Callback? ──
+const hash=window.location.hash.substring(1);
+const isCallback=hash&&hash.includes('access_token');
+
+if(isCallback){
+  // ── CALLBACK MODUS: Token aus Hash lesen und an Opener/Parent senden ──
   const params=new URLSearchParams(hash);
   const token=params.get('access_token');
   const expiresIn=params.get('expires_in');
   const error=params.get('error');
 
   if(error){
-    document.getElementById('status').innerHTML='<div class="error">Anmeldung fehlgeschlagen: '+error+'</div>';
-    return;
+    document.getElementById('status').innerHTML='<div class="error">Fehler: '+error+'</div>';
+  } else if(token){
+    const msg=JSON.stringify({type:'auth_success',token:token,expires_in:parseInt(expiresIn)||3600});
+    // An das Elternfenster (auth.html im Office-Dialog) senden
+    if(window.opener){
+      window.opener.postMessage(msg,'*');
+    }
+    document.getElementById('card').innerHTML='<div class="success">✓</div><h2>Verbunden!</h2><p>Fenster schliesst automatisch…</p>';
+    setTimeout(()=>window.close(),1200);
   }
-  if(!token)return;
-
-  // Token erhalten – an Outlook Add-in zurücksenden
-  const msg=JSON.stringify({type:'auth_success',token:token,expires_in:parseInt(expiresIn)||3600});
-
-  // URL-Fragment bereinigen
-  history.replaceState(null,'',window.location.pathname);
-
-  // Office Dialog: messageParent senden
-  if(typeof Office!=='undefined'){
-    Office.onReady(()=>{
-      if(Office.context&&Office.context.ui&&Office.context.ui.messageParent){
-        Office.context.ui.messageParent(msg);
-      } else if(window.opener){
-        window.opener.postMessage(msg,'*');
-        window.close();
+} else {
+  // ── DIALOG MODUS: Warte auf Token von Popup ──
+  window.addEventListener('message',function(e){
+    try{
+      const msg=typeof e.data==='string'?JSON.parse(e.data):e.data;
+      if(msg.type==='auth_success'&&msg.token){
+        const payload=JSON.stringify(msg);
+        document.getElementById('card').innerHTML='<div class="success">✓</div><h2>Verbunden!</h2><p>Anmeldung erfolgreich.</p>';
+        // An Outlook Add-in zuruecksenden via Office messageParent
+        if(typeof Office!=='undefined'&&Office.context&&Office.context.ui&&Office.context.ui.messageParent){
+          Office.context.ui.messageParent(payload);
+        }
       }
-      showSuccess();
-    });
-  } else if(window.opener){
-    window.opener.postMessage(msg,'*');
-    showSuccess();
-    setTimeout(()=>window.close(),1500);
-  } else {
-    showSuccess();
-  }
-})();
-
-function showSuccess(){
-  document.getElementById('card').innerHTML='<div class="success">✓</div><h2>Verbunden!</h2><p>Du kannst dieses Fenster schliessen.</p>';
+    }catch(ex){console.warn('msg parse err:',ex);}
+  });
 }
 
-// ── Login starten: Redirect zu Google OAuth (kein Popup!) ──
 function startLogin(){
   const status=document.getElementById('status');
-  status.innerHTML='<span class="spin">⏳</span> Weiterleitung zu Google…';
-  document.getElementById('btn-login').disabled=true;
+  const btn=document.getElementById('btn-login');
+  btn.disabled=true;
 
-  // OAuth 2.0 Implicit Grant Flow via Redirect (kein Popup noetig)
+  // OAuth URL – Redirect geht zu DIESER Seite (auth.html), aber in einem neuen Popup
   const authUrl='https://accounts.google.com/o/oauth2/v2/auth'
     +'?client_id='+encodeURIComponent(CLIENT_ID)
-    +'&redirect_uri='+encodeURIComponent(REDIRECT_URI)
+    +'&redirect_uri='+encodeURIComponent(window.location.origin+window.location.pathname)
     +'&response_type=token'
     +'&scope='+encodeURIComponent(SCOPES)
     +'&include_granted_scopes=true'
     +'&prompt=consent';
 
-  // Direkt in diesem Fenster weiterleiten (kein verschachteltes Popup)
-  window.location.href=authUrl;
+  // Popup oeffnen (NICHT diese Seite redirecten – Office-Kontext bleibt erhalten)
+  const popup=window.open(authUrl,'google_auth','width=500,height=650,menubar=no,toolbar=no');
+
+  if(!popup||popup.closed){
+    status.innerHTML='<div class="error">Popup wurde blockiert. Bitte Popup-Blocker deaktivieren.</div>';
+    btn.disabled=false;
+    return;
+  }
+
+  status.innerHTML='<span class="spin">⏳</span> Warte auf Google-Anmeldung…';
+
+  // Polling: Prüfe ob Popup geschlossen wurde ohne Anmeldung
+  const check=setInterval(()=>{
+    try{
+      if(popup.closed){
+        clearInterval(check);
+        if(!document.querySelector('.success')){
+          status.innerHTML='Anmeldung abgebrochen.';
+          btn.disabled=false;
+        }
+      }
+    }catch(e){}
+  },500);
 }
 </script>
 </body>
