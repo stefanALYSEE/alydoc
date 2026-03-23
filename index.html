@@ -47,6 +47,10 @@
     .tree-body{flex:1;overflow-y:auto}
     .tree-item{padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:7px;font-size:13px;color:var(--txt);border-left:2px solid transparent;transition:background .1s;user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .tree-item:hover{background:#EEF4FF}
+    .tree-item:hover .tree-add{opacity:1}
+    .tree-add{opacity:0;margin-left:auto;background:none;border:none;cursor:pointer;color:var(--mut);font-size:11px;padding:0 4px;flex-shrink:0;transition:opacity .15s}
+    .tree-add:hover{color:var(--blue)}
+    .tree-inline-input{border:1px solid var(--blue);border-radius:3px;font-size:12px;padding:2px 6px;width:100%;outline:none;margin:2px 0}
     .tree-item.active{background:#E0EDFF;color:var(--blue);border-left-color:var(--blue);font-weight:500}
     .tree-item.drop-target{background:#E8F5E9 !important;border-left-color:var(--grn) !important;outline:2px dashed var(--grn)}
     .tree-item i{width:16px;text-align:center;font-size:13px;flex-shrink:0}
@@ -64,7 +68,8 @@
     .doc-row.dragging{opacity:.4;background:#f0f0f0 !important}
     .doc-row.drop-target{background:#E8F5E9 !important;outline:2px dashed var(--grn);outline-offset:-2px}
     .prev-panel{background:#fff;border-left:1px solid var(--bdr);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;min-height:0}
-    .resizer{width:5px;background:var(--bdr);cursor:col-resize;flex-shrink:0;transition:background .15s;user-select:none}
+    .resizer{width:5px;background:var(--bdr);cursor:col-resize;flex-shrink:0;transition:background .15s;user-select:none;touch-action:none;position:relative}
+    .resizer::before{content:'';position:absolute;top:0;bottom:0;left:-8px;right:-8px}
     .resizer:hover,.resizer.drag{background:var(--blue)}
     .prev-head{background:#F4F7FB;border-bottom:1px solid var(--bdr);padding:9px 12px;font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
     .prev-tabs{display:flex;gap:3px}
@@ -232,37 +237,26 @@ const DR={
     const r=await gapi.client.drive.files.update({fileId,addParents:newParentId,removeParents:oldParentId||'root',fields:'id,name,parents'});
     return r.result;
   },
-  async allFolders(){
+  async listSubfolders(parentId='root'){
     const isElo=n=>/^[0-9A-Fa-f]{4,10}$/.test(n);
-    const listFolders=async(parentId)=>{
-      try{
-        const r=await gapi.client.drive.files.list({
-          q:"'" + parentId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-          fields:'files(id,name,parents)',orderBy:'name',pageSize:200
-        });
-        return (r.result.files||[]).filter(f=>!isElo(f.name));
-      }catch(e){console.warn('listFolders err:',e);return[];}
-    };
-    // BFS bis 4 Ebenen tief, liefert parentId fuer rekursiven Baum
-    const result=[];
-    const queue=[{id:'root',displayName:'',depth:0}];
-    const visited=new Set(['root']);
-    while(queue.length>0){
-      const batch=queue.splice(0,8);
-      await Promise.all(batch.map(async parent=>{
-        if(parent.depth>=4)return;
-        const kids=await listFolders(parent.id);
-        kids.forEach(f=>{
-          if(visited.has(f.id))return;
-          visited.add(f.id);
-          const displayName=parent.displayName?parent.displayName+' / '+f.name:f.name;
-          result.push({...f,displayName,parentId:parent.id});
-          if(parent.depth<3)queue.push({id:f.id,displayName,depth:parent.depth+1});
-        });
-      }));
+    try{
+      const r=await gapi.client.drive.files.list({
+        q:"'" + parentId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+        fields:'files(id,name,parents)',orderBy:'name',pageSize:200
+      });
+      return (r.result.files||[]).filter(f=>!isElo(f.name)).map(f=>({...f,parentId}));
+    }catch(e){console.warn('listSubfolders err:',e);return[];}
+  },
+  // Compat: allFolders fuer MoveMod – laedt flach alle Ordner (BFS, max 4 Ebenen)
+  async allFolders(){
+    const result=[];const queue=['root'];const visited=new Set(['root']);let depth=0;
+    while(queue.length>0&&depth<4){
+      const batch=queue.splice(0,queue.length);
+      const lists=await Promise.all(batch.map(id=>this.listSubfolders(id)));
+      lists.flat().forEach(f=>{if(!visited.has(f.id)){visited.add(f.id);result.push(f);queue.push(f.id);}});
+      depth++;
     }
-    console.log('allFolders:',result.length);
-    return result.sort((a,b)=>a.displayName.localeCompare(b.displayName,'de'));
+    return result.sort((a,b)=>a.name.localeCompare(b.name,'de'));
   },
   async prev(id){
     const tok=gapi.client.getToken()?.access_token;
@@ -497,6 +491,114 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
   );
 }
 
+/* ── CAD/3D ERKENNUNG & VIEWER ── */
+const CAD3D_EXT=['.stl','.obj','.gltf','.glb','.3mf','.fbx','.step','.stp','.3dm','.iges','.igs','.dxf','.dwg','.ply','.wrl'];
+function isCad3d(name){if(!name)return false;const n=name.toLowerCase();return CAD3D_EXT.some(e=>n.endsWith(e));}
+function getCadExt(name){if(!name)return'';const n=name.toLowerCase();return CAD3D_EXT.find(e=>n.endsWith(e))||'';}
+
+// Inline 3D-Viewer Komponente (Three.js fuer STL/OBJ/GLTF/GLB)
+function Cad3DViewer({url,fileName}){
+  const cRef=useRef(null);
+  const [status,setStatus]=useState('loading');
+  const ext=getCadExt(fileName);
+  // Formate die Three.js direkt laden kann
+  const threeFormats=['.stl','.obj','.gltf','.glb','.ply','.fbx'];
+  const canThree=threeFormats.some(e=>ext===e);
+
+  useEffect(()=>{
+    if(!url||!cRef.current||!canThree)return;
+    setStatus('loading');
+    let disposed=false;
+    const el=cRef.current;
+    // Dynamisch Three.js laden
+    const loadScript=(src)=>new Promise((res,rej)=>{
+      if(document.querySelector(`script[src="${src}"]`)){res();return;}
+      const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);
+    });
+    (async()=>{
+      try{
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+        if(ext==='.stl')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js');
+        if(ext==='.obj')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js');
+        if(ext==='.gltf'||ext==='.glb'){
+          await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js');
+        }
+        if(ext==='.ply')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js');
+        if(ext==='.fbx')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js');
+        await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js');
+        if(disposed)return;
+        const T=window.THREE;
+        const w=el.clientWidth||400,h=el.clientHeight||300;
+        const scene=new T.Scene();scene.background=new T.Color(0xf0f0f0);
+        const camera=new T.PerspectiveCamera(50,w/h,0.01,10000);
+        const renderer=new T.WebGLRenderer({antialias:true});
+        renderer.setSize(w,h);renderer.setPixelRatio(window.devicePixelRatio);
+        el.innerHTML='';el.appendChild(renderer.domElement);
+        // Licht
+        const amb=new T.AmbientLight(0xffffff,0.6);scene.add(amb);
+        const dir=new T.DirectionalLight(0xffffff,0.8);dir.position.set(5,10,7);scene.add(dir);
+        const dir2=new T.DirectionalLight(0xffffff,0.3);dir2.position.set(-5,-5,-5);scene.add(dir2);
+        // Grid
+        scene.add(new T.GridHelper(20,20,0xcccccc,0xe0e0e0));
+        // Controls
+        const ctrl=new T.OrbitControls(camera,renderer.domElement);ctrl.enableDamping=true;
+        // Loader
+        let loader;
+        if(ext==='.stl')loader=new T.STLLoader();
+        else if(ext==='.obj')loader=new T.OBJLoader();
+        else if(ext==='.gltf'||ext==='.glb')loader=new T.GLTFLoader();
+        else if(ext==='.ply')loader=new T.PLYLoader();
+        else if(ext==='.fbx')loader=new T.FBXLoader();
+        const addToScene=(obj)=>{
+          const mesh=obj.scene||obj;
+          if(mesh.isBufferGeometry){
+            mesh.computeVertexNormals();
+            const mat=new T.MeshPhongMaterial({color:0x3B82F6,flatShading:false});
+            scene.add(new T.Mesh(mesh,mat));
+          }else{
+            if(!mesh.material){mesh.traverse(c=>{if(c.isMesh&&!c.material)c.material=new T.MeshPhongMaterial({color:0x3B82F6});});}
+            scene.add(mesh);
+          }
+          // Kamera positionieren
+          const box=new T.Box3().setFromObject(scene);
+          const center=box.getCenter(new T.Vector3());
+          const size=box.getSize(new T.Vector3()).length();
+          camera.position.copy(center).add(new T.Vector3(size*0.6,size*0.4,size*0.6));
+          ctrl.target.copy(center);ctrl.update();
+          if(!disposed)setStatus('ok');
+        };
+        loader.load(url,addToScene,undefined,e=>{console.warn('3D load err:',e);if(!disposed)setStatus('error');});
+        // Animation
+        const anim=()=>{if(disposed)return;requestAnimationFrame(anim);ctrl.update();renderer.render(scene,camera);};
+        anim();
+        // Resize
+        const ro=new ResizeObserver(()=>{
+          const nw=el.clientWidth||400,nh=el.clientHeight||300;
+          camera.aspect=nw/nh;camera.updateProjectionMatrix();renderer.setSize(nw,nh);
+        });
+        ro.observe(el);
+        return()=>{disposed=true;ro.disconnect();renderer.dispose();};
+      }catch(e){console.error('3D viewer err:',e);if(!disposed)setStatus('error');}
+    })();
+    return()=>{disposed=true;};
+  },[url,ext,canThree]);
+
+  // Fuer STEP/IGES/DWG/DXF/3DM – kein direkter Three.js Support, Fallback
+  if(!canThree){
+    return(<div className="ctr" style={{padding:16}}>
+      <i className="fas fa-cube" style={{fontSize:52,color:'#7C3AED'}}/>
+      <p style={{fontSize:13,fontWeight:600,marginTop:8}}>{fileName}</p>
+      <p style={{fontSize:11,color:'var(--mut)',textAlign:'center'}}>Vorschau fuer {ext.toUpperCase()}-Dateien nicht direkt moeglich.</p>
+      <p style={{fontSize:11,color:'var(--mut)',textAlign:'center',marginTop:4}}>Tipp: In STL/OBJ/GLTF exportieren fuer 3D-Vorschau.</p>
+    </div>);
+  }
+  return(<div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
+    {status==='loading'&&<div className="ctr" style={{position:'absolute',inset:0,zIndex:2,background:'rgba(255,255,255,.8)'}}><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>3D-Modell wird geladen…</p></div>}
+    {status==='error'&&<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:32,color:'var(--org)'}}/><p style={{fontSize:12,color:'var(--red)'}}>3D-Vorschau fehlgeschlagen</p></div>}
+    <div ref={cRef} style={{flex:1,minHeight:0}}/>
+  </div>);
+}
+
 /* ── VORSCHAU ── */
 function useBlobUrl(file,isDemo){
   const [url,setUrl]=useState(null);
@@ -517,7 +619,7 @@ function PrevPanel({file,isDemo,onExpand,width}){
   const [tab,setTab]=useState('prev');
   const {url:pUrl,loading,err}=useBlobUrl(file,isDemo);
   useEffect(()=>setTab('prev'),[file?.id]);
-  const ps={width:width||310,minWidth:200,maxWidth:700};
+  const ps={width:width||310,minWidth:150};
   if(!file)return(<div className="prev-panel" style={ps}><div className="prev-head"><span>Vorschau</span></div><div className="ctr"><i className="fas fa-file-alt" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13,textAlign:'center'}}>Datei anklicken<br/>fuer Vorschau</p></div></div>);
   const {i,c}=mi(file.mimeType,file.name);
   const isDir=file.mimeType==='application/vnd.google-apps.folder';
@@ -536,6 +638,9 @@ function PrevPanel({file,isDemo,onExpand,width}){
       <div className="prev-body">
         {tab==='prev'
           ?isDir?<div className="ctr"><i className="fas fa-folder" style={{fontSize:64,color:'var(--org)'}}/><p style={{fontSize:13}}>Ordner – Doppelklick zum Oeffnen</p></div>
+            :isCad3d(file.name)?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>3D-Datei wird geladen…</p></div>
+              :pUrl?<Cad3DViewer url={pUrl} fileName={file.name}/>
+              :<div className="ctr"><i className="fas fa-cube" style={{fontSize:52,color:'#7C3AED'}}/><p style={{fontSize:12}}>{file.name}</p></div>)
             :loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>
             :err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:32,color:'var(--org)'}}/><p style={{fontSize:12,color:'var(--red)',textAlign:'center',padding:'0 12px'}}>{err}</p></div>
             :pUrl?<iframe src={pUrl} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Vorschau"/>
@@ -556,7 +661,8 @@ function PrevPanel({file,isDemo,onExpand,width}){
 function ExpandMod({file,isDemo,onClose}){
   const {i,c}=mi(file.mimeType,file.name);
   const {url:pUrl,loading,err}=useBlobUrl(file,isDemo);
-  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span><button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>:<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
+  const is3d=isCad3d(file.name);
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span><button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?(is3d?<Cad3DViewer url={pUrl} fileName={file.name}/>:<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>):<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
 }
 
 function UpMod({fid,onClose,onDone,isDemo}){
@@ -661,12 +767,27 @@ function Main({onOut,isDemo}){
   const [resizing,setResizing]=useState(false);
   const [moveFile,setMoveFile]=useState(null);
   const [allFolders,setAllFolders]=useState([]);
+  const [treeCache,setTreeCache]=useState({});  // {parentId: [folder, ...]} – lazy loaded
+  const [treeLoading,setTreeLoading]=useState({});  // {parentId: true} – wird gerade geladen
   // Drag & Drop state
   const [dragOverId,setDragOverId]=useState(null);
   const [isMobile,setIsMobile]=useState(window.innerWidth<=600);
   const [showActionSheet,setShowActionSheet]=useState(false);
   const dragRef=useRef(null); // aktuell gezogene Datei (Ref statt State = kein Closure-Problem)
   const toast=useContext(TC);
+  const [treeNewFolder,setTreeNewFolder]=useState(null); // parentId fuer Inline-Ordner-Erstellung
+  const createTreeFolder=async(name,parentId)=>{
+    if(!name.trim()||isDemo)return;
+    try{
+      await DR.mkdir(name,parentId);
+      toast('Ordner erstellt: '+name,'s');
+      // Cache fuer parent invalidieren und neu laden
+      setTreeCache(p=>{const n={...p};delete n[parentId];return n;});
+      loadTreeChildren(parentId);
+      if(cur.id===parentId)load(parentId); // Dateiliste aktualisieren
+    }catch(e){toast('Fehler beim Erstellen','e');console.error(e);}
+    setTreeNewFolder(null);
+  };
 
   useEffect(()=>{
     if(isDemo){setFiles(DF);setTasks(DT);}
@@ -674,7 +795,8 @@ function Main({onOut,isDemo}){
       load('root');
       DR.loadWF().then(d=>setTasks(d.tasks||[]));
       DR.me().then(u=>{if(u)setUser(u);});
-      DR.allFolders().then(f=>{console.log('allFolders OK:',f.length,f.slice(0,3));setAllFolders(f);}).catch(e=>console.error('allFolders FEHLER:',e));
+      // Strukturbaum: nur Root-Ebene sofort laden (Rest lazy)
+      DR.listSubfolders('root').then(f=>{setTreeCache(p=>({...p,root:f}));}).catch(e=>console.error('tree root FEHLER:',e));
     }
     const h=e=>{if(!e.target.closest('.ctx'))setCtx(null);};
     document.addEventListener('click',h);
@@ -687,14 +809,25 @@ function Main({onOut,isDemo}){
   },[]);
 
   const load=async fid=>{setLoading(true);setSel(null);try{setFiles(await DR.ls(fid));}catch(e){console.error(e);toast('Ladefehler','e');}setLoading(false);};
-  const go=f=>{const idx=path.findIndex(x=>x.id===f.id);setPath(idx>=0?path.slice(0,idx+1):[...path,{id:f.id,name:f.name}]);setCur(f);setRes(null);setQ('');if(!isDemo)load(f.id);else setFiles(DF);};
+  const go=f=>{const idx=path.findIndex(x=>x.id===f.id);setPath(idx>=0?path.slice(0,idx+1):[...path,{id:f.id,name:f.name}]);setCur(f);setRes(null);setQ('');if(!isDemo){load(f.id);if(!treeCache[f.id])loadTreeChildren(f.id);}else setFiles(DF);};
   const click=f=>{if(f.mimeType==='application/vnd.google-apps.folder')go(f);else setSel(f);};
   const dbl=f=>{if(f.mimeType==='application/vnd.google-apps.folder')go(f);else{setSel(f);setBig(true);}};
   const search=async qry=>{if(!qry.trim()){setRes(null);return;}setSrc(true);try{if(isDemo)setRes(DF.filter(f=>f.name.toLowerCase().includes(qry.toLowerCase())));else setRes(await DR.find(qry));}catch{toast('Suche fehlgeschlagen','e');}setSrc(false);};
   const swf=t=>{setTasks(t);if(!isDemo)DR.saveWF({tasks:t});};
   const rf=()=>{if(isDemo)setFiles(DF);else load(cur.id);};
-  const doMove=f=>{setSel(f);setMoveFile(f);};
+  const doMove=f=>{setSel(f);setMoveFile(f);if(!isDemo&&allFolders.length===0)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));};
   const onMoveDone=()=>{rf();setMoveFile(null);setSel(null);};
+
+  // Lazy-Load Unterordner fuer Strukturbaum
+  const loadTreeChildren=async(parentId)=>{
+    if(treeCache[parentId]||treeLoading[parentId])return;
+    setTreeLoading(p=>({...p,[parentId]:true}));
+    try{
+      const kids=await DR.listSubfolders(parentId);
+      setTreeCache(p=>({...p,[parentId]:kids}));
+    }catch(e){console.warn('tree load err:',e);}
+    setTreeLoading(p=>{const n={...p};delete n[parentId];return n;});
+  };
 
   /* ── DRAG & DROP ── */
   // Wichtig: dragRef.current statt dragFile-State in Event-Handlern
@@ -745,19 +878,25 @@ function Main({onOut,isDemo}){
     };
   };
 
-  /* ── RESIZE VORSCHAU ── */
+  /* ── RESIZE VORSCHAU (Mouse + Touch) ── */
   const startResize=useCallback(e=>{
     e.preventDefault();setResizing(true);
-    const x0=e.clientX,w0=prevW;
-    const mm=e=>setPrevW(Math.max(200,Math.min(700,w0-(e.clientX-x0))));
-    const mu=()=>{setResizing(false);document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);};
-    document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
+    const isTouch=e.type==='touchstart';
+    const x0=isTouch?e.touches[0].clientX:e.clientX;
+    const w0=prevW;
+    const clamp=x=>{const cx=isTouch?x.touches[0].clientX:x.clientX;setPrevW(Math.max(150,Math.min(window.innerWidth*0.8,w0-(cx-x0))));};
+    const mm=ev=>{if(isTouch)ev.preventDefault();clamp(ev);};
+    const mu=()=>{setResizing(false);document.removeEventListener(isTouch?'touchmove':'mousemove',mm);document.removeEventListener(isTouch?'touchend':'mouseup',mu);};
+    document.addEventListener(isTouch?'touchmove':'mousemove',mm,isTouch?{passive:false}:undefined);
+    document.addEventListener(isTouch?'touchend':'mouseup',mu);
   },[prevW]);
 
   const disp=res!==null?res:files;
   const pend=tasks.filter(t=>!t.done).length;
   const NI=[{id:'archive',ic:'fa-archive',l:'Archiv'},{id:'workflow',ic:'fa-tasks',l:'Aufgaben',b:pend||null},{id:'inbox',ic:'fa-inbox',l:'E-Mails'},{id:'settings',ic:'fa-gear',l:'Einstellungen'}];
-  const folders4tree=isDemo?DTREE:[{id:'root',name:'Mein Drive',icon:'fa-hdd',color:'#F7941D',ch:files.filter(f=>f.mimeType==='application/vnd.google-apps.folder').map(f=>({...f,icon:'fa-folder',color:'#F7941D'}))}];
+  // Rekursiver Ordnerbaum aus treeCache (lazy loaded)
+  const treeChildrenOf=parentId=>treeCache[parentId]||[];
+  const folders4tree=isDemo?DTREE:[{id:'root',name:'Mein Drive',icon:'fa-hdd',color:'#F7941D'}];
   const isDragging=!!dragRef.current; // Wird nur für die Drag-Bar genutzt
 
   return(<div style={{height:'100%',display:'flex',flexDirection:'column'}}>
@@ -845,28 +984,46 @@ function Main({onOut,isDemo}){
         <div className="folder-tree">
           <div className="tree-head"><i className="fas fa-sitemap" style={{marginRight:6}}/>Strukturbaum</div>
           <div className="tree-body">
-            {folders4tree.map(nd=>(
-              <div key={nd.id}>
-                <div
-                  className={`tree-item ${cur.id===nd.id?'active':''} ${dragOverId===nd.id?'drop-target':''}`}
-                  onClick={()=>{go(nd);setExp(e=>({...e,[nd.id]:!e[nd.id]}));}}
-                  {...dropProps(nd)}
-                >
-                  {nd.ch?.length?<i className={`fas fa-chevron-${exp[nd.id]?'down':'right'}`} style={{fontSize:10,color:'var(--mut)',width:10}}/>:<span style={{width:10,display:'inline-block'}}/>}
-                  <i className={`fas ${nd.icon}`} style={{color:nd.color||'var(--org)'}}/>{nd.name}
-                </div>
-                {exp[nd.id]&&nd.ch?.map(c=>(
-                  <div key={c.id}
-                    className={`tree-item ${cur.id===c.id?'active':''} ${dragOverId===c.id?'drop-target':''}`}
-                    style={{paddingLeft:26}}
-                    onClick={()=>go(c)}
-                    {...dropProps(c)}
+            {folders4tree.map(nd=>{
+              const TreeNode=({node,depth=0})=>{
+                const kids=isDemo?(node.ch||[]):treeChildrenOf(node.id);
+                const hasKids=kids.length>0;
+                const isLoading=!!treeLoading[node.id];
+                const isLoaded=!!treeCache[node.id];
+                // Zeige Pfeil wenn Kinder da oder noch nicht geladen (koennte Kinder haben)
+                const showChevron=hasKids||(!isLoaded&&!isDemo);
+                const toggleExpand=(e)=>{
+                  e.stopPropagation();
+                  if(!isLoaded&&!isDemo)loadTreeChildren(node.id);
+                  setExp(p=>({...p,[node.id]:!p[node.id]}));
+                };
+                return(<div key={node.id}>
+                  <div
+                    className={`tree-item ${cur.id===node.id?'active':''} ${dragOverId===node.id?'drop-target':''}`}
+                    style={{paddingLeft:12+depth*14}}
+                    onClick={()=>go({...node,mimeType:'application/vnd.google-apps.folder'})}
+                    {...dropProps({...node,mimeType:'application/vnd.google-apps.folder'})}
                   >
-                    <i className={`fas ${c.icon||'fa-folder'}`} style={{color:c.color||'var(--org)'}}/>{c.name}
+                    {isLoading?<i className="fas fa-spinner fa-spin" style={{fontSize:10,color:'var(--mut)',width:10,flexShrink:0}}/>
+                    :showChevron?<i className={`fas fa-chevron-${exp[node.id]?'down':'right'}`} style={{fontSize:10,color:'var(--mut)',width:10,flexShrink:0,cursor:'pointer'}} onClick={toggleExpand}/>
+                    :<span style={{width:10,display:'inline-block',flexShrink:0}}/>}
+                    <i className={`fas ${node.icon||'fa-folder'}`} style={{color:node.color||'var(--org)',flexShrink:0}}/>
+                    <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis'}}>{node.name}</span>
+                    {!isDemo&&<button className="tree-add" title="Unterordner erstellen" onClick={e=>{e.stopPropagation();setTreeNewFolder(node.id);setExp(p=>({...p,[node.id]:true}));if(!isLoaded)loadTreeChildren(node.id);}}><i className="fas fa-plus"/></button>}
                   </div>
-                ))}
-              </div>
-            ))}
+                  {exp[node.id]&&<>
+                    {treeNewFolder===node.id&&<div style={{paddingLeft:26+depth*14,padding:'3px 8px 3px '+(26+depth*14)+'px'}}>
+                      <input className="tree-inline-input" autoFocus placeholder="Ordnername…"
+                        onKeyDown={e=>{if(e.key==='Enter'&&e.target.value.trim())createTreeFolder(e.target.value.trim(),node.id);if(e.key==='Escape')setTreeNewFolder(null);}}
+                        onBlur={e=>{if(e.target.value.trim())createTreeFolder(e.target.value.trim(),node.id);else setTreeNewFolder(null);}}
+                      />
+                    </div>}
+                    {hasKids&&kids.map(c=><TreeNode key={c.id} node={c} depth={depth+1}/>)}
+                  </>}
+                </div>);
+              };
+              return <TreeNode key={nd.id} node={nd} depth={0}/>;
+            })}
           </div>
         </div>
 
@@ -905,7 +1062,7 @@ function Main({onOut,isDemo}){
           </div>
         </div>
 
-        <div className={`resizer ${resizing?'drag':''}`} onMouseDown={startResize}/>
+        <div className={`resizer ${resizing?'drag':''}`} onMouseDown={startResize} onTouchStart={startResize}/>
         <PrevPanel file={sel} isDemo={isDemo} onExpand={()=>sel&&setBig(true)} width={prevW}/>
       </>)}
     </div>
