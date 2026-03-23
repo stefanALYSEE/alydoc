@@ -3,6 +3,31 @@
 <head>
   <meta charset="UTF-8">
   <title>alyDoc – Google Anmeldung</title>
+  <script>
+  // WICHTIG: Vor Office.js laden – _host_Info aus sessionStorage wiederherstellen
+  // Google-Redirect entfernt den _host_Info Parameter, den Office.js braucht
+  (function restoreHostInfo(){
+    const url=new URL(window.location.href);
+    const hash=url.hash.substring(1);
+    const hasToken=hash&&hash.includes('access_token');
+
+    if(hasToken&&!url.searchParams.get('_host_Info')){
+      // Wir kommen vom Google-Redirect zurueck – _host_Info fehlt
+      const saved=sessionStorage.getItem('office_host_info');
+      if(saved){
+        // Token im sessionStorage zwischenspeichern
+        const params=new URLSearchParams(hash);
+        sessionStorage.setItem('oauth_token',params.get('access_token'));
+        sessionStorage.setItem('oauth_expires',params.get('expires_in')||'3600');
+        // Seite MIT _host_Info neu laden – Office.js erkennt den Dialog-Kontext
+        url.searchParams.set('_host_Info',saved);
+        url.hash='';
+        window.location.replace(url.toString());
+        return; // Seite wird neu geladen
+      }
+    }
+  })();
+  </script>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <style>
     body{font-family:'Segoe UI',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#F5F7FA;margin:0}
@@ -33,84 +58,57 @@
 <script>
 const CLIENT_ID='633536117262-28memlfds8btpdk8facskab8aq9msjdq.apps.googleusercontent.com';
 const SCOPES='https://www.googleapis.com/auth/drive';
-const CALLBACK_URL=window.location.origin+'/auth-callback.html';
+const REDIRECT_URI=window.location.origin+window.location.pathname;
 
-// ── Modus erkennen: Sind wir das Office-Dialog-Fenster oder das Callback? ──
-const hash=window.location.hash.substring(1);
-const isCallback=hash&&hash.includes('access_token');
+// ── Prüfe ob Token im sessionStorage liegt (nach _host_Info Restore) ──
+(function checkForToken(){
+  const token=sessionStorage.getItem('oauth_token');
+  if(!token)return;
+  const expiresIn=sessionStorage.getItem('oauth_expires')||'3600';
+  // Token aufraumen
+  sessionStorage.removeItem('oauth_token');
+  sessionStorage.removeItem('oauth_expires');
+  sessionStorage.removeItem('office_host_info');
 
-if(isCallback){
-  // ── CALLBACK MODUS: Token aus Hash lesen und an Opener/Parent senden ──
-  const params=new URLSearchParams(hash);
-  const token=params.get('access_token');
-  const expiresIn=params.get('expires_in');
-  const error=params.get('error');
+  const msg=JSON.stringify({type:'auth_success',token:token,expires_in:parseInt(expiresIn)});
 
-  if(error){
-    document.getElementById('status').innerHTML='<div class="error">Fehler: '+error+'</div>';
-  } else if(token){
-    const msg=JSON.stringify({type:'auth_success',token:token,expires_in:parseInt(expiresIn)||3600});
-    // An das Elternfenster (auth.html im Office-Dialog) senden
-    if(window.opener){
-      window.opener.postMessage(msg,'*');
-    }
-    document.getElementById('card').innerHTML='<div class="success">✓</div><h2>Verbunden!</h2><p>Fenster schliesst automatisch…</p>';
-    setTimeout(()=>window.close(),1200);
-  }
-} else {
-  // ── DIALOG MODUS: Warte auf Token von Popup ──
-  window.addEventListener('message',function(e){
-    try{
-      const msg=typeof e.data==='string'?JSON.parse(e.data):e.data;
-      if(msg.type==='auth_success'&&msg.token){
-        const payload=JSON.stringify(msg);
-        document.getElementById('card').innerHTML='<div class="success">✓</div><h2>Verbunden!</h2><p>Anmeldung erfolgreich.</p>';
-        // An Outlook Add-in zuruecksenden via Office messageParent
-        if(typeof Office!=='undefined'&&Office.context&&Office.context.ui&&Office.context.ui.messageParent){
-          Office.context.ui.messageParent(payload);
-        }
+  document.getElementById('card').innerHTML='<div class="success">✓</div><h2>Verbunden!</h2><p style="color:#7F8C8D;font-size:13px">Anmeldung erfolgreich.</p>';
+
+  // Warte auf Office.js, dann Token an Add-in senden
+  if(typeof Office!=='undefined'){
+    Office.onReady(()=>{
+      try{
+        Office.context.ui.messageParent(msg);
+      }catch(e){
+        console.warn('messageParent err:',e);
       }
-    }catch(ex){console.warn('msg parse err:',ex);}
-  });
-}
+    });
+  }
+})();
 
+// ── Login: _host_Info sichern, dann zu Google redirecten ──
 function startLogin(){
   const status=document.getElementById('status');
   const btn=document.getElementById('btn-login');
   btn.disabled=true;
+  status.innerHTML='<span class="spin">⏳</span> Weiterleitung zu Google…';
 
-  // OAuth URL – Redirect geht zu DIESER Seite (auth.html), aber in einem neuen Popup
+  // _host_Info sichern (Office.js braucht diesen Parameter nach dem Redirect)
+  const hostInfo=new URL(window.location.href).searchParams.get('_host_Info');
+  if(hostInfo){
+    sessionStorage.setItem('office_host_info',hostInfo);
+  }
+
+  // OAuth 2.0 Implicit Grant – Redirect in diesem Fenster
   const authUrl='https://accounts.google.com/o/oauth2/v2/auth'
     +'?client_id='+encodeURIComponent(CLIENT_ID)
-    +'&redirect_uri='+encodeURIComponent(window.location.origin+window.location.pathname)
+    +'&redirect_uri='+encodeURIComponent(REDIRECT_URI)
     +'&response_type=token'
     +'&scope='+encodeURIComponent(SCOPES)
     +'&include_granted_scopes=true'
     +'&prompt=consent';
 
-  // Popup oeffnen (NICHT diese Seite redirecten – Office-Kontext bleibt erhalten)
-  const popup=window.open(authUrl,'google_auth','width=500,height=650,menubar=no,toolbar=no');
-
-  if(!popup||popup.closed){
-    status.innerHTML='<div class="error">Popup wurde blockiert. Bitte Popup-Blocker deaktivieren.</div>';
-    btn.disabled=false;
-    return;
-  }
-
-  status.innerHTML='<span class="spin">⏳</span> Warte auf Google-Anmeldung…';
-
-  // Polling: Prüfe ob Popup geschlossen wurde ohne Anmeldung
-  const check=setInterval(()=>{
-    try{
-      if(popup.closed){
-        clearInterval(check);
-        if(!document.querySelector('.success')){
-          status.innerHTML='Anmeldung abgebrochen.';
-          btn.disabled=false;
-        }
-      }
-    }catch(e){}
-  },500);
+  window.location.href=authUrl;
 }
 </script>
 </body>
