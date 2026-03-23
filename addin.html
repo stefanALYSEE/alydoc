@@ -257,7 +257,7 @@ function formatSize(bytes){
 
 // ── GAPI INIT ────────────────────────────────────────────────────────────────
 function gapiLoaded(){gapi.load('client',async()=>{await gapi.client.init({apiKey:API_KEY,discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest']});gapiReady=true;checkReady();});}
-function gisLoaded(){tokenClient=google.accounts.oauth2.initTokenClient({client_id:CLIENT_ID,scope:SCOPES,callback:onToken});gisReady=true;checkReady();}
+function gisLoaded(){gisReady=true;checkReady();}
 
 function checkReady(){
   if(!gapiReady||!gisReady)return;
@@ -272,13 +272,60 @@ function checkReady(){
 }
 
 function signIn(){
-  tokenClient.requestAccessToken({prompt:''});
+  // Basis-URL ermitteln (gleicher Ordner wie addin.html)
+  const baseUrl=window.location.href.replace(/\/[^/]*$/,'/');
+  const authUrl=baseUrl+'auth.html';
+
+  // Office Dialog API verwenden (funktioniert im Outlook Add-in iframe)
+  if(Office.context.ui&&Office.context.ui.displayDialogAsync){
+    Office.context.ui.displayDialogAsync(authUrl,{height:60,width:40,promptBeforeOpen:false},result=>{
+      if(result.status===Office.AsyncResultStatus.Failed){
+        showStatus('Dialog konnte nicht geöffnet werden: '+result.error.message,'error');
+        return;
+      }
+      const dialog=result.value;
+      dialog.addEventHandler(Office.EventType.DialogMessageReceived,arg=>{
+        dialog.close();
+        try{
+          const msg=JSON.parse(arg.message);
+          if(msg.type==='auth_success'&&msg.token){
+            onTokenReceived(msg.token);
+          } else {
+            showStatus('Anmeldung fehlgeschlagen','error');
+          }
+        }catch(e){
+          showStatus('Anmeldung fehlgeschlagen: '+e.message,'error');
+        }
+      });
+      dialog.addEventHandler(Office.EventType.DialogEventReceived,arg=>{
+        // Dialog wurde geschlossen ohne Anmeldung
+        if(arg.error===12006)console.log('Dialog vom Nutzer geschlossen');
+      });
+    });
+  } else {
+    // Fallback: Popup direkt öffnen (außerhalb von Outlook)
+    const popup=window.open(authUrl,'alyDoc_auth','width=500,height=600');
+    window.addEventListener('message',function handler(e){
+      try{
+        const msg=typeof e.data==='string'?JSON.parse(e.data):e.data;
+        if(msg.type==='auth_success'&&msg.token){
+          window.removeEventListener('message',handler);
+          onTokenReceived(msg.token);
+        }
+      }catch{}
+    });
+  }
 }
 
-function onToken(resp){
-  if(resp.error){showStatus('Anmeldung fehlgeschlagen: '+resp.error,'error');return;}
+function onTokenReceived(accessToken){
+  // Token in gapi setzen
+  gapi.client.setToken({access_token:accessToken});
   showScreen('scr-main');
   loadFolders();
+  // Nutzernamen laden
+  gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'}).then(r=>{
+    if(r.result&&r.result.name)document.getElementById('user-name').textContent=r.result.name;
+  }).catch(()=>{});
 }
 
 // ── FOLDER LOADING ────────────────────────────────────────────────────────────

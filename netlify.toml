@@ -25,6 +25,14 @@
     Access-Control-Allow-Headers = "Content-Type"
     Content-Security-Policy = "frame-ancestors https://*.office.com https://*.outlook.com https://*.microsoft.com https://alydoc.netlify.app https://alydoc.alysee.de"
 
+# Auth Dialog für Outlook Add-in
+[[headers]]
+  for = "/auth.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+    Access-Control-Allow-Origin = "*"
+    Content-Security-Policy = "frame-ancestors https://*.office.com https://*.outlook.com https://*.microsoft.com https://alydoc.netlify.app https://alydoc.alysee.de"
+
 # Haupt-App HTML
 [[headers]]
   for = "/index.html"
