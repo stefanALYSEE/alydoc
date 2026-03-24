@@ -10,101 +10,147 @@
     .card{background:#fff;border-radius:10px;padding:32px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.1);max-width:360px;width:90%}
     .card h2{color:#003D7A;font-size:16px;margin-bottom:8px}
     .card p{color:#7F8C8D;font-size:13px;margin-bottom:20px;line-height:1.5}
-    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:7px;border:none;cursor:pointer;font-size:14px;font-weight:500;background:#0072CE;color:#fff;transition:background .15s}
+    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:7px;border:none;cursor:pointer;font-size:14px;font-weight:500;background:#0072CE;color:#fff;transition:background .15s;width:100%;justify-content:center}
     .btn:hover{background:#005faa}
     .btn:disabled{background:#9bb3cc;cursor:not-allowed}
+    .btn+.btn{margin-top:8px}
     .status{margin-top:16px;font-size:12px;color:#7F8C8D}
     .spin{animation:sp .8s linear infinite;display:inline-block}
     @keyframes sp{to{transform:rotate(360deg)}}
     .success{color:#00A651;font-size:36px;margin-bottom:12px}
-    .error{color:#CC0000;font-size:13px;margin-top:12px}
   </style>
 </head>
 <body>
 <div class="card" id="card">
   <h2>Mit Google verbinden</h2>
   <p>Melde dich an, um Mails in Google Drive abzulegen.</p>
-  <button class="btn" id="btn-login" onclick="startLogin()" disabled>
+  <button class="btn" id="btn-popup" onclick="tryPopup()">
     <svg width="18" height="18" viewBox="0 0 24 24"><path fill="#fff" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/><path fill="#fff" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#fff" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#fff" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
     Google Anmeldung
   </button>
-  <div class="status" id="status">Google wird geladen…</div>
+  <button class="btn" id="btn-redirect" onclick="tryRedirect()" style="background:#34A853;display:none">
+    Popup blockiert? Hier klicken
+  </button>
+  <div class="status" id="status"></div>
 </div>
 
 <script>
 const CLIENT_ID='633536117262-28memlfds8btpdk8facskab8aq9msjdq.apps.googleusercontent.com';
 const SCOPES='https://www.googleapis.com/auth/drive';
+const REDIRECT_URI=window.location.origin+window.location.pathname;
 
-let tokenClient=null;
 let officeReady=false;
 
 // ── Office.js Init ──
 Office.onReady(()=>{officeReady=true;});
 
-// ── Google Identity Services – Token Client (Popup, kein Redirect) ──
-function initTokenClient(){
-  if(typeof google==='undefined'||!google.accounts){
-    // GIS noch nicht geladen – warten
-    setTimeout(initTokenClient,200);
-    return;
-  }
+// ── SCHRITT 1: Prüfe ob wir von einem Google-Redirect zurückkommen ──
+(function checkRedirectReturn(){
+  const hash=window.location.hash.substring(1);
+  if(!hash||!hash.includes('access_token'))return;
 
-  tokenClient=google.accounts.oauth2.initTokenClient({
-    client_id:CLIENT_ID,
-    scope:SCOPES,
-    callback:onTokenResponse
-  });
+  const params=new URLSearchParams(hash);
+  const token=params.get('access_token');
+  const expiresIn=params.get('expires_in')||'3600';
+  const state=params.get('state')||'';
 
-  // Button aktivieren
-  document.getElementById('btn-login').disabled=false;
-  document.getElementById('status').textContent='Bereit zur Anmeldung';
-}
+  if(!token)return;
 
-// Starte Init sobald Seite geladen
-initTokenClient();
+  // State enthält _host_Info (Base64-kodiert)
+  let hostInfo='';
+  try{hostInfo=atob(state);}catch{}
 
-function onTokenResponse(resp){
-  const status=document.getElementById('status');
+  // URL aufräumen
+  history.replaceState(null,'',window.location.pathname+(hostInfo?'?_host_Info='+encodeURIComponent(hostInfo):''));
 
-  if(resp.error){
-    status.innerHTML='<span style="color:#CC0000">Anmeldung fehlgeschlagen: '+resp.error+'</span>';
-    document.getElementById('btn-login').disabled=false;
-    return;
-  }
+  sendToken(token,expiresIn);
+})();
 
-  const token=resp.access_token;
-  const expiresIn=resp.expires_in||3600;
-
-  // Erfolg anzeigen
-  document.getElementById('card').innerHTML='<div class="success">✓</div><h2>Verbunden!</h2><p style="color:#7F8C8D;font-size:13px">Anmeldung erfolgreich.</p>';
+function sendToken(token,expiresIn){
+  document.getElementById('card').innerHTML='<div class="success">✓</div><h2>Verbunden!</h2><p style="color:#7F8C8D;font-size:13px">Anmeldung erfolgreich.<br>Dieses Fenster schliesst sich automatisch.</p>';
 
   const msg=JSON.stringify({type:'auth_success',token:token,expires_in:parseInt(expiresIn)});
 
-  // Token an Outlook Add-in senden (Office Dialog API)
-  if(officeReady){
+  // Office Dialog → messageParent
+  const trySend=()=>{
     try{
-      Office.context.ui.messageParent(msg);
-    }catch(e){
-      console.warn('messageParent err:',e);
+      if(officeReady&&Office.context.ui){
+        Office.context.ui.messageParent(msg);
+        return;
+      }
+    }catch(e){console.warn('messageParent err:',e);}
+    // Fallback: postMessage
+    if(window.opener){
+      try{window.opener.postMessage(msg,'*');}catch{}
     }
-  }
+  };
 
-  // Fallback: postMessage fuer Nicht-Office-Kontext (z.B. Popup)
-  if(window.opener){
-    try{window.opener.postMessage(msg,'*');}catch(e){console.warn('postMessage err:',e);}
+  // Sofort versuchen + nochmal nach Office.js init
+  trySend();
+  if(!officeReady){
+    Office.onReady(()=>{officeReady=true;trySend();});
   }
 }
 
-function startLogin(){
-  if(!tokenClient){
-    document.getElementById('status').innerHTML='<span style="color:#CC0000">Google APIs noch nicht bereit</span>';
+// ── METHODE 1: GIS Popup (bevorzugt) ──
+function tryPopup(){
+  const status=document.getElementById('status');
+
+  if(typeof google==='undefined'||!google.accounts){
+    status.textContent='Google APIs laden noch… bitte kurz warten';
+    setTimeout(tryPopup,500);
     return;
   }
-  document.getElementById('btn-login').disabled=true;
-  document.getElementById('status').innerHTML='<span class="spin">⏳</span> Google-Anmeldung wird geöffnet…';
 
-  // Token anfordern – öffnet Google-Popup (kein Redirect!)
-  tokenClient.requestAccessToken({prompt:'consent'});
+  status.innerHTML='<span class="spin">⏳</span> Google-Anmeldung…';
+
+  const tokenClient=google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID,
+    scope:SCOPES,
+    callback:(resp)=>{
+      if(resp.error){
+        status.innerHTML='Popup fehlgeschlagen – versuche Redirect…';
+        // Zeige Redirect-Button
+        document.getElementById('btn-redirect').style.display='flex';
+        return;
+      }
+      sendToken(resp.access_token,resp.expires_in||3600);
+    },
+    error_callback:(err)=>{
+      // Popup wurde blockiert
+      console.warn('GIS popup blocked:',err);
+      status.innerHTML='Popup blockiert – bitte Redirect nutzen';
+      document.getElementById('btn-redirect').style.display='flex';
+    }
+  });
+
+  try{
+    tokenClient.requestAccessToken({prompt:'consent'});
+  }catch(e){
+    status.innerHTML='Popup fehlgeschlagen';
+    document.getElementById('btn-redirect').style.display='flex';
+  }
+}
+
+// ── METHODE 2: OAuth Redirect (Fallback) ──
+function tryRedirect(){
+  const status=document.getElementById('status');
+  status.innerHTML='<span class="spin">⏳</span> Weiterleitung zu Google…';
+
+  // _host_Info im state-Parameter kodieren (wird von Google durchgereicht)
+  const hostInfo=new URL(window.location.href).searchParams.get('_host_Info')||'';
+  const state=btoa(hostInfo);
+
+  const authUrl='https://accounts.google.com/o/oauth2/v2/auth'
+    +'?client_id='+encodeURIComponent(CLIENT_ID)
+    +'&redirect_uri='+encodeURIComponent(REDIRECT_URI)
+    +'&response_type=token'
+    +'&scope='+encodeURIComponent(SCOPES)
+    +'&state='+encodeURIComponent(state)
+    +'&include_granted_scopes=true'
+    +'&prompt=consent';
+
+  window.location.href=authUrl;
 }
 </script>
 </body>
