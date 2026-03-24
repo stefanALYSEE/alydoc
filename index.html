@@ -127,10 +127,18 @@
     .move-row.dis{opacity:.38;cursor:not-allowed;background:#fafafa}
     .drag-bar{font-size:11px;color:#856404;padding:4px 14px;background:#FFF3CD;border-bottom:1px solid #FFE082;flex-shrink:0;display:flex;align-items:center;gap:6px}
     /* ── TABLET (iPad) ── */
-    @media(max-width:600px){.prev-panel{display:none}}
+    @media(max-width:1024px){
+      .folder-tree{width:170px}
+      .prev-panel{max-width:280px}
+    }
     @media(max-width:900px){
       .doc-hrow,.doc-row{grid-template-columns:36px 1fr 90px 72px}
       .doc-hrow>*:nth-child(5),.doc-row>*:nth-child(5){display:none}
+    }
+    @media(max-width:768px){
+      .prev-panel{display:none}
+      .resizer{display:none}
+      .folder-tree{width:180px}
     }
     /* ── MOBILE (iPhone) ── */
     @media(max-width:600px){
@@ -317,6 +325,8 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
   const [expandedIds,setExpandedIds]=useState({});
   const [search,setSearch]=useState('');
   const [newFolderParent,setNewFolderParent]=useState(null);
+  const [localNewFolders,setLocalNewFolders]=useState([]); // sofort angezeigte neue Ordner
+  const creatingRef=useRef(false); // verhindert Doppelaufruf
   const toast=useContext(TC);
 
   const isCur=id=>id===curFolderId||(id==='root'&&(!curFolderId||curFolderId==='root'));
@@ -325,6 +335,7 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
   const reloadFolders=async()=>{
     setReloading(true);
     try{if(onReloadFolders)await onReloadFolders();}catch(e){console.error(e);}
+    setLocalNewFolders([]); // lokale Ordner nach Reload entfernen (jetzt in folders)
     setReloading(false);
   };
 
@@ -345,7 +356,7 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
         name:f.displayName?f.displayName.split(' / ').pop():f.name,
         fullName:f.displayName||f.name,
         parentId:f.parentId||(f.parents&&f.parents[0])||'root'
-      }))];
+      })),...localNewFolders.filter(nf=>!(folders||[]).some(f=>f.id===nf.id))];
 
   // Kinder eines Ordners ermitteln
   const childrenOf=parentId=>allDirs.filter(d=>d.id!=='root'&&d.parentId===parentId);
@@ -377,14 +388,20 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
   const select=(id,name)=>{setSelId(id);setSelName(name);};
 
   const createMoveFolder=async(name,parentId)=>{
-    if(!name.trim()||isDemo)return;
+    if(!name.trim()||isDemo||creatingRef.current)return;
+    creatingRef.current=true;
+    setNewFolderParent(null);
     try{
       const f=await DR.mkdir(name,parentId);
       toast('Ordner erstellt: '+name,'s');
-      await reloadFolders();
+      // Sofort lokal anzeigen und auswählen (ohne auf Reload zu warten)
+      setLocalNewFolders(p=>[...p,{id:f.id,name:name,parentId:parentId}]);
       setSelId(f.id);setSelName(name);
+      setExpandedIds(p=>({...p,[parentId]:true}));
+      // Im Hintergrund alle Ordner neu laden
+      reloadFolders();
     }catch(e){toast('Fehler beim Erstellen','e');console.error(e);}
-    setNewFolderParent(null);
+    creatingRef.current=false;
   };
 
   const go=async()=>{
@@ -446,8 +463,8 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
         {/* Inline neuer Ordner */}
         {isExp&&newFolderParent===d.id&&<div style={{padding:'4px 12px',paddingLeft:(30+indent)+'px'}}>
           <input style={{border:'1px solid var(--blue)',borderRadius:3,fontSize:12,padding:'3px 6px',width:'100%',outline:'none'}} autoFocus placeholder="Ordnername…"
-            onKeyDown={e=>{if(e.key==='Enter'&&e.target.value.trim())createMoveFolder(e.target.value.trim(),d.id);if(e.key==='Escape')setNewFolderParent(null);}}
-            onBlur={e=>{if(e.target.value.trim())createMoveFolder(e.target.value.trim(),d.id);else setNewFolderParent(null);}}
+            onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(e.target.value.trim()){e.target.dataset.submitted='1';createMoveFolder(e.target.value.trim(),d.id);}}if(e.key==='Escape')setNewFolderParent(null);}}
+            onBlur={e=>{if(e.target.dataset.submitted)return;if(e.target.value.trim())createMoveFolder(e.target.value.trim(),d.id);else setNewFolderParent(null);}}
           />
         </div>}
         {/* Kinder rekursiv rendern wenn aufgeklappt */}
@@ -783,7 +800,7 @@ function Main({onOut,isDemo}){
   const [user,setUser]=useState(null);
   const [exp,setExp]=useState({'root':true});
   const [big,setBig]=useState(false);
-  const [prevW,setPrevW]=useState(480);
+  const [prevW,setPrevW]=useState(()=>window.innerWidth>1200?480:window.innerWidth>1024?340:260);
   const [resizing,setResizing]=useState(false);
   const [moveFile,setMoveFile]=useState(null);
   const [allFolders,setAllFolders]=useState([]);
