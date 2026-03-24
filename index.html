@@ -650,13 +650,20 @@ function useBlobUrl(file,isDemo){
 
 function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
   const [tab,setTab]=useState('prev');
-  const {url:pUrl,loading,err}=useBlobUrl(file,isDemo);
+  const isPdf=file&&(file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf')));
+  const isGoogleDoc=file&&file.mimeType&&file.mimeType.startsWith('application/vnd.google-apps.');
+  // PDFs und Google Docs: Drive Preview URL (mehrseitig, responsive)
+  // Andere Dateien: Blob-Download
+  const useGooglePreview=!isDemo&&file&&(isPdf||isGoogleDoc)&&file.id;
+  const {url:pUrl,loading,err}=useBlobUrl(useGooglePreview?null:file,isDemo);
+  const googlePreviewUrl=useGooglePreview?`https://drive.google.com/file/d/${file.id}/preview`:null;
   useEffect(()=>setTab('prev'),[file?.id]);
   const ps={width:width||310,minWidth:150};
   const rsBtn={background:'none',border:'1px solid var(--bdr)',cursor:'pointer',color:'var(--mut)',padding:'2px 8px',borderRadius:4,fontSize:13,lineHeight:1,fontWeight:700};
   if(!file)return(<div className="prev-panel" style={ps}><div className="prev-head"><span>Vorschau</span><div style={{display:'flex',gap:3}}>{onWider&&<button style={rsBtn} onClick={onWider} title="Breiter">◀</button>}{onNarrower&&<button style={rsBtn} onClick={onNarrower} title="Schmaler">▶</button>}</div></div><div className="ctr"><i className="fas fa-file-alt" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13,textAlign:'center'}}>Datei anklicken<br/>fuer Vorschau</p></div></div>);
   const {i,c}=mi(file.mimeType,file.name);
   const isDir=file.mimeType==='application/vnd.google-apps.folder';
+  const previewSrc=googlePreviewUrl||pUrl;
   return(
     <div className="prev-panel" style={ps}>
       <div className="prev-head">
@@ -677,6 +684,7 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
             :isCad3d(file.name)?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>3D-Datei wird geladen…</p></div>
               :pUrl?<Cad3DViewer url={pUrl} fileName={file.name}/>
               :<div className="ctr"><i className="fas fa-cube" style={{fontSize:52,color:'#7C3AED'}}/><p style={{fontSize:12}}>{file.name}</p></div>)
+            :googlePreviewUrl?<iframe src={googlePreviewUrl} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Vorschau" allow="autoplay"/>
             :loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>
             :err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:32,color:'var(--org)'}}/><p style={{fontSize:12,color:'var(--red)',textAlign:'center',padding:'0 12px'}}>{err}</p></div>
             :pUrl?<iframe src={pUrl} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Vorschau"/>
@@ -696,9 +704,14 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
 
 function ExpandMod({file,isDemo,onClose}){
   const {i,c}=mi(file.mimeType,file.name);
-  const {url:pUrl,loading,err}=useBlobUrl(file,isDemo);
+  const isPdf=file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf'));
+  const isGoogleDoc=file.mimeType&&file.mimeType.startsWith('application/vnd.google-apps.');
+  const useGP=!isDemo&&(isPdf||isGoogleDoc)&&file.id;
+  const gpUrl=useGP?`https://drive.google.com/file/d/${file.id}/preview`:null;
+  const {url:pUrl,loading,err}=useBlobUrl(useGP?null:file,isDemo);
   const is3d=isCad3d(file.name);
-  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span><button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?(is3d?<Cad3DViewer url={pUrl} fileName={file.name}/>:<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>):<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
+  const src=gpUrl||pUrl;
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span><button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{gpUrl?<iframe src={gpUrl} style={{flex:1,border:'none'}} title="Vorschau" allow="autoplay"/>:loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?(is3d?<Cad3DViewer url={pUrl} fileName={file.name}/>:<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>):<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
 }
 
 function UpMod({fid,onClose,onDone,isDemo}){

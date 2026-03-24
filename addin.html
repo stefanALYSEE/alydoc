@@ -272,23 +272,51 @@ function checkReady(){
 }
 
 function signIn(){
-  // Google Identity Services direkt nutzen (Popup, kein Redirect, kein Office Dialog)
-  if(typeof google==='undefined'||!google.accounts){
-    showStatus('Google APIs noch nicht geladen – bitte kurz warten','warn');
-    return;
-  }
-  const tokenClient=google.accounts.oauth2.initTokenClient({
-    client_id:CLIENT_ID,
-    scope:SCOPES,
-    callback:(resp)=>{
-      if(resp.error){
-        showStatus('Anmeldung fehlgeschlagen: '+resp.error,'error');
+  // Office Dialog API öffnet auth.html als echtes Fenster
+  // auth.html nutzt GIS Token Client (Popup) und sendet Token zurück
+  const baseUrl=window.location.href.replace(/\/[^/]*$/,'/');
+  const authUrl=baseUrl+'auth.html';
+
+  if(Office.context.ui&&Office.context.ui.displayDialogAsync){
+    Office.context.ui.displayDialogAsync(authUrl,{height:65,width:45,promptBeforeOpen:false},result=>{
+      if(result.status===Office.AsyncResultStatus.Failed){
+        showStatus('Dialog konnte nicht geöffnet werden: '+result.error.message,'error');
         return;
       }
-      onTokenReceived(resp.access_token);
+      const dialog=result.value;
+      dialog.addEventHandler(Office.EventType.DialogMessageReceived,arg=>{
+        dialog.close();
+        try{
+          const msg=JSON.parse(arg.message);
+          if(msg.type==='auth_success'&&msg.token){
+            onTokenReceived(msg.token);
+          } else {
+            showStatus('Anmeldung fehlgeschlagen','error');
+          }
+        }catch(e){
+          showStatus('Anmeldung fehlgeschlagen: '+e.message,'error');
+        }
+      });
+      dialog.addEventHandler(Office.EventType.DialogEventReceived,arg=>{
+        if(arg.error===12006)console.log('Dialog vom Nutzer geschlossen');
+      });
+    });
+  } else {
+    // Fallback: GIS direkt (außerhalb von Outlook)
+    if(typeof google==='undefined'||!google.accounts){
+      showStatus('Google APIs noch nicht geladen','warn');
+      return;
     }
-  });
-  tokenClient.requestAccessToken({prompt:'consent'});
+    const tokenClient=google.accounts.oauth2.initTokenClient({
+      client_id:CLIENT_ID,
+      scope:SCOPES,
+      callback:(resp)=>{
+        if(resp.error){showStatus('Anmeldung fehlgeschlagen: '+resp.error,'error');return;}
+        onTokenReceived(resp.access_token);
+      }
+    });
+    tokenClient.requestAccessToken({prompt:'consent'});
+  }
 }
 
 function onTokenReceived(accessToken){
