@@ -48,9 +48,8 @@
     .tree-item{padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:7px;font-size:13px;color:var(--txt);border-left:2px solid transparent;transition:background .1s;user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .tree-item:hover{background:#EEF4FF}
     .tree-item:hover .tree-add{opacity:1}
-    .tree-add{opacity:0;margin-left:auto;background:none;border:none;cursor:pointer;color:var(--mut);font-size:11px;padding:0 4px;flex-shrink:0;transition:opacity .15s}
-    .tree-add:hover{color:var(--blue)}
-    @media(pointer:coarse){.tree-add{opacity:.5;padding:4px 8px;font-size:14px}}
+    .tree-add{opacity:.35;margin-left:auto;background:none;border:none;cursor:pointer;color:var(--blue);font-size:13px;padding:4px 8px;flex-shrink:0;transition:opacity .15s}
+    .tree-item:hover .tree-add{opacity:1}
     .tree-inline-input{border:1px solid var(--blue);border-radius:3px;font-size:12px;padding:2px 6px;width:100%;outline:none;margin:2px 0}
     .tree-item.active{background:#E0EDFF;color:var(--blue);border-left-color:var(--blue);font-weight:500}
     .tree-item.drop-target{background:#E8F5E9 !important;border-left-color:var(--grn) !important;outline:2px dashed var(--grn)}
@@ -326,7 +325,6 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
   const [reloading,setReloading]=useState(false);
   const [expandedIds,setExpandedIds]=useState({});
   const [search,setSearch]=useState('');
-  const [newFolderParent,setNewFolderParent]=useState(null);
   const [localNewFolders,setLocalNewFolders]=useState([]); // sofort angezeigte neue Ordner
   const creatingRef=useRef(false); // verhindert Doppelaufruf
   const toast=useContext(TC);
@@ -389,16 +387,16 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
 
   const select=(id,name)=>{setSelId(id);setSelName(name);};
 
-  const createMoveFolder=async(name,parentId)=>{
-    if(!name.trim()||isDemo||creatingRef.current)return;
+  const createMoveFolder=async(parentId)=>{
+    const name=window.prompt('Neuer Ordnername:');
+    if(!name||!name.trim()||isDemo||creatingRef.current)return;
     creatingRef.current=true;
-    setNewFolderParent(null);
     try{
-      const f=await DR.mkdir(name,parentId);
-      toast('Ordner erstellt: '+name,'s');
-      // Sofort lokal anzeigen und auswählen (ohne auf Reload zu warten)
-      setLocalNewFolders(p=>[...p,{id:f.id,name:name,parentId:parentId}]);
-      setSelId(f.id);setSelName(name);
+      const f=await DR.mkdir(name.trim(),parentId);
+      toast('Ordner erstellt: '+name.trim(),'s');
+      // Sofort lokal anzeigen und auswählen
+      setLocalNewFolders(p=>[...p,{id:f.id,name:name.trim(),parentId:parentId}]);
+      setSelId(f.id);setSelName(name.trim());
       setExpandedIds(p=>({...p,[parentId]:true}));
       // Im Hintergrund alle Ordner neu laden
       reloadFolders();
@@ -460,15 +458,8 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
           <span style={{flex:1,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{shortName}</span>
           {isCur(d.id)&&<span style={{fontSize:10,color:'var(--mut)',background:'#F0F4F8',padding:'1px 5px',borderRadius:3,flexShrink:0}}>aktuell</span>}
           {isSelected&&<i className="fas fa-check-circle" style={{color:'var(--blue)',fontSize:12,flexShrink:0}}/>}
-          {!isDemo&&<button style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:'var(--blue)',fontSize:13,padding:'4px 8px',flexShrink:0,opacity:.6,borderRadius:4}} title="Unterordner erstellen" onClick={e=>{e.stopPropagation();setNewFolderParent(d.id);setExpandedIds(p=>({...p,[d.id]:true}));}}><i className="fas fa-folder-plus" style={{pointerEvents:'none'}}/></button>}
+          {!isDemo&&<button style={{marginLeft:'auto',background:'none',border:'1px solid var(--bdr)',cursor:'pointer',color:'var(--blue)',fontSize:12,padding:'3px 8px',flexShrink:0,borderRadius:4,lineHeight:1}} title="Unterordner erstellen" onClick={e=>{e.stopPropagation();createMoveFolder(d.id);}}><i className="fas fa-folder-plus" style={{pointerEvents:'none'}}/></button>}
         </div>
-        {/* Inline neuer Ordner */}
-        {isExp&&newFolderParent===d.id&&<div style={{padding:'4px 12px',paddingLeft:(30+indent)+'px'}}>
-          <input style={{border:'1px solid var(--blue)',borderRadius:3,fontSize:12,padding:'3px 6px',width:'100%',outline:'none'}} autoFocus placeholder="Ordnername…"
-            onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();if(e.target.value.trim()){e.target.dataset.submitted='1';createMoveFolder(e.target.value.trim(),d.id);}}if(e.key==='Escape')setNewFolderParent(null);}}
-            onBlur={e=>{if(e.target.dataset.submitted)return;if(e.target.value.trim())createMoveFolder(e.target.value.trim(),d.id);else setNewFolderParent(null);}}
-          />
-        </div>}
         {/* Kinder rekursiv rendern wenn aufgeklappt */}
         {isExp&&kids.map(child=>(
           <FolderRow key={child.id} d={child} depth={depth+1}/>
@@ -501,6 +492,9 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
             />
             {search&&<span style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',cursor:'pointer',color:'var(--mut)',fontSize:12}} onClick={()=>setSearch('')}>✕</span>}
           </div>
+          {!isDemo&&<button className="btn bp" style={{padding:'0 10px',fontSize:11,flexShrink:0,whiteSpace:'nowrap'}} onClick={()=>createMoveFolder(selId||'root')}>
+            <i className="fas fa-folder-plus"/> Neu
+          </button>}
           {!isDemo&&<button className="btn bs" style={{padding:'0 10px',fontSize:11,flexShrink:0}} onClick={reloadFolders} disabled={reloading}>
             <i className={`fas ${reloading?'fa-spinner fa-spin':'fa-rotate-right'}`}/>
           </button>}
@@ -654,12 +648,13 @@ function useBlobUrl(file,isDemo){
   return{url,loading,err};
 }
 
-function PrevPanel({file,isDemo,onExpand,width}){
+function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
   const [tab,setTab]=useState('prev');
   const {url:pUrl,loading,err}=useBlobUrl(file,isDemo);
   useEffect(()=>setTab('prev'),[file?.id]);
   const ps={width:width||310,minWidth:150};
-  if(!file)return(<div className="prev-panel" style={ps}><div className="prev-head"><span>Vorschau</span></div><div className="ctr"><i className="fas fa-file-alt" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13,textAlign:'center'}}>Datei anklicken<br/>fuer Vorschau</p></div></div>);
+  const rsBtn={background:'none',border:'1px solid var(--bdr)',cursor:'pointer',color:'var(--mut)',padding:'2px 8px',borderRadius:4,fontSize:13,lineHeight:1,fontWeight:700};
+  if(!file)return(<div className="prev-panel" style={ps}><div className="prev-head"><span>Vorschau</span><div style={{display:'flex',gap:3}}>{onWider&&<button style={rsBtn} onClick={onWider} title="Breiter">◀</button>}{onNarrower&&<button style={rsBtn} onClick={onNarrower} title="Schmaler">▶</button>}</div></div><div className="ctr"><i className="fas fa-file-alt" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13,textAlign:'center'}}>Datei anklicken<br/>fuer Vorschau</p></div></div>);
   const {i,c}=mi(file.mimeType,file.name);
   const isDir=file.mimeType==='application/vnd.google-apps.folder';
   return(
@@ -667,6 +662,8 @@ function PrevPanel({file,isDemo,onExpand,width}){
       <div className="prev-head">
         <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1,marginRight:6,fontSize:10}}>{file.name}</span>
         <div style={{display:'flex',gap:3,flexShrink:0}}>
+          {onWider&&<button style={rsBtn} onClick={onWider} title="Breiter">◀</button>}
+          {onNarrower&&<button style={rsBtn} onClick={onNarrower} title="Schmaler">▶</button>}
           <div className="prev-tabs">
             <button className={`prev-tab ${tab==='prev'?'active':''}`} onClick={()=>setTab('prev')}>Vorschau</button>
             <button className={`prev-tab ${tab==='meta'?'active':''}`} onClick={()=>setTab('meta')}>Details</button>
@@ -1102,7 +1099,7 @@ function Main({onOut,isDemo}){
         </div>
 
         <div className={`resizer ${resizing?'drag':''}`} onMouseDown={startResize} onTouchStart={startResize}/>
-        <PrevPanel file={sel} isDemo={isDemo} onExpand={()=>sel&&setBig(true)} width={prevW}/>
+        <PrevPanel file={sel} isDemo={isDemo} onExpand={()=>sel&&setBig(true)} width={prevW} onWider={()=>setPrevW(w=>Math.min(window.innerWidth*0.7,w+80))} onNarrower={()=>setPrevW(w=>Math.max(150,w-80))}/>
       </>)}
     </div>
 
