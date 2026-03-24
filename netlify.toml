@@ -33,13 +33,19 @@
     Access-Control-Allow-Origin = "*"
     Content-Security-Policy = "frame-ancestors https://*.office.com https://*.outlook.com https://*.microsoft.com https://alydoc.netlify.app https://alydoc.alysee.de"
 
-# Haupt-App HTML
+# Alle HTML-Dateien – kein Caching
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"
+    Pragma = "no-cache"
+    X-Content-Type-Options = "nosniff"
+
+# Haupt-App HTML (X-Frame-Options zusaetzlich)
 [[headers]]
   for = "/index.html"
   [headers.values]
-    Cache-Control = "no-cache"
     X-Frame-Options = "SAMEORIGIN"
-    X-Content-Type-Options = "nosniff"
 
 # Icons
 [[headers]]

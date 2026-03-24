@@ -50,6 +50,7 @@
     .tree-item:hover .tree-add{opacity:1}
     .tree-add{opacity:0;margin-left:auto;background:none;border:none;cursor:pointer;color:var(--mut);font-size:11px;padding:0 4px;flex-shrink:0;transition:opacity .15s}
     .tree-add:hover{color:var(--blue)}
+    @media(pointer:coarse){.tree-add{opacity:.5;padding:4px 8px;font-size:14px}}
     .tree-inline-input{border:1px solid var(--blue);border-radius:3px;font-size:12px;padding:2px 6px;width:100%;outline:none;margin:2px 0}
     .tree-item.active{background:#E0EDFF;color:var(--blue);border-left-color:var(--blue);font-weight:500}
     .tree-item.drop-target{background:#E8F5E9 !important;border-left-color:var(--grn) !important;outline:2px dashed var(--grn)}
@@ -61,16 +62,17 @@
     .doc-list-head{background:#F4F7FB;border-bottom:2px solid var(--bdr);flex-shrink:0}
     .doc-hrow{display:grid;grid-template-columns:36px 1fr 120px 90px 78px;padding:7px 12px;font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;align-items:center}
     .doc-list{flex:1;overflow-y:auto}
-    .doc-row{display:grid;grid-template-columns:36px 1fr 120px 90px 78px;padding:8px 12px;align-items:center;border-bottom:1px solid #F0F4F8;cursor:grab;font-size:13px;transition:background .1s;user-select:none;-webkit-user-drag:element}
+    .doc-row{display:grid;grid-template-columns:36px 1fr 120px 90px 78px;padding:8px 12px;align-items:center;border-bottom:1px solid #F0F4F8;cursor:pointer;font-size:13px;transition:background .1s;user-select:none}
     .doc-row:active{cursor:grabbing}
     .doc-row:hover{background:#EEF4FF}
     .doc-row.active{background:#E0EDFF;border-left:3px solid var(--blue);padding-left:9px}
     .doc-row.dragging{opacity:.4;background:#f0f0f0 !important}
     .doc-row.drop-target{background:#E8F5E9 !important;outline:2px dashed var(--grn);outline-offset:-2px}
     .prev-panel{background:#fff;border-left:1px solid var(--bdr);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;min-height:0}
-    .resizer{width:5px;background:var(--bdr);cursor:col-resize;flex-shrink:0;transition:background .15s;user-select:none;touch-action:none;position:relative}
-    .resizer::before{content:'';position:absolute;top:0;bottom:0;left:-8px;right:-8px}
+    .resizer{width:5px;background:var(--bdr);cursor:col-resize;flex-shrink:0;transition:background .15s;user-select:none;touch-action:none;position:relative;z-index:10}
+    .resizer::before{content:'';position:absolute;top:0;bottom:0;left:-18px;right:-18px}
     .resizer:hover,.resizer.drag{background:var(--blue)}
+    @media(pointer:coarse){.resizer{width:10px}.resizer::before{left:-20px;right:-20px}}
     .prev-head{background:#F4F7FB;border-bottom:1px solid var(--bdr);padding:9px 12px;font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
     .prev-tabs{display:flex;gap:3px}
     .prev-tab{background:none;border:none;padding:3px 9px;border-radius:4px;cursor:pointer;font-size:11px;color:var(--mut);font-weight:600}
@@ -458,7 +460,7 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
           <span style={{flex:1,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{shortName}</span>
           {isCur(d.id)&&<span style={{fontSize:10,color:'var(--mut)',background:'#F0F4F8',padding:'1px 5px',borderRadius:3,flexShrink:0}}>aktuell</span>}
           {isSelected&&<i className="fas fa-check-circle" style={{color:'var(--blue)',fontSize:12,flexShrink:0}}/>}
-          {!isDemo&&<button style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:'var(--mut)',fontSize:11,padding:'2px 6px',flexShrink:0,opacity:.4}} title="Unterordner erstellen" onClick={e=>{e.stopPropagation();setNewFolderParent(d.id);setExpandedIds(p=>({...p,[d.id]:true}));}}><i className="fas fa-plus" style={{pointerEvents:'none'}}/></button>}
+          {!isDemo&&<button style={{marginLeft:'auto',background:'none',border:'none',cursor:'pointer',color:'var(--blue)',fontSize:13,padding:'4px 8px',flexShrink:0,opacity:.6,borderRadius:4}} title="Unterordner erstellen" onClick={e=>{e.stopPropagation();setNewFolderParent(d.id);setExpandedIds(p=>({...p,[d.id]:true}));}}><i className="fas fa-folder-plus" style={{pointerEvents:'none'}}/></button>}
         </div>
         {/* Inline neuer Ordner */}
         {isExp&&newFolderParent===d.id&&<div style={{padding:'4px 12px',paddingLeft:(30+indent)+'px'}}>
