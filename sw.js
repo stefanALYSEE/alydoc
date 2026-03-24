@@ -1,16 +1,15 @@
 // alysee DMS Service Worker
-const CACHE = 'alydoc-v2';
+const CACHE = 'alydoc-v3';
 const OFFLINE_URL = '/index.html';
 
 // Assets die beim Install gecacht werden
 const PRECACHE = [
-  '/index.html',
   '/manifest.json',
   '/icon-192.png',
   '/icon-512.png'
 ];
 
-// Install: Core-Assets cachen
+// Install: Core-Assets cachen, sofort aktivieren
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE).then(cache => {
@@ -30,11 +29,11 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Fetch: Network-first für API-Calls, Cache-first für App-Shell
+// Fetch: Network-first fuer HTML, Cache-first fuer statische Assets
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Google APIs, Anthropic API, CDN-Ressourcen → immer Network
+  // Externe APIs → kein Cache-Intercept
   if (
     url.hostname.includes('googleapis.com') ||
     url.hostname.includes('google.com') ||
@@ -44,25 +43,37 @@ self.addEventListener('fetch', event => {
     url.hostname.includes('gstatic.com') ||
     url.hostname.includes('accounts.google.com')
   ) {
-    return; // Kein Cache-Intercept
+    return;
   }
 
-  // App-Shell (HTML, Manifest, Icons) → Cache-first, Fallback Network
-  event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        // Erfolgreiche Responses cachen
-        if (response && response.status === 200 && response.type === 'basic') {
+  // HTML-Dateien → IMMER Network-first (damit Updates sofort ankommen)
+  if (event.request.mode === 'navigate' || url.pathname.endsWith('.html')) {
+    event.respondWith(
+      fetch(event.request).then(response => {
+        // Erfolgreiche Response cachen fuer Offline
+        if (response && response.status === 200) {
           const clone = response.clone();
           caches.open(CACHE).then(cache => cache.put(event.request, clone));
         }
         return response;
       }).catch(() => {
-        // Offline-Fallback: App-Shell zurückgeben
-        if (event.request.mode === 'navigate') {
-          return caches.match(OFFLINE_URL);
+        // Offline-Fallback
+        return caches.match(event.request).then(cached => cached || caches.match(OFFLINE_URL));
+      })
+    );
+    return;
+  }
+
+  // Statische Assets (Icons, Manifest) → Cache-first
+  event.respondWith(
+    caches.match(event.request).then(cached => {
+      if (cached) return cached;
+      return fetch(event.request).then(response => {
+        if (response && response.status === 200 && response.type === 'basic') {
+          const clone = response.clone();
+          caches.open(CACHE).then(cache => cache.put(event.request, clone));
         }
+        return response;
       });
     })
   );

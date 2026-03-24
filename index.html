@@ -159,7 +159,6 @@
       .resizer{display:none}
       .modal{padding:20px 16px;border-radius:14px 14px 0 0;position:fixed;bottom:0;left:0;right:0;width:100%!important;max-width:100%!important;animation:slideup .25s ease}
       .ov{align-items:flex-end}
-      @keyframes slideup{from{transform:translateY(100%)}to{transform:translateY(0)}}
       .move-tree{max-height:50vh}
       .breadcrumb{font-size:12px;padding:5px 12px}
     }
@@ -175,16 +174,17 @@
       /* FAB Upload Button */
       .fab{position:fixed;bottom:76px;right:18px;width:52px;height:52px;border-radius:50%;background:var(--blue);color:#fff;border:none;font-size:22px;display:flex;align-items:center;justify-content:center;box-shadow:0 4px 16px rgba(0,114,206,.5);cursor:pointer;z-index:600;-webkit-tap-highlight-color:transparent;transition:transform .15s}
       .fab:active{transform:scale(.92)}
-      /* Mobile action sheet für Kontextmenu */
-      .action-sheet{position:fixed;bottom:0;left:0;right:0;background:#fff;border-radius:16px 16px 0 0;padding:8px 0 calc(16px + env(safe-area-inset-bottom));z-index:4000;animation:slideup .2s ease;box-shadow:0 -4px 24px rgba(0,0,0,.18)}
-      .as-handle{width:36px;height:4px;background:#D0D9E4;border-radius:2px;margin:8px auto 16px}
-      .as-title{padding:0 20px 12px;font-size:12px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--bdr);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-      .as-item{padding:16px 20px;display:flex;align-items:center;gap:14px;font-size:15px;color:var(--txt);cursor:pointer;-webkit-tap-highlight-color:transparent}
-      .as-item:active{background:#F0F4F8}
-      .as-item i{width:22px;text-align:center;font-size:18px;color:var(--mut)}
-      .as-item.danger{color:var(--red)}.as-item.danger i{color:var(--red)}
-      .as-item.grn{color:var(--grn)}.as-item.grn i{color:var(--grn)}
     }
+    /* Action Sheet (Touch-Kontextmenu fuer Mobile + iPad) */
+    .action-sheet{position:fixed;bottom:0;left:0;right:0;background:#fff;border-radius:16px 16px 0 0;padding:8px 0 calc(16px + env(safe-area-inset-bottom));z-index:4000;animation:slideup .2s ease;box-shadow:0 -4px 24px rgba(0,0,0,.18);max-width:500px;margin:0 auto}
+    @keyframes slideup{from{transform:translateY(100%)}to{transform:translateY(0)}}
+    .as-handle{width:36px;height:4px;background:#D0D9E4;border-radius:2px;margin:8px auto 16px}
+    .as-title{padding:0 20px 12px;font-size:12px;color:var(--mut);font-weight:600;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--bdr);margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .as-item{padding:16px 20px;display:flex;align-items:center;gap:14px;font-size:15px;color:var(--txt);cursor:pointer;-webkit-tap-highlight-color:transparent}
+    .as-item:active{background:#F0F4F8}
+    .as-item i{width:22px;text-align:center;font-size:18px;color:var(--mut)}
+    .as-item.danger{color:var(--red)}.as-item.danger i{color:var(--red)}
+    .as-item.grn{color:var(--grn)}.as-item.grn i{color:var(--grn)}
     .hide-mobile{display:block}
     @media(max-width:600px){.hide-mobile{display:none !important}}
     /* safe-area für notch */
@@ -808,8 +808,10 @@ function Main({onOut,isDemo}){
   // Drag & Drop state
   const [dragOverId,setDragOverId]=useState(null);
   const [isMobile,setIsMobile]=useState(window.innerWidth<=600);
+  const [isTouch]=useState(()=>'ontouchstart' in window||navigator.maxTouchPoints>0);
   const [showActionSheet,setShowActionSheet]=useState(false);
   const dragRef=useRef(null); // aktuell gezogene Datei (Ref statt State = kein Closure-Problem)
+  const longPressRef=useRef(null);
   const toast=useContext(TC);
   const [treeNewFolder,setTreeNewFolder]=useState(null); // parentId fuer Inline-Ordner-Erstellung
   const createTreeFolder=async(name,parentId)=>{
@@ -1078,15 +1080,19 @@ function Main({onOut,isDemo}){
               const {i,c,l}=mi(f.mimeType,f.name);
               const isFd=f.mimeType==='application/vnd.google-apps.folder';
               const isDragOver=dragOverId===f.id&&isFd;
+              const openCtx=(f,e)=>{setSel(f);if(isMobile||isTouch){setShowActionSheet(true);}else{setCtx({x:Math.min(e.clientX,window.innerWidth-195),y:Math.min(e.clientY,window.innerHeight-220),f});}};
               return(<div key={f.id}
                 className={`doc-row ${sel?.id===f.id?'active':''} ${isDragOver?'drop-target':''}`}
-                draggable
+                draggable={!isTouch}
                 onDragStart={e=>onDragStart(e,f)}
                 onDragEnd={onDragEnd}
                 {...(isFd?dropProps(f):{})}
                 onClick={()=>click(f)}
                 onDoubleClick={()=>dbl(f)}
-                onContextMenu={e=>{e.preventDefault();e.stopPropagation();setSel(f);setCtx({x:Math.min(e.clientX,window.innerWidth-195),y:Math.min(e.clientY,window.innerHeight-220),f});}}
+                onContextMenu={e=>{e.preventDefault();e.stopPropagation();openCtx(f,e);}}
+                onTouchStart={isTouch?e=>{longPressRef.current=setTimeout(()=>{longPressRef.current='fired';setSel(f);setShowActionSheet(true);},500);}:undefined}
+                onTouchEnd={isTouch?()=>{if(longPressRef.current&&longPressRef.current!=='fired')clearTimeout(longPressRef.current);longPressRef.current=null;}:undefined}
+                onTouchMove={isTouch?()=>{if(longPressRef.current&&longPressRef.current!=='fired')clearTimeout(longPressRef.current);longPressRef.current=null;}:undefined}
               >
                 <i className={`fas ${i}`} style={{color:c,fontSize:18,textAlign:'center'}}/>
                 <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:isFd?600:400}}>{f.name}</span>
@@ -1117,8 +1123,8 @@ function Main({onOut,isDemo}){
     {/* FAB Upload – nur mobile */}
     {isMobile&&nav==='archive'&&<button className="fab" onClick={()=>setModal('up')} title="Hochladen"><i className="fas fa-plus"/></button>}
 
-    {/* ACTION SHEET – ersetzt Kontextmenü auf Mobile */}
-    {isMobile&&showActionSheet&&sel&&(
+    {/* ACTION SHEET – Kontextmenü auf Touch-Geräten (Mobile + iPad) */}
+    {(isMobile||isTouch)&&showActionSheet&&sel&&(
       <div className="ov" style={{alignItems:'flex-end',background:'rgba(0,0,0,.4)'}} onClick={()=>setShowActionSheet(false)}>
         <div className="action-sheet" onClick={e=>e.stopPropagation()}>
           <div className="as-handle"/>

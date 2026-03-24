@@ -272,49 +272,23 @@ function checkReady(){
 }
 
 function signIn(){
-  // Basis-URL ermitteln (gleicher Ordner wie addin.html)
-  const baseUrl=window.location.href.replace(/\/[^/]*$/,'/');
-  const authUrl=baseUrl+'auth.html';
-
-  // Office Dialog API verwenden (funktioniert im Outlook Add-in iframe)
-  if(Office.context.ui&&Office.context.ui.displayDialogAsync){
-    Office.context.ui.displayDialogAsync(authUrl,{height:60,width:40,promptBeforeOpen:false},result=>{
-      if(result.status===Office.AsyncResultStatus.Failed){
-        showStatus('Dialog konnte nicht geöffnet werden: '+result.error.message,'error');
+  // Google Identity Services direkt nutzen (Popup, kein Redirect, kein Office Dialog)
+  if(typeof google==='undefined'||!google.accounts){
+    showStatus('Google APIs noch nicht geladen – bitte kurz warten','warn');
+    return;
+  }
+  const tokenClient=google.accounts.oauth2.initTokenClient({
+    client_id:CLIENT_ID,
+    scope:SCOPES,
+    callback:(resp)=>{
+      if(resp.error){
+        showStatus('Anmeldung fehlgeschlagen: '+resp.error,'error');
         return;
       }
-      const dialog=result.value;
-      dialog.addEventHandler(Office.EventType.DialogMessageReceived,arg=>{
-        dialog.close();
-        try{
-          const msg=JSON.parse(arg.message);
-          if(msg.type==='auth_success'&&msg.token){
-            onTokenReceived(msg.token);
-          } else {
-            showStatus('Anmeldung fehlgeschlagen','error');
-          }
-        }catch(e){
-          showStatus('Anmeldung fehlgeschlagen: '+e.message,'error');
-        }
-      });
-      dialog.addEventHandler(Office.EventType.DialogEventReceived,arg=>{
-        // Dialog wurde geschlossen ohne Anmeldung
-        if(arg.error===12006)console.log('Dialog vom Nutzer geschlossen');
-      });
-    });
-  } else {
-    // Fallback: Popup direkt öffnen (außerhalb von Outlook)
-    const popup=window.open(authUrl,'alyDoc_auth','width=500,height=600');
-    window.addEventListener('message',function handler(e){
-      try{
-        const msg=typeof e.data==='string'?JSON.parse(e.data):e.data;
-        if(msg.type==='auth_success'&&msg.token){
-          window.removeEventListener('message',handler);
-          onTokenReceived(msg.token);
-        }
-      }catch{}
-    });
-  }
+      onTokenReceived(resp.access_token);
+    }
+  });
+  tokenClient.requestAccessToken({prompt:'consent'});
 }
 
 function onTokenReceived(accessToken){
