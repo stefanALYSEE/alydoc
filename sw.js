@@ -1,12 +1,12 @@
 // alysee DMS Service Worker
-const CACHE = 'alydoc-v3';
-const OFFLINE_URL = '/index.html';
+const CACHE = 'alydoc-v4';
+const OFFLINE_URL = 'index.html';
 
 // Assets die beim Install gecacht werden
 const PRECACHE = [
-  '/manifest.json',
-  '/icon-192.png',
-  '/icon-512.png'
+  'manifest.json',
+  'icon-192.png',
+  'icon-512.png'
 ];
 
 // Install: Core-Assets cachen, sofort aktivieren
