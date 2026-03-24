@@ -272,10 +272,21 @@ const DR={
   async prev(id){
     const tok=gapi.client.getToken()?.access_token;
     if(!tok)throw new Error('Nicht angemeldet');
-    const r=await fetch(`https://www.googleapis.com/drive/v3/files/${id}?alt=media`,{headers:{Authorization:'Bearer '+tok}});
-    if(!r.ok)throw new Error('Download fehlgeschlagen: '+r.status);
-    const blob=await r.blob();
-    return URL.createObjectURL(blob);
+    // XMLHttpRequest statt fetch (zuverlaessiger auf iPad Safari mit Auth)
+    return new Promise((resolve,reject)=>{
+      const x=new XMLHttpRequest();
+      x.open('GET','https://www.googleapis.com/drive/v3/files/'+id+'?alt=media');
+      x.setRequestHeader('Authorization','Bearer '+tok);
+      x.responseType='blob';
+      x.onload=()=>{
+        if(x.status!==200){reject(new Error('Download fehlgeschlagen: '+x.status));return;}
+        const blob=x.response;
+        if(blob.type&&blob.type.includes('text/html')){reject(new Error('Authentifizierung fehlgeschlagen'));return;}
+        resolve(URL.createObjectURL(blob));
+      };
+      x.onerror=()=>reject(new Error('Netzwerkfehler'));
+      x.send();
+    });
   },
   async me(){try{const r=await gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'});return r.result;}catch{return null;}},
   WF:'.alysee_wf.json',
@@ -722,8 +733,9 @@ function PdfViewer({url,blobUrl}){
 function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
   const [tab,setTab]=useState('prev');
   const isPdf=file&&(file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf')));
+  const isImg=file&&file.mimeType&&file.mimeType.startsWith('image/');
   const isGoogleDoc=file&&file.mimeType&&file.mimeType.startsWith('application/vnd.google-apps.')&&file.mimeType!=='application/vnd.google-apps.folder';
-  // PDFs: Blob + PDF.js Viewer | Google Docs: nur Link | Rest: Blob in iframe
+  // PDFs: Blob + PDF.js | Bilder: Blob + img | Google Docs: Link | Rest: Blob in iframe
   const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isGoogleDoc)?file:null,isDemo);
   useEffect(()=>setTab('prev'),[file?.id]);
   const ps={width:width||310,minWidth:150};
@@ -757,6 +769,7 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
             :isGoogleDoc?<div className="ctr"><i className={`fas ${i}`} style={{fontSize:52,color:c}}/><p style={{fontSize:13,fontWeight:500}}>{file.name}</p><p style={{fontSize:11,color:'var(--mut)',marginBottom:8}}>{mi(file.mimeType,file.name).l}</p>{file.webViewLink&&file.webViewLink!=='#'&&<a href={file.webViewLink} target="_blank" rel="noopener" className="btn bp" style={{textDecoration:'none',fontSize:12}}><i className="fas fa-external-link-alt"/>In Google Drive oeffnen</a>}</div>
             :loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>
             :err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:32,color:'var(--org)'}}/><p style={{fontSize:12,color:'var(--red)',textAlign:'center',padding:'0 12px'}}>{err}</p></div>
+            :pUrl&&isImg?<div style={{flex:1,overflow:'auto',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:8,minHeight:0}}><img src={pUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',borderRadius:4}} alt={file.name}/></div>
             :pUrl?<iframe src={pUrl} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Vorschau"/>
               :<div className="ctr"><i className={`fas ${i}`} style={{fontSize:52,color:c}}/><p style={{fontSize:12,textAlign:'center',padding:'0 12px',wordBreak:'break-word'}}>{file.name}</p><p style={{fontSize:11,color:'var(--mut)'}}>{mi(file.mimeType,file.name).l} · {fs(file.size)}</p></div>
           :<div style={{flex:1,overflow:'auto',padding:14,minHeight:0}}>
