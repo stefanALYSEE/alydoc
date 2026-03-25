@@ -29,29 +29,59 @@
 <script>
 const CLIENT_ID='633536117262-28memlfds8btpdk8facskab8aq9msjdq.apps.googleusercontent.com';
 const SCOPES='https://www.googleapis.com/auth/drive';
-// Redirect-URI muss EXAKT auth.html sein (ohne Query-Parameter)
 const REDIRECT_URI=window.location.origin+'/auth.html';
 
 let officeReady=false;
+// _host_Info wird von Office an die Dialog-URL angehängt – wir müssen es
+// durch den Google-Redirect durchschleusen, sonst kann messageParent() nicht mehr
+// mit dem Host kommunizieren.
+let savedHostInfo='';
 
 // ── Office.js Init ──
-Office.onReady(()=>{officeReady=true;checkRedirectReturn();});
+Office.onReady(()=>{officeReady=true;handleReturn();});
 
-// ── Prüfe ob wir von einem Google-Redirect zurückkommen ──
-function checkRedirectReturn(){
+// ── Nach Google-Redirect: Token auslesen und _host_Info wiederherstellen ──
+function handleReturn(){
   const hash=window.location.hash.substring(1);
   if(!hash||!hash.includes('access_token'))return;
 
   const params=new URLSearchParams(hash);
   const token=params.get('access_token');
   const expiresIn=params.get('expires_in')||'3600';
+  const state=params.get('state')||'';
 
   if(!token)return;
 
-  // URL aufräumen
-  history.replaceState(null,'',window.location.pathname);
+  // _host_Info aus state wiederherstellen (war Base64-kodiert)
+  if(state){
+    try{savedHostInfo=atob(state);}catch{}
+  }
 
-  sendToken(token,expiresIn);
+  // Wenn _host_Info vorhanden, in die URL schreiben damit Office.js sie findet
+  if(savedHostInfo){
+    const newUrl=window.location.pathname+'?_host_Info='+encodeURIComponent(savedHostInfo);
+    history.replaceState(null,'',newUrl);
+    // Office.js muss die _host_Info aus der URL lesen können –
+    // da wir die URL erst jetzt gesetzt haben, messageParent nochmal
+    // mit kleiner Verzögerung versuchen
+    document.getElementById('card').innerHTML='<div class="success">✓</div><h2>Verbunden!</h2><p style="color:#7F8C8D;font-size:13px">Anmeldung erfolgreich.<br>Dieses Fenster schliesst sich automatisch.</p>';
+    const msg=JSON.stringify({type:'auth_success',token:token,expires_in:parseInt(expiresIn)});
+    // Mehrfach versuchen, da Office.js die _host_Info erst verarbeiten muss
+    let attempts=0;
+    const trySend=()=>{
+      attempts++;
+      try{
+        Office.context.ui.messageParent(msg);
+        return;
+      }catch(e){
+        console.warn('messageParent Versuch '+attempts+':',e);
+        if(attempts<10)setTimeout(trySend,500);
+      }
+    };
+    trySend();
+  } else {
+    sendToken(token,expiresIn);
+  }
 }
 
 function sendToken(token,expiresIn){
@@ -78,13 +108,18 @@ function startAuth(){
   const status=document.getElementById('status');
   status.innerHTML='<span class="spin">⏳</span> Weiterleitung zu Google…';
 
+  // _host_Info aus der aktuellen URL lesen und im state-Parameter mitnehmen
+  const hostInfo=new URLSearchParams(window.location.search).get('_host_Info')||'';
+  const state=hostInfo?btoa(hostInfo):'';
+
   const authUrl='https://accounts.google.com/o/oauth2/v2/auth'
     +'?client_id='+encodeURIComponent(CLIENT_ID)
     +'&redirect_uri='+encodeURIComponent(REDIRECT_URI)
     +'&response_type=token'
     +'&scope='+encodeURIComponent(SCOPES)
     +'&include_granted_scopes=true'
-    +'&prompt=consent';
+    +'&prompt=consent'
+    +(state?'&state='+encodeURIComponent(state):'');
 
   window.location.href=authUrl;
 }
