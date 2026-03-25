@@ -730,13 +730,70 @@ function PdfViewer({url,blobUrl}){
   );
 }
 
+function isOfficeFile(f){
+  if(!f||!f.name)return false;
+  const n=f.name.toLowerCase();
+  return n.endsWith('.docx')||n.endsWith('.doc')||n.endsWith('.xlsx')||n.endsWith('.xls')||n.endsWith('.pptx')||n.endsWith('.ppt');
+}
+function isEmlFile(f){
+  if(!f)return false;
+  return(f.mimeType&&f.mimeType.includes('rfc822'))||(f.name&&f.name.toLowerCase().endsWith('.eml'));
+}
+function useEmlPreview(file,isDemo){
+  const [html,setHtml]=useState(null);
+  const [loading,setLoading]=useState(false);
+  useEffect(()=>{
+    setHtml(null);
+    if(!file||isDemo||!isEmlFile(file))return;
+    setLoading(true);
+    DR.prev(file.id).then(async blobUrl=>{
+      const r=await fetch(blobUrl);
+      const text=await r.text();
+      URL.revokeObjectURL(blobUrl);
+      // HTML-Body extrahieren
+      let body='';
+      const htmlMatch=text.match(/Content-Type:\s*text\/html[^\r\n]*[\r\n]+(?:Content-Transfer-Encoding:\s*(\S+)[\r\n]+)?[\r\n]+([\s\S]*?)(?=\r?\n--|\r?\n\r?\n--)/i);
+      if(htmlMatch){
+        const enc=htmlMatch[1]||'';
+        let raw=htmlMatch[2];
+        if(enc.toLowerCase()==='base64')try{body=atob(raw.replace(/\s/g,''));}catch{body=raw;}
+        else if(enc.toLowerCase()==='quoted-printable')body=raw.replace(/=\r?\n/g,'').replace(/=([0-9A-Fa-f]{2})/g,(_,h)=>String.fromCharCode(parseInt(h,16)));
+        else body=raw;
+      }
+      if(!body){
+        const textMatch=text.match(/Content-Type:\s*text\/plain[^\r\n]*[\r\n]+(?:Content-Transfer-Encoding:\s*(\S+)[\r\n]+)?[\r\n]+([\s\S]*?)(?=\r?\n--|\r?\n\r?\n--)/i);
+        if(textMatch){
+          const enc=textMatch[1]||'';
+          let raw=textMatch[2];
+          if(enc.toLowerCase()==='base64')try{raw=atob(raw.replace(/\s/g,''));}catch{}
+          body='<pre style="font-family:sans-serif;white-space:pre-wrap;padding:12px">'+raw.replace(/</g,'&lt;')+'</pre>';
+        } else {
+          body='<pre style="font-family:sans-serif;white-space:pre-wrap;padding:12px">'+text.substring(0,5000).replace(/</g,'&lt;')+'</pre>';
+        }
+      }
+      // Header info
+      const subj=(text.match(/^Subject:\s*(.+)/mi)||[])[1]||'';
+      const from=(text.match(/^From:\s*(.+)/mi)||[])[1]||'';
+      const date=(text.match(/^Date:\s*(.+)/mi)||[])[1]||'';
+      const header='<div style="font-family:Segoe UI,sans-serif;padding:12px 16px;background:#f5f7fa;border-bottom:1px solid #ddd;font-size:13px"><b>'+subj.replace(/</g,'&lt;')+'</b><br><span style="color:#666">Von: '+from.replace(/</g,'&lt;')+'</span><br><span style="color:#666">'+date.replace(/</g,'&lt;')+'</span></div>';
+      const fullHtml='<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;font-family:sans-serif}</style></head><body>'+header+body+'</body></html>';
+      const blob=new Blob([fullHtml],{type:'text/html'});
+      setHtml(URL.createObjectURL(blob));
+    }).catch(()=>{}).finally(()=>setLoading(false));
+    return()=>{if(html)URL.revokeObjectURL(html);};
+  },[file?.id,isDemo]);
+  return{html,loading};
+}
 function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
   const [tab,setTab]=useState('prev');
   const isPdf=file&&(file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf')));
   const isImg=file&&file.mimeType&&file.mimeType.startsWith('image/');
   const isGoogleDoc=file&&file.mimeType&&file.mimeType.startsWith('application/vnd.google-apps.')&&file.mimeType!=='application/vnd.google-apps.folder';
-  // PDFs: Blob + PDF.js | Bilder: Blob + img | Google Docs: Link | Rest: Blob in iframe
-  const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isGoogleDoc)?file:null,isDemo);
+  const isOffice=isOfficeFile(file);
+  const isEml=isEmlFile(file);
+  // PDFs: Blob + PDF.js | Bilder: Blob + img | Google Docs: Link | EML: Custom parser | Office: Drive preview | Rest: Blob in iframe
+  const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isGoogleDoc&&!isOffice&&!isEml)?file:null,isDemo);
+  const {html:emlHtml,loading:emlLoading}=useEmlPreview(isEml?file:null,isDemo);
   useEffect(()=>setTab('prev'),[file?.id]);
   const ps={width:width||310,minWidth:150};
   const rsBtn={background:'none',border:'1px solid var(--bdr)',cursor:'pointer',color:'var(--mut)',padding:'2px 8px',borderRadius:4,fontSize:13,lineHeight:1,fontWeight:700};
@@ -767,6 +824,10 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
               :pUrl?<PdfViewer blobUrl={pUrl}/>
               :<div className="ctr"><i className="fas fa-file-pdf" style={{fontSize:52,color:'#CC0000'}}/><p style={{fontSize:12}}>{file.name}</p></div>)
             :isGoogleDoc?<div className="ctr"><i className={`fas ${i}`} style={{fontSize:52,color:c}}/><p style={{fontSize:13,fontWeight:500}}>{file.name}</p><p style={{fontSize:11,color:'var(--mut)',marginBottom:8}}>{mi(file.mimeType,file.name).l}</p>{file.webViewLink&&file.webViewLink!=='#'&&<a href={file.webViewLink} target="_blank" rel="noopener" className="btn bp" style={{textDecoration:'none',fontSize:12}}><i className="fas fa-external-link-alt"/>In Google Drive oeffnen</a>}</div>
+            :isEml?(emlLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>E-Mail wird geladen…</p></div>
+              :emlHtml?<iframe src={emlHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="E-Mail Vorschau" sandbox="allow-same-origin"/>
+              :<div className="ctr"><i className="fas fa-envelope" style={{fontSize:52,color:'#3498DB'}}/><p style={{fontSize:12}}>{file.name}</p></div>)
+            :isOffice?<iframe src={'https://drive.google.com/file/d/'+file.id+'/preview'} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Vorschau" allow="autoplay"/>
             :loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>
             :err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:32,color:'var(--org)'}}/><p style={{fontSize:12,color:'var(--red)',textAlign:'center',padding:'0 12px'}}>{err}</p></div>
             :pUrl&&isImg?<div style={{flex:1,overflow:'auto',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:8,minHeight:0}}><img src={pUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',borderRadius:4}} alt={file.name}/></div>

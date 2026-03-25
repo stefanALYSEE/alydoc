@@ -261,11 +261,33 @@ function gisLoaded(){gisReady=true;checkReady();}
 
 function checkReady(){
   if(!gapiReady||!gisReady)return;
-  // Prüfe ob Token vorhanden
-  const tok=gapi.client.getToken();
+  // Prüfe ob Token vorhanden (gapi oder localStorage)
+  let tok=gapi.client.getToken();
+  if(!tok||!tok.access_token){
+    // Token aus localStorage wiederherstellen (max 50 Min alt)
+    try{
+      const saved=localStorage.getItem('alydoc_token');
+      const savedTime=parseInt(localStorage.getItem('alydoc_token_time')||'0');
+      if(saved&&(Date.now()-savedTime)<50*60*1000){
+        gapi.client.setToken({access_token:saved});
+        tok={access_token:saved};
+        const user=localStorage.getItem('alydoc_user');
+        if(user)document.getElementById('user-name').textContent=user;
+      }
+    }catch{}
+  }
   if(tok&&tok.access_token){
-    showScreen('scr-main');
-    loadFolders();
+    // Token validieren
+    gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'}).then(r=>{
+      if(r.result&&r.result.name)document.getElementById('user-name').textContent=r.result.name;
+      showScreen('scr-main');
+      loadFolders();
+    }).catch(()=>{
+      // Token abgelaufen
+      try{localStorage.removeItem('alydoc_token');}catch{}
+      gapi.client.setToken(null);
+      showScreen('scr-login');
+    });
   } else {
     showScreen('scr-login');
   }
@@ -320,13 +342,17 @@ function signIn(){
 }
 
 function onTokenReceived(accessToken){
-  // Token in gapi setzen
+  // Token in gapi + localStorage setzen
   gapi.client.setToken({access_token:accessToken});
+  try{localStorage.setItem('alydoc_token',accessToken);localStorage.setItem('alydoc_token_time',Date.now().toString());}catch{}
   showScreen('scr-main');
   loadFolders();
   // Nutzernamen laden
   gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'}).then(r=>{
-    if(r.result&&r.result.name)document.getElementById('user-name').textContent=r.result.name;
+    if(r.result&&r.result.name){
+      document.getElementById('user-name').textContent=r.result.name;
+      try{localStorage.setItem('alydoc_user',r.result.name);}catch{}
+    }
   }).catch(()=>{});
 }
 
@@ -486,16 +512,17 @@ async function ablegen(){
     setProgress(92,'Abschluss…');
 
     // 3. Mail löschen
+    let wasDeleted=false;
     if(deleteAfter){
-      const deleted=await deleteMailItem();
-      if(!deleted)showStatus('Mail konnte nicht automatisch gelöscht werden — bitte manuell löschen.','warn');
+      wasDeleted=await deleteMailItem();
+      if(!wasDeleted)showStatus('Mail konnte nicht automatisch gelöscht werden — bitte manuell löschen.','warn');
     }
 
     setProgress(100,'Fertig!');
 
     // Erfolgsscreen
     const attCount=mailItem.attachments?mailItem.attachments.length:0;
-    const msg=`Abgelegt in: ${selectedFolderName}${attCount?' · '+attCount+' Anhang/Anhänge':''}${deleteAfter?' · Mail gelöscht':''}`;
+    const msg=`Abgelegt in: ${selectedFolderName}${attCount?' · '+attCount+' Anhang/Anhänge':''}${wasDeleted?' · Mail gelöscht':''}`;
     document.getElementById('success-msg').textContent=msg;
     setTimeout(()=>showScreen('scr-success'),500);
 
@@ -651,21 +678,30 @@ async function uploadToDriveBytes(name,bytes,mimeType,folderId){
 }
 
 async function deleteMailItem(){
+  // Outlook REST API nutzen um Mail in Papierkorb zu verschieben
   return new Promise((resolve)=>{
     try{
-      if(typeof mailItem.moveToAsync==='function'){
-        mailItem.moveToAsync('DeletedItems',r=>{
-          if(r.status===Office.AsyncResultStatus.Failed){
-            console.warn('moveToAsync fehlgeschlagen:',r.error);
-            resolve(false);
-          } else {
-            resolve(true);
-          }
-        });
-      } else {
-        console.warn('moveToAsync nicht verfügbar (Requirement Set 1.7+ erforderlich)');
-        resolve(false);
-      }
+      const itemId=mailItem.itemId;
+      if(!itemId){console.warn('Keine itemId');resolve(false);return;}
+      const restUrl=Office.context.mailbox.restUrl;
+      Office.context.mailbox.getCallbackTokenAsync({isRest:true},tokenResult=>{
+        if(tokenResult.status!==Office.AsyncResultStatus.Succeeded){
+          console.warn('REST Token fehlgeschlagen:',tokenResult.error);
+          resolve(false);
+          return;
+        }
+        const restToken=tokenResult.value;
+        const restId=Office.context.mailbox.convertToRestId(itemId,Office.MailboxEnums.RestVersion.v2_0);
+        const url=restUrl+'/v2.0/me/messages/'+restId+'/move';
+        fetch(url,{
+          method:'POST',
+          headers:{'Authorization':'Bearer '+restToken,'Content-Type':'application/json'},
+          body:JSON.stringify({DestinationId:'DeletedItems'})
+        }).then(r=>{
+          if(r.ok){resolve(true);}
+          else{console.warn('Mail move failed:',r.status);resolve(false);}
+        }).catch(e=>{console.warn('Mail move error:',e);resolve(false);});
+      });
     }catch(e){
       console.warn('deleteMailItem Fehler:',e);
       resolve(false);
