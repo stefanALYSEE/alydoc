@@ -513,17 +513,22 @@ async function ablegen(){
 
     // 3. Mail löschen
     let wasDeleted=false;
+    let deleteError='';
     if(deleteAfter){
+      setProgress(92,'Mail wird gelöscht…');
       wasDeleted=await deleteMailItem();
-      if(!wasDeleted)showStatus('Mail konnte nicht automatisch gelöscht werden — bitte manuell löschen.','warn');
+      if(!wasDeleted)deleteError=window._lastDeleteError||'Unbekannter Fehler';
     }
 
     setProgress(100,'Fertig!');
 
     // Erfolgsscreen
     const attCount=mailItem.attachments?mailItem.attachments.length:0;
-    const msg=`Abgelegt in: ${selectedFolderName}${attCount?' · '+attCount+' Anhang/Anhänge':''}${wasDeleted?' · Mail gelöscht':''}`;
+    let msg=`Abgelegt in: ${selectedFolderName}${attCount?' · '+attCount+' Anhang/Anhänge':''}`;
+    if(wasDeleted)msg+=' · Mail gelöscht';
+    if(deleteAfter&&!wasDeleted)msg+='\n⚠ Mail nicht gelöscht: '+deleteError;
     document.getElementById('success-msg').textContent=msg;
+    document.getElementById('success-msg').style.whiteSpace='pre-line';
     setTimeout(()=>showScreen('scr-success'),500);
 
   }catch(e){
@@ -678,6 +683,7 @@ async function uploadToDriveBytes(name,bytes,mimeType,folderId){
 }
 
 async function deleteMailItem(){
+  window._lastDeleteError='';
   // Methode 1: EWS MoveItem (breiteste Kompatibilitaet)
   const ewsResult=await tryDeleteViaEws();
   if(ewsResult)return true;
@@ -693,11 +699,11 @@ function tryDeleteViaEws(){
   return new Promise((resolve)=>{
     try{
       if(!Office.context.mailbox.makeEwsRequestAsync){
-        showStatus('EWS nicht verfuegbar','warn');
+        window._lastDeleteError+='EWS: nicht verfuegbar. ';
         resolve(false);return;
       }
       const itemId=mailItem.itemId;
-      if(!itemId){showStatus('Keine Mail-ID','warn');resolve(false);return;}
+      if(!itemId){window._lastDeleteError+='EWS: keine itemId. ';resolve(false);return;}
 
       const soap='<?xml version="1.0" encoding="utf-8"?>'
         +'<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">'
@@ -709,19 +715,20 @@ function tryDeleteViaEws(){
 
       Office.context.mailbox.makeEwsRequestAsync(soap,result=>{
         if(result.status!==Office.AsyncResultStatus.Succeeded){
-          showStatus('EWS Fehler: '+(result.error?result.error.message:'unbekannt'),'warn');
+          window._lastDeleteError+='EWS: '+(result.error?result.error.message+' (code:'+result.error.code+')':'Status failed')+'. ';
           resolve(false);return;
         }
-        // Prüfe ob ResponseClass="Success"
         if(result.value&&result.value.indexOf('ResponseClass="Success"')>=0){
           resolve(true);
         } else {
-          showStatus('EWS: Mail konnte nicht verschoben werden','warn');
+          // Fehlerdetails aus XML extrahieren
+          const msgMatch=(result.value||'').match(/MessageText>([^<]+)</);
+          window._lastDeleteError+='EWS Response: '+(msgMatch?msgMatch[1]:(result.value||'').substring(0,150))+'. ';
           resolve(false);
         }
       });
     }catch(e){
-      showStatus('EWS Exception: '+e.message,'warn');
+      window._lastDeleteError+='EWS Exception: '+e.message+'. ';
       resolve(false);
     }
   });
@@ -732,11 +739,11 @@ function tryDeleteViaRest(){
     try{
       const itemId=mailItem.itemId;
       if(!itemId){resolve(false);return;}
-      if(!Office.context.mailbox.restUrl){showStatus('REST URL nicht verfuegbar','warn');resolve(false);return;}
+      if(!Office.context.mailbox.restUrl){window._lastDeleteError+='REST: keine restUrl. ';resolve(false);return;}
 
       Office.context.mailbox.getCallbackTokenAsync({isRest:true},tokenResult=>{
         if(tokenResult.status!==Office.AsyncResultStatus.Succeeded){
-          showStatus('REST Token Fehler: '+(tokenResult.error?tokenResult.error.message:'unbekannt'),'warn');
+          window._lastDeleteError+='REST Token: '+(tokenResult.error?tokenResult.error.message+' (code:'+tokenResult.error.code+')':'failed')+'. ';
           resolve(false);return;
         }
         const restToken=tokenResult.value;
@@ -748,11 +755,11 @@ function tryDeleteViaRest(){
           body:JSON.stringify({DestinationId:'DeletedItems'})
         }).then(r=>{
           if(r.ok){resolve(true);}
-          else{r.text().then(t=>{showStatus('REST Move Fehler ('+r.status+'): '+t.substring(0,100),'warn');});resolve(false);}
-        }).catch(e=>{showStatus('REST Netzwerk: '+e.message,'warn');resolve(false);});
+          else{r.text().then(t=>{window._lastDeleteError+='REST ('+r.status+'): '+t.substring(0,120)+'. ';resolve(false);});}
+        }).catch(e=>{window._lastDeleteError+='REST fetch: '+e.message+'. ';resolve(false);});
       });
     }catch(e){
-      showStatus('REST Exception: '+e.message,'warn');
+      window._lastDeleteError+='REST Exception: '+e.message+'. ';
       resolve(false);
     }
   });
