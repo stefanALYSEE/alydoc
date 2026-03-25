@@ -44,16 +44,16 @@
     .nav-item:hover{background:var(--navh);color:#fff}
     .nav-item.active{background:var(--blue);color:#fff}
     .nav-badge{position:absolute;top:4px;right:4px;background:var(--red);color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700}
-    .folder-tree{width:220px;background:#fff;border-right:1px solid var(--bdr);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
-    .tree-head{background:var(--nav);color:#9AAEC5;padding:10px 12px;font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;flex-shrink:0}
+    .folder-tree{width:260px;background:#fff;border-right:1px solid var(--bdr);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+    .tree-head{background:#fff;color:var(--pri);padding:10px 12px;font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;flex-shrink:0;border-bottom:1px solid var(--bdr)}
     .tree-body{flex:1;overflow-y:auto}
-    .tree-item{padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:7px;font-size:13px;color:var(--txt);border-left:2px solid transparent;transition:background .1s;user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tree-item{padding:5px 10px;cursor:pointer;display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--txt);border-left:2px solid transparent;transition:background .1s;user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .tree-item:hover{background:#EEF4FF}
     .tree-item:hover .tree-add{opacity:1}
     .tree-add{opacity:.35;margin-left:auto;background:none;border:none;cursor:pointer;color:var(--blue);font-size:13px;padding:4px 8px;flex-shrink:0;transition:opacity .15s}
     .tree-item:hover .tree-add{opacity:1}
     .tree-inline-input{border:1px solid var(--blue);border-radius:3px;font-size:12px;padding:2px 6px;width:100%;outline:none;margin:2px 0}
-    .tree-item.active{background:#E0EDFF;color:var(--blue);border-left-color:var(--blue);font-weight:500}
+    .tree-item.active{background:#E8F0FC;color:var(--pri);border-left-color:var(--blue);font-weight:600}
     .tree-item.drop-target{background:#E8F5E9 !important;border-left-color:var(--grn) !important;outline:2px dashed var(--grn)}
     .tree-item i{width:16px;text-align:center;font-size:13px;flex-shrink:0}
     .doc-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
@@ -131,7 +131,7 @@
     .drag-bar{font-size:11px;color:#856404;padding:4px 14px;background:#FFF3CD;border-bottom:1px solid #FFE082;flex-shrink:0;display:flex;align-items:center;gap:6px}
     /* ── TABLET (iPad) ── */
     @media(max-width:1024px){
-      .folder-tree{width:170px}
+      .folder-tree{width:220px}
       .prev-panel{max-width:280px}
     }
     @media(max-width:900px){
@@ -141,7 +141,7 @@
     @media(max-width:768px){
       .prev-panel{display:none}
       .resizer{display:none}
-      .folder-tree{width:180px}
+      .folder-tree{width:230px}
     }
     /* ── MOBILE (iPhone) ── */
     @media(max-width:600px){
@@ -998,7 +998,7 @@ function Main({onOut,isDemo}){
       DR.loadWF().then(d=>setTasks(d.tasks||[]));
       DR.me().then(u=>{if(u)setUser(u);});
       // Strukturbaum: nur Root-Ebene sofort laden (Rest lazy)
-      DR.listSubfolders('root').then(f=>{setTreeCache(p=>({...p,root:f}));}).catch(e=>console.error('tree root FEHLER:',e));
+      DR.listSubfolders('root').then(f=>{setTreeCache(p=>({...p,root:f}));f.forEach(k=>{if(!treeCache[k.id])loadTreeChildren(k.id,false);});}).catch(e=>console.error('tree root FEHLER:',e));
     }
     const h=e=>{if(!e.target.closest('.ctx'))setCtx(null);};
     document.addEventListener('click',h);
@@ -1011,7 +1011,7 @@ function Main({onOut,isDemo}){
   },[]);
 
   const load=async fid=>{setLoading(true);setSel(null);setMultiSel([]);try{setFiles(await DR.ls(fid));}catch(e){console.error(e);toast('Ladefehler','e');}setLoading(false);};
-  const go=f=>{const idx=path.findIndex(x=>x.id===f.id);setPath(idx>=0?path.slice(0,idx+1):[...path,{id:f.id,name:f.name}]);setCur(f);setRes(null);setQ('');if(!isDemo){load(f.id);if(!treeCache[f.id])loadTreeChildren(f.id);}else setFiles(DF);};
+  const go=f=>{const idx=path.findIndex(x=>x.id===f.id);setPath(idx>=0?path.slice(0,idx+1):[...path,{id:f.id,name:f.name}]);setCur(f);setRes(null);setQ('');setExp(p=>({...p,[f.id]:true}));if(!isDemo){load(f.id);if(!treeCache[f.id])loadTreeChildren(f.id,true);}else setFiles(DF);};
   const click=(f,e)=>{
   if(f.mimeType==='application/vnd.google-apps.folder'){if(!e?.ctrlKey&&!e?.metaKey)go(f);return;}
   if(e?.ctrlKey||e?.metaKey){
@@ -1044,12 +1044,16 @@ function Main({onOut,isDemo}){
   const onMoveDone=()=>{rf();setMoveFile(null);setSel(null);setMultiSel([]);};
 
   // Lazy-Load Unterordner fuer Strukturbaum
-  const loadTreeChildren=async(parentId)=>{
+  const loadTreeChildren=async(parentId,preloadDeep=false)=>{
     if(treeCache[parentId]||treeLoading[parentId])return;
     setTreeLoading(p=>({...p,[parentId]:true}));
     try{
       const kids=await DR.listSubfolders(parentId);
       setTreeCache(p=>({...p,[parentId]:kids}));
+      // Preload one level deeper for faster navigation (ELO-style)
+      if(preloadDeep&&kids.length>0&&kids.length<=30){
+        kids.forEach(k=>{if(!treeCache[k.id])loadTreeChildren(k.id,false);});
+      }
     }catch(e){console.warn('tree load err:',e);}
     setTreeLoading(p=>{const n={...p};delete n[parentId];return n;});
   };
@@ -1239,6 +1243,7 @@ function Main({onOut,isDemo}){
                     :<span style={{width:10,display:'inline-block',flexShrink:0}}/>}
                     <i className={`fas ${node.icon||'fa-folder'}`} style={{color:node.color||'var(--org)',flexShrink:0}}/>
                     <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis'}}>{node.name}</span>
+                    {isLoaded&&kids.length>0&&<span style={{fontSize:9,color:'var(--mut)',background:'#f0f4f8',borderRadius:8,padding:'0 5px',flexShrink:0}}>{kids.length}</span>}
                     {!isDemo&&<button className="tree-add" title="Unterordner erstellen" onClick={e=>{e.stopPropagation();setTreeNewFolder(node.id);setExp(p=>({...p,[node.id]:true}));if(!isLoaded)loadTreeChildren(node.id);}}><i className="fas fa-plus"/></button>}
                   </div>
                   {exp[node.id]&&<>
