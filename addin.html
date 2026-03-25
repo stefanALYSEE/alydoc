@@ -159,6 +159,14 @@
     </div>
   </div>
 
+  <!-- Neuer Ordner -->
+  <div style="display:flex;gap:6px;margin-bottom:8px;margin-top:4px" id="new-folder-wrap">
+    <input type="text" id="new-folder-name" placeholder="Neuer Ordner…" style="flex:1;padding:6px 10px;border:1px solid var(--bdr);border-radius:6px;font-size:12px;outline:none">
+    <button class="btn btn-outline" style="width:auto;padding:6px 12px;font-size:12px" onclick="createNewFolder()">
+      <i class="fas fa-folder-plus"></i> Anlegen
+    </button>
+  </div>
+
   <!-- Ausgewählter Ordner -->
   <div class="sel-folder" id="sel-folder" style="display:none">
     <i class="fas fa-folder-open"></i>
@@ -223,6 +231,13 @@ Office.onReady(info=>{
   if(info.host===Office.HostType.Outlook){
     mailItem=Office.context.mailbox.item;
     loadMailInfo();
+    // Bei Mailwechsel automatisch aktualisieren
+    try{
+      Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged,()=>{
+        mailItem=Office.context.mailbox.item;
+        refreshMailInfo();
+      });
+    }catch(e){console.warn('ItemChanged handler not supported:',e);}
   }
   initGapi();
 });
@@ -245,6 +260,30 @@ function loadMailInfo(){
       list.innerHTML+=`<div class="att-item"><i class="fas ${icon}"></i><span>${a.name}</span><span style="margin-left:auto;font-size:10px;color:#aaa">${formatSize(a.size)}</span></div>`;
     });
     document.getElementById('att-list').style.display='block';
+  }
+}
+
+function refreshMailInfo(){
+  // Aktualisiere Mail-Info wenn Nutzer eine andere Mail ausgewählt hat
+  mailItem=Office.context.mailbox.item;
+  if(!mailItem)return;
+  document.getElementById('mail-subject').textContent=mailItem.subject||'(kein Betreff)';
+  const from=mailItem.from;
+  document.getElementById('mail-from').textContent=from?(from.displayName||from.emailAddress):'–';
+  const d=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
+  document.getElementById('mail-date').textContent=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  // Anhänge aktualisieren
+  const list=document.getElementById('att-items');
+  list.innerHTML='';
+  const atts=mailItem.attachments||[];
+  if(atts.length>0){
+    atts.forEach(a=>{
+      const icon=a.attachmentType==='item'?'fa-envelope':'fa-paperclip';
+      list.innerHTML+=`<div class="att-item"><i class="fas ${icon}"></i><span>${a.name}</span><span style="margin-left:auto;font-size:10px;color:#aaa">${formatSize(a.size)}</span></div>`;
+    });
+    document.getElementById('att-list').style.display='block';
+  } else {
+    document.getElementById('att-list').style.display='none';
   }
 }
 
@@ -282,6 +321,12 @@ function checkReady(){
       if(r.result&&r.result.name)document.getElementById('user-name').textContent=r.result.name;
       showScreen('scr-main');
       loadFolders();
+      // Letzten Ordner wiederherstellen
+      try{
+        const lastId=localStorage.getItem('alydoc_lastFolder');
+        const lastName=localStorage.getItem('alydoc_lastFolderName');
+        if(lastId&&lastName)selectFolder(lastId,lastName);
+      }catch{}
     }).catch(()=>{
       // Token abgelaufen
       try{localStorage.removeItem('alydoc_token');}catch{}
@@ -456,6 +501,7 @@ function toggleExpand(id){
 function selectFolder(id,name){
   selectedFolderId=id;
   selectedFolderName=name;
+  try{localStorage.setItem('alydoc_lastFolder',id);localStorage.setItem('alydoc_lastFolderName',name);}catch{}
   const sf=document.getElementById('sel-folder');
   sf.style.display='flex';
   document.getElementById('sel-folder-name').textContent=name;
@@ -471,6 +517,31 @@ function clearSearch(){
   document.getElementById('folder-search').value='';
   document.getElementById('clear-btn').style.display='none';
   renderTree('');
+}
+
+async function createNewFolder(){
+  const input=document.getElementById('new-folder-name');
+  const name=input.value.trim();
+  if(!name){input.focus();return;}
+  // Create in currently selected folder, or root
+  const parentId=selectedFolderId||'root';
+  try{
+    const meta={name,mimeType:'application/vnd.google-apps.folder',parents:[parentId==='root'?'root':parentId]};
+    const r=await gapi.client.drive.files.create({resource:meta,fields:'id,name'});
+    const newFolder=r.result;
+    // Add to local folders list
+    const parentFolder=folders.find(f=>f.id===parentId);
+    const displayName=parentFolder?(parentFolder.displayName+' / '+name):name;
+    folders.push({id:newFolder.id,name:name,displayName:displayName,parentId:parentId});
+    // Expand parent, select new folder
+    expandedIds[parentId]=true;
+    selectFolder(newFolder.id,displayName);
+    input.value='';
+    renderTree(document.getElementById('folder-search').value);
+    showStatus('Ordner "'+name+'" erstellt','success');
+  }catch(e){
+    showStatus('Ordner konnte nicht erstellt werden: '+e.message,'error');
+  }
 }
 
 // ── ABLEGEN ───────────────────────────────────────────────────────────────────
@@ -522,19 +593,24 @@ async function ablegen(){
 
     setProgress(100,'Fertig!');
 
-    // Erfolgsscreen
+    // Erfolg anzeigen – KEIN Screen-Wechsel, Add-in bleibt offen
     const attCount=mailItem.attachments?mailItem.attachments.length:0;
-    let msg=`Abgelegt in: ${selectedFolderName}${attCount?' · '+attCount+' Anhang/Anhänge':''}`;
+    let msg='Abgelegt in: '+selectedFolderName;
+    if(attCount)msg+=' · '+attCount+' Anhang/Anhänge';
     if(wasDeleted)msg+=' · Mail gelöscht';
     if(deleteAfter&&!wasDeleted)msg+='\n⚠ Mail nicht gelöscht: '+deleteError;
-    document.getElementById('success-msg').textContent=msg;
-    document.getElementById('success-msg').style.whiteSpace='pre-line';
-    setTimeout(()=>showScreen('scr-success'),500);
+    showStatus(msg,'success');
+
+    // Button wieder aktivieren, Progress ausblenden
+    document.getElementById('btn-ablegen').disabled=false;
+    document.getElementById('progress-wrap').style.display='none';
+
+    // Mail-Info für nächste Mail aktualisieren (falls sich die Auswahl geändert hat)
+    refreshMailInfo();
 
   }catch(e){
     console.error(e);
     showStatus('Fehler: '+e.message,'error');
-    document.getElementById('btn-ablegen').disabled=false;
     document.getElementById('progress-wrap').style.display='none';
   }
 }
