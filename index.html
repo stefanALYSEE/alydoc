@@ -342,8 +342,9 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
   const creatingRef=useRef(false); // verhindert Doppelaufruf
   const toast=useContext(TC);
 
+  const isMulti=Array.isArray(file);
   const isCur=id=>id===curFolderId||(id==='root'&&(!curFolderId||curFolderId==='root'));
-  const isSelf=id=>file.mimeType==='application/vnd.google-apps.folder'&&id===file.id;
+  const isSelf=id=>!isMulti&&file.mimeType==='application/vnd.google-apps.folder'&&id===file.id;
 
   const reloadFolders=async()=>{
     setReloading(true);
@@ -421,8 +422,13 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
     if(!selId)return;
     setBusy(true);
     try{
-      if(!isDemo){const oldPar=(file.parents||[])[0]||curFolderId||'root';await DR.move(file.id,selId,oldPar);}
-      toast('"'+file.name+'" verschoben nach "'+selName+'"','s');
+      if(isMulti){
+        if(!isDemo){for(const f of file){const oldPar=(f.parents||[])[0]||curFolderId||'root';await DR.move(f.id,selId,oldPar);}}
+        toast(file.length+' Dateien verschoben nach "'+selName+'"','s');
+      }else{
+        if(!isDemo){const oldPar=(file.parents||[])[0]||curFolderId||'root';await DR.move(file.id,selId,oldPar);}
+        toast('"'+file.name+'" verschoben nach "'+selName+'"','s');
+      }
       onDone();
     }catch(e){console.error(e);toast('Verschieben fehlgeschlagen','e');}
     setBusy(false);onClose();
@@ -487,10 +493,13 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
         <h2><i className="fas fa-share-square" style={{color:'var(--grn)'}}/>Verschieben nach…</h2>
 
         {/* Dateiname */}
-        <div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'#F4F7FB',borderRadius:7,marginBottom:12,border:'1px solid var(--bdr)'}}>
+        {isMulti?<div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'#F4F7FB',borderRadius:7,marginBottom:12,border:'1px solid var(--bdr)'}}>
+          <i className="fas fa-check-double" style={{color:'var(--blue)',fontSize:18,flexShrink:0}}/>
+          <span style={{fontSize:13,fontWeight:500,flex:1}}>{file.length} Dateien ausgewaehlt</span>
+        </div>:<div style={{display:'flex',alignItems:'center',gap:10,padding:'10px 14px',background:'#F4F7FB',borderRadius:7,marginBottom:12,border:'1px solid var(--bdr)'}}>
           <i className={`fas ${mi(file.mimeType,file.name).i}`} style={{color:mi(file.mimeType,file.name).c,fontSize:18,flexShrink:0}}/>
           <span style={{fontSize:13,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{file.name}</span>
-        </div>
+        </div>}
 
         {/* Suchfeld + Neu laden */}
         <div style={{display:'flex',gap:8,marginBottom:8}}>
@@ -943,6 +952,7 @@ function Main({onOut,isDemo}){
   const [path,setPath]=useState([{id:'root',name:'Mein Drive'}]);
   const [files,setFiles]=useState([]);
   const [sel,setSel]=useState(null);
+  const [multiSel,setMultiSel]=useState([]);
   const [loading,setLoading]=useState(false);
   const [q,setQ]=useState('');
   const [res,setRes]=useState(null);
@@ -1000,15 +1010,38 @@ function Main({onOut,isDemo}){
     return()=>window.removeEventListener('resize',onResize);
   },[]);
 
-  const load=async fid=>{setLoading(true);setSel(null);try{setFiles(await DR.ls(fid));}catch(e){console.error(e);toast('Ladefehler','e');}setLoading(false);};
+  const load=async fid=>{setLoading(true);setSel(null);setMultiSel([]);try{setFiles(await DR.ls(fid));}catch(e){console.error(e);toast('Ladefehler','e');}setLoading(false);};
   const go=f=>{const idx=path.findIndex(x=>x.id===f.id);setPath(idx>=0?path.slice(0,idx+1):[...path,{id:f.id,name:f.name}]);setCur(f);setRes(null);setQ('');if(!isDemo){load(f.id);if(!treeCache[f.id])loadTreeChildren(f.id);}else setFiles(DF);};
-  const click=f=>{if(f.mimeType==='application/vnd.google-apps.folder')go(f);else setSel(f);};
+  const click=(f,e)=>{
+  if(f.mimeType==='application/vnd.google-apps.folder'){if(!e?.ctrlKey&&!e?.metaKey)go(f);return;}
+  if(e?.ctrlKey||e?.metaKey){
+    setMultiSel(prev=>{
+      const exists=prev.find(s=>s.id===f.id);
+      let next=exists?prev.filter(s=>s.id!==f.id):[...prev,f];
+      if(!exists&&prev.length===0&&sel&&sel.id!==f.id)next=[sel,f];
+      return next;
+    });
+    setSel(f);
+  } else if(e?.shiftKey&&sel){
+    const list=disp;
+    const fromIdx=list.findIndex(x=>x.id===sel.id);
+    const toIdx=list.findIndex(x=>x.id===f.id);
+    if(fromIdx>=0&&toIdx>=0){
+      const start=Math.min(fromIdx,toIdx),end=Math.max(fromIdx,toIdx);
+      setMultiSel(list.slice(start,end+1).filter(x=>x.mimeType!=='application/vnd.google-apps.folder'));
+    }
+    setSel(f);
+  } else {
+    setMultiSel([]);
+    setSel(f);
+  }
+};
   const dbl=f=>{if(f.mimeType==='application/vnd.google-apps.folder')go(f);else{setSel(f);setBig(true);}};
   const search=async qry=>{if(!qry.trim()){setRes(null);return;}setSrc(true);try{if(isDemo)setRes(DF.filter(f=>f.name.toLowerCase().includes(qry.toLowerCase())));else setRes(await DR.find(qry));}catch{toast('Suche fehlgeschlagen','e');}setSrc(false);};
   const swf=t=>{setTasks(t);if(!isDemo)DR.saveWF({tasks:t});};
   const rf=()=>{if(isDemo)setFiles(DF);else load(cur.id);};
   const doMove=f=>{setSel(f);setMoveFile(f);if(!isDemo&&allFolders.length===0)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));};
-  const onMoveDone=()=>{rf();setMoveFile(null);setSel(null);};
+  const onMoveDone=()=>{rf();setMoveFile(null);setSel(null);setMultiSel([]);};
 
   // Lazy-Load Unterordner fuer Strukturbaum
   const loadTreeChildren=async(parentId)=>{
@@ -1123,7 +1156,12 @@ function Main({onOut,isDemo}){
       <button className="tbtn" onClick={()=>setModal('mk')}><i className="fas fa-folder-plus"/><span>Neuer Ordner</span></button>
       <div className="tsep"/>
       <button className="tbtn" onClick={rf}><i className="fas fa-rotate-right"/><span>Aktualisieren</span></button>
-      {sel&&<><div className="tsep"/>
+      {multiSel.length>0?<><div className="tsep"/>
+        <span style={{fontSize:12,color:'var(--blue)',fontWeight:600,padding:'0 6px'}}>{multiSel.length} ausgewaehlt</span>
+        <button className="tbtn grn" onClick={()=>{setMoveFile(multiSel);if(!isDemo&&allFolders.length===0)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));}}><i className="fas fa-share-square"/><span>Verschieben</span></button>
+        {!isDemo&&<button className="tbtn red" onClick={async()=>{if(window.confirm(multiSel.length+' Dateien loeschen?')){try{for(const f of multiSel)await DR.del(f.id);toast(multiSel.length+' Dateien geloescht','i');rf();setSel(null);setMultiSel([]);}catch{toast('Fehler','e');}}}}><i className="fas fa-trash"/><span>Loeschen</span></button>}
+        <button className="tbtn" onClick={()=>setMultiSel([])}><i className="fas fa-times"/><span>Aufheben</span></button>
+      </>:sel&&<><div className="tsep"/>
         <button className="tbtn" onClick={()=>setBig(true)}><i className="fas fa-expand-alt"/><span>Gross</span></button>
         <button className="tbtn" onClick={()=>setModal('ren')}><i className="fas fa-pencil"/><span>Umbenennen</span></button>
         <button className="tbtn grn" onClick={()=>doMove(sel)}><i className="fas fa-share-square"/><span>Verschieben</span></button>
@@ -1236,12 +1274,12 @@ function Main({onOut,isDemo}){
               const isDragOver=dragOverId===f.id&&isFd;
               const openCtx=(f,e)=>{setSel(f);if(isMobile||isTouch){setShowActionSheet(true);}else{setCtx({x:Math.min(e.clientX,window.innerWidth-195),y:Math.min(e.clientY,window.innerHeight-220),f});}};
               return(<div key={f.id}
-                className={`doc-row ${sel?.id===f.id?'active':''} ${isDragOver?'drop-target':''}`}
+                className={`doc-row ${sel?.id===f.id||multiSel.some(s=>s.id===f.id)?'active':''} ${isDragOver?'drop-target':''}`}
                 draggable={!isTouch}
                 onDragStart={e=>onDragStart(e,f)}
                 onDragEnd={onDragEnd}
                 {...(isFd?dropProps(f):{})}
-                onClick={()=>click(f)}
+                onClick={(e)=>click(f,e)}
                 onDoubleClick={()=>dbl(f)}
                 onContextMenu={e=>{e.preventDefault();e.stopPropagation();openCtx(f,e);}}
                 onTouchStart={isTouch?e=>{longPressRef.current=setTimeout(()=>{longPressRef.current='fired';setSel(f);setShowActionSheet(true);},500);}:undefined}
@@ -1297,7 +1335,7 @@ function Main({onOut,isDemo}){
     <div className="status-bar">
       <span><i className="fas fa-folder" style={{marginRight:4}}/>{cur.name}</span>
       <span>{disp.length} Eintraege</span>
-      {sel&&<span><i className="fas fa-file" style={{marginRight:4}}/>{sel.name}</span>}
+      {multiSel.length>0?<span style={{color:'var(--blue)'}}><i className="fas fa-check-double" style={{marginRight:4}}/>{multiSel.length} ausgewaehlt</span>:sel&&<span><i className="fas fa-file" style={{marginRight:4}}/>{sel.name}</span>}
       {dragOverId&&<span style={{color:'var(--grn)'}}><i className="fas fa-arrows-alt" style={{marginRight:4}}/>Auf Ordner ziehen zum Verschieben</span>}
     </div>
 
