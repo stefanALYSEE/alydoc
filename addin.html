@@ -678,32 +678,81 @@ async function uploadToDriveBytes(name,bytes,mimeType,folderId){
 }
 
 async function deleteMailItem(){
-  // Outlook REST API nutzen um Mail in Papierkorb zu verschieben
+  // Methode 1: EWS MoveItem (breiteste Kompatibilitaet)
+  const ewsResult=await tryDeleteViaEws();
+  if(ewsResult)return true;
+
+  // Methode 2: REST API
+  const restResult=await tryDeleteViaRest();
+  if(restResult)return true;
+
+  return false;
+}
+
+function tryDeleteViaEws(){
+  return new Promise((resolve)=>{
+    try{
+      if(!Office.context.mailbox.makeEwsRequestAsync){
+        showStatus('EWS nicht verfuegbar','warn');
+        resolve(false);return;
+      }
+      const itemId=mailItem.itemId;
+      if(!itemId){showStatus('Keine Mail-ID','warn');resolve(false);return;}
+
+      const soap='<?xml version="1.0" encoding="utf-8"?>'
+        +'<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">'
+        +'<soap:Header><t:RequestServerVersion Version="Exchange2013"/></soap:Header>'
+        +'<soap:Body><m:MoveItem>'
+        +'<m:ToFolderId><t:DistinguishedFolderId Id="deleteditems"/></m:ToFolderId>'
+        +'<m:ItemIds><t:ItemId Id="'+itemId+'"/></m:ItemIds>'
+        +'</m:MoveItem></soap:Body></soap:Envelope>';
+
+      Office.context.mailbox.makeEwsRequestAsync(soap,result=>{
+        if(result.status!==Office.AsyncResultStatus.Succeeded){
+          showStatus('EWS Fehler: '+(result.error?result.error.message:'unbekannt'),'warn');
+          resolve(false);return;
+        }
+        // Prüfe ob ResponseClass="Success"
+        if(result.value&&result.value.indexOf('ResponseClass="Success"')>=0){
+          resolve(true);
+        } else {
+          showStatus('EWS: Mail konnte nicht verschoben werden','warn');
+          resolve(false);
+        }
+      });
+    }catch(e){
+      showStatus('EWS Exception: '+e.message,'warn');
+      resolve(false);
+    }
+  });
+}
+
+function tryDeleteViaRest(){
   return new Promise((resolve)=>{
     try{
       const itemId=mailItem.itemId;
-      if(!itemId){console.warn('Keine itemId');resolve(false);return;}
-      const restUrl=Office.context.mailbox.restUrl;
+      if(!itemId){resolve(false);return;}
+      if(!Office.context.mailbox.restUrl){showStatus('REST URL nicht verfuegbar','warn');resolve(false);return;}
+
       Office.context.mailbox.getCallbackTokenAsync({isRest:true},tokenResult=>{
         if(tokenResult.status!==Office.AsyncResultStatus.Succeeded){
-          console.warn('REST Token fehlgeschlagen:',tokenResult.error);
-          resolve(false);
-          return;
+          showStatus('REST Token Fehler: '+(tokenResult.error?tokenResult.error.message:'unbekannt'),'warn');
+          resolve(false);return;
         }
         const restToken=tokenResult.value;
         const restId=Office.context.mailbox.convertToRestId(itemId,Office.MailboxEnums.RestVersion.v2_0);
-        const url=restUrl+'/v2.0/me/messages/'+restId+'/move';
+        const url=Office.context.mailbox.restUrl+'/v2.0/me/messages/'+restId+'/move';
         fetch(url,{
           method:'POST',
           headers:{'Authorization':'Bearer '+restToken,'Content-Type':'application/json'},
           body:JSON.stringify({DestinationId:'DeletedItems'})
         }).then(r=>{
           if(r.ok){resolve(true);}
-          else{console.warn('Mail move failed:',r.status);resolve(false);}
-        }).catch(e=>{console.warn('Mail move error:',e);resolve(false);});
+          else{r.text().then(t=>{showStatus('REST Move Fehler ('+r.status+'): '+t.substring(0,100),'warn');});resolve(false);}
+        }).catch(e=>{showStatus('REST Netzwerk: '+e.message,'warn');resolve(false);});
       });
     }catch(e){
-      console.warn('deleteMailItem Fehler:',e);
+      showStatus('REST Exception: '+e.message,'warn');
       resolve(false);
     }
   });
