@@ -6,7 +6,7 @@
            xsi:type="MailApp">
 
   <Id>c4e8a40d-e33a-4773-94f0-cd55d1b41f03</Id>
-  <Version>1.3.0.0</Version>
+  <Version>1.4.0.0</Version>
   <ProviderName>alysee GmbH</ProviderName>
   <DefaultLocale>de-DE</DefaultLocale>
   <DisplayName DefaultValue="alyDoc"/>
@@ -105,5 +105,62 @@
         <bt:String id="btnDesc" DefaultValue="Aktuelle E-Mail in Google Drive ablegen"/>
       </bt:LongStrings>
     </Resources>
+
+    <!-- V1_1 fuer SupportsPinning (Task Pane bleibt offen) -->
+    <VersionOverrides xmlns="http://schemas.microsoft.com/office/mailappversionoverrides/1.1" xsi:type="VersionOverridesV1_1">
+      <Requirements>
+        <bt:Sets DefaultMinVersion="1.5">
+          <bt:Set Name="Mailbox"/>
+        </bt:Sets>
+      </Requirements>
+      <Hosts>
+        <Host xsi:type="MailHost">
+          <DesktopFormFactor>
+            <FunctionFile resid="residFunctionUrl"/>
+            <ExtensionPoint xsi:type="MessageReadCommandSurface">
+              <OfficeTab id="TabDefault">
+                <Group id="grpAlyDoc">
+                  <Label resid="grpLabel"/>
+                  <Control xsi:type="Button" id="btnAlyDoc">
+                    <Label resid="btnLabel"/>
+                    <Supertip>
+                      <Title resid="btnLabel"/>
+                      <Description resid="btnDesc"/>
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="icon16"/>
+                      <bt:Image size="32" resid="icon32"/>
+                      <bt:Image size="80" resid="icon80"/>
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="residTaskpaneUrl"/>
+                      <SupportsPinning>true</SupportsPinning>
+                    </Action>
+                  </Control>
+                </Group>
+              </OfficeTab>
+            </ExtensionPoint>
+          </DesktopFormFactor>
+        </Host>
+      </Hosts>
+      <Resources>
+        <bt:Images>
+          <bt:Image id="icon16" DefaultValue="https://alydoc.alysee.de/icon-16.png"/>
+          <bt:Image id="icon32" DefaultValue="https://alydoc.alysee.de/icon-32.png"/>
+          <bt:Image id="icon80" DefaultValue="https://alydoc.alysee.de/icon-80.png"/>
+        </bt:Images>
+        <bt:Urls>
+          <bt:Url id="residFunctionUrl" DefaultValue="https://alydoc.alysee.de/addin.html"/>
+          <bt:Url id="residTaskpaneUrl" DefaultValue="https://alydoc.alysee.de/addin.html"/>
+        </bt:Urls>
+        <bt:ShortStrings>
+          <bt:String id="grpLabel" DefaultValue="alyDoc"/>
+          <bt:String id="btnLabel" DefaultValue="Mail ablegen"/>
+        </bt:ShortStrings>
+        <bt:LongStrings>
+          <bt:String id="btnDesc" DefaultValue="Aktuelle E-Mail in Google Drive ablegen"/>
+        </bt:LongStrings>
+      </Resources>
+    </VersionOverrides>
   </VersionOverrides>
 </OfficeApp>
