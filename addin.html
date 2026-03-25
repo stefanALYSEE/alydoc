@@ -316,17 +316,18 @@ function checkReady(){
     }catch{}
   }
   if(tok&&tok.access_token){
-    // Token validieren
+    // Sofort Hauptscreen zeigen + letzten Ordner wiederherstellen
+    showScreen('scr-main');
+    try{
+      const lastId=localStorage.getItem('alydoc_lastFolder');
+      const lastName=localStorage.getItem('alydoc_lastFolderName');
+      if(lastId&&lastName)selectFolder(lastId,lastName);
+    }catch{}
+    // Ordner laden (parallel zur Token-Validierung)
+    loadFolders();
+    // Token im Hintergrund validieren
     gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'}).then(r=>{
       if(r.result&&r.result.name)document.getElementById('user-name').textContent=r.result.name;
-      showScreen('scr-main');
-      loadFolders();
-      // Letzten Ordner wiederherstellen
-      try{
-        const lastId=localStorage.getItem('alydoc_lastFolder');
-        const lastName=localStorage.getItem('alydoc_lastFolderName');
-        if(lastId&&lastName)selectFolder(lastId,lastName);
-      }catch{}
     }).catch(()=>{
       // Token abgelaufen
       try{localStorage.removeItem('alydoc_token');}catch{}
