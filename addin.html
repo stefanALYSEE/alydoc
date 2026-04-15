@@ -832,37 +832,87 @@ function ewsRequest(bodyXml){
   });
 }
 
+// Direkter EWS-Call an Exchange (umgeht makeEwsRequestAsync-Einschränkungen)
+function directEwsRequest(bodyXml){
+  return new Promise((resolve)=>{
+    try{
+      const ewsUrl=Office.context.mailbox.ewsUrl;
+      if(!ewsUrl){window._lastDeleteError+='[Direkt: kein ewsUrl] ';resolve(false);return;}
+
+      Office.context.mailbox.getCallbackTokenAsync(tokenResult=>{
+        if(tokenResult.status!==Office.AsyncResultStatus.Succeeded){
+          const err=tokenResult.error?(tokenResult.error.message||'')+(tokenResult.error.code?' ('+tokenResult.error.code+')':''):'token failed';
+          window._lastDeleteError+='[Direkt Token: '+err+'] ';
+          resolve(false);return;
+        }
+        const token=tokenResult.value;
+        const soap='<?xml version="1.0" encoding="utf-8"?>'
+          +'<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">'
+          +'<soap:Header><t:RequestServerVersion Version="Exchange2013"/></soap:Header>'
+          +'<soap:Body>'+bodyXml+'</soap:Body></soap:Envelope>';
+
+        fetch(ewsUrl,{
+          method:'POST',
+          headers:{'Content-Type':'text/xml; charset=utf-8','Authorization':'Bearer '+token},
+          body:soap
+        }).then(r=>{
+          if(!r.ok){window._lastDeleteError+='[Direkt HTTP '+r.status+'] ';resolve(false);return;}
+          return r.text();
+        }).then(xml=>{
+          if(!xml){resolve(false);return;}
+          if(xml.indexOf('ResponseClass="Success"')>=0){
+            resolve(true);
+          } else {
+            const codeMatch=xml.match(/ResponseCode>([^<]+)</);
+            const msgMatch=xml.match(/MessageText>([^<]+)</);
+            if(codeMatch||msgMatch){
+              window._lastDeleteError+='[Direkt: '+(codeMatch?codeMatch[1]:'')+(msgMatch?' '+msgMatch[1]:'')+'] ';
+            } else {
+              window._lastDeleteError+='[Direkt: '+xml.substring(0,300)+'] ';
+            }
+            resolve(false);
+          }
+        }).catch(e=>{window._lastDeleteError+='[Direkt fetch: '+e.message+'] ';resolve(false);});
+      });
+    }catch(e){
+      window._lastDeleteError+='[Direkt Exception: '+e.message+'] ';
+      resolve(false);
+    }
+  });
+}
+
 async function deleteMailItem(){
   window._lastDeleteError='';
   const itemId=mailItem.itemId;
   if(!itemId){window._lastDeleteError='Keine itemId vorhanden.';return false;}
-  if(!Office.context.mailbox.makeEwsRequestAsync){
-    window._lastDeleteError='EWS nicht verfuegbar.';return false;
-  }
 
   const safeId=xmlEscape(itemId);
-
-  // Versuch 1: MoveItem → Papierkorb
-  const r1=await ewsRequest(
-    '<m:MoveItem>'
+  const moveBody='<m:MoveItem>'
     +'<m:ToFolderId><t:DistinguishedFolderId Id="deleteditems"/></m:ToFolderId>'
     +'<m:ItemIds><t:ItemId Id="'+safeId+'"/></m:ItemIds>'
-    +'</m:MoveItem>');
-  if(r1)return true;
-
-  // Versuch 2: DeleteItem MoveToDeletedItems
-  const r2=await ewsRequest(
-    '<m:DeleteItem DeleteType="MoveToDeletedItems">'
+    +'</m:MoveItem>';
+  const deleteBody='<m:DeleteItem DeleteType="MoveToDeletedItems">'
     +'<m:ItemIds><t:ItemId Id="'+safeId+'"/></m:ItemIds>'
-    +'</m:DeleteItem>');
-  if(r2)return true;
+    +'</m:DeleteItem>';
 
-  // Versuch 3: DeleteItem SoftDelete
-  const r3=await ewsRequest(
-    '<m:DeleteItem DeleteType="SoftDelete">'
-    +'<m:ItemIds><t:ItemId Id="'+safeId+'"/></m:ItemIds>'
-    +'</m:DeleteItem>');
+  // Versuch 1: makeEwsRequestAsync MoveItem
+  if(Office.context.mailbox.makeEwsRequestAsync){
+    const r1=await ewsRequest(moveBody);
+    if(r1)return true;
+    // Versuch 2: makeEwsRequestAsync DeleteItem
+    const r2=await ewsRequest(deleteBody);
+    if(r2)return true;
+  } else {
+    window._lastDeleteError+='[makeEwsRequestAsync nicht verfuegbar] ';
+  }
+
+  // Versuch 3: Direkter EWS-Call mit Callback-Token
+  const r3=await directEwsRequest(moveBody);
   if(r3)return true;
+
+  // Versuch 4: Direkter DeleteItem
+  const r4=await directEwsRequest(deleteBody);
+  if(r4)return true;
 
   return false;
 }
