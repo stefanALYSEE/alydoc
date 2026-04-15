@@ -809,6 +809,10 @@ async function deleteMailItem(){
   return false;
 }
 
+function xmlEscape(str){
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+}
+
 function tryDeleteViaEws(){
   return new Promise((resolve)=>{
     try{
@@ -819,12 +823,13 @@ function tryDeleteViaEws(){
       const itemId=mailItem.itemId;
       if(!itemId){window._lastDeleteError+='EWS: keine itemId. ';resolve(false);return;}
 
+      const safeId=xmlEscape(itemId);
       const soap='<?xml version="1.0" encoding="utf-8"?>'
         +'<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">'
-        +'<soap:Header><t:RequestServerVersion Version="Exchange2013"/></soap:Header>'
+        +'<soap:Header><t:RequestServerVersion Version="Exchange2016"/></soap:Header>'
         +'<soap:Body><m:MoveItem>'
         +'<m:ToFolderId><t:DistinguishedFolderId Id="deleteditems"/></m:ToFolderId>'
-        +'<m:ItemIds><t:ItemId Id="'+itemId+'"/></m:ItemIds>'
+        +'<m:ItemIds><t:ItemId Id="'+safeId+'"/></m:ItemIds>'
         +'</m:MoveItem></soap:Body></soap:Envelope>';
 
       Office.context.mailbox.makeEwsRequestAsync(soap,result=>{
@@ -832,12 +837,16 @@ function tryDeleteViaEws(){
           window._lastDeleteError+='EWS: '+(result.error?result.error.message+' (code:'+result.error.code+')':'Status failed')+'. ';
           resolve(false);return;
         }
-        if(result.value&&result.value.indexOf('ResponseClass="Success"')>=0){
+        const xml=result.value||'';
+        if(xml.indexOf('ResponseClass="Success"')>=0){
           resolve(true);
+        } else if(xml.indexOf('ResponseClass="Error"')>=0){
+          const msgMatch=xml.match(/MessageText>([^<]+)</);
+          const codeMatch=xml.match(/ResponseCode>([^<]+)</);
+          window._lastDeleteError+='EWS: '+(codeMatch?codeMatch[1]+' - ':'')+(msgMatch?msgMatch[1]:xml.substring(0,200))+'. ';
+          resolve(false);
         } else {
-          // Fehlerdetails aus XML extrahieren
-          const msgMatch=(result.value||'').match(/MessageText>([^<]+)</);
-          window._lastDeleteError+='EWS Response: '+(msgMatch?msgMatch[1]:(result.value||'').substring(0,150))+'. ';
+          window._lastDeleteError+='EWS unbekannt: '+xml.substring(0,250)+'. ';
           resolve(false);
         }
       });
