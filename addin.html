@@ -223,7 +223,7 @@ const SCOPES    = 'https://www.googleapis.com/auth/drive';
 
 // ── STATE ───────────────────────────────────────────────────────────────────
 let tokenClient, gapiReady=false, gisReady=false;
-let folders=[], expandedIds={}, selectedFolderId=null, selectedFolderName='';
+let folders=[], expandedIds={root:true}, selectedFolderId=null, selectedFolderName='';
 let mailItem=null; // Outlook mail item
 
 // ── OFFICE.JS INIT ───────────────────────────────────────────────────────────
@@ -470,9 +470,11 @@ function renderTree(search){
 
   let html='';
 
-  // Root
-  html+=`<div class="tree-item ${selectedFolderId==='root'?'selected':''}" onclick="selectFolder('root','Mein Drive')" style="font-weight:500">
-    <span class="chevron"></span>
+  // Root – immer aufklappbar
+  const rootExp=expandedIds['root']!==false; // default offen
+  const rootSel=selectedFolderId==='root';
+  html+=`<div class="tree-item ${rootSel?'selected':''}" onclick="toggleExpand('root')" style="font-weight:500;cursor:pointer">
+    <span class="chevron"><i class="fas fa-chevron-${rootExp?'down':'right'}"></i></span>
     <i class="fas fa-hdd"></i>
     <span class="name">Mein Drive</span>
   </div>`;
@@ -484,7 +486,6 @@ function renderTree(search){
       if(searchLow&&!hasMatchingDesc(f))return;
       const myKids=childrenOf(f.id);
       const hasKids=myKids.length>0;
-      // Noch nicht geladene Ordner zeigen immer einen Chevron (könnte Kinder haben)
       const mayHaveKids=hasKids||!loadedParents.has(f.id);
       const isExp=expandedIds[f.id];
       const isSel=selectedFolderId===f.id;
@@ -499,7 +500,7 @@ function renderTree(search){
     });
   }
 
-  renderNode('root',1);
+  if(rootExp)renderNode('root',1);
   tree.innerHTML=html;
 }
 
