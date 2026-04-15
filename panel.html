@@ -111,7 +111,7 @@
   </div>
   <div style="margin-left:auto;text-align:right">
     <div style="font-size:11px;opacity:.5" id="user-name"></div>
-    <div style="font-size:9px;opacity:.3">v2.2</div>
+    <div style="font-size:9px;opacity:.3">v2.3</div>
   </div>
 </div>
 
@@ -635,7 +635,8 @@ async function ablegen(){
     // Erfolg anzeigen
     const attCount=mailItem.attachments?mailItem.attachments.length:0;
     let msg='✓ Abgelegt in: '+selectedFolderName;
-    msg+='<br><small>Datei: '+fileName+(uploadResult.id?' ('+uploadResult.id+')':'')+'</small>';
+    msg+='<br><small>Datei: '+fileName+'</small>';
+    msg+='<br><small>ID: '+(uploadResult.id||'?')+' | Ordner: '+JSON.stringify(uploadResult.parents||[])+'</small>';
     if(attCount)msg+='<br>'+attCount+' Anhang/Anhänge';
     showStatus(msg,'success');
 
@@ -773,24 +774,25 @@ async function uploadToDrive(name,content,mimeType,folderId){
   const meta={name,parents:[folderId==='root'?'root':folderId]};
   const boundary='alyDoc_upload_'+Date.now();
   const body='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+JSON.stringify(meta)+'\r\n--'+boundary+'\r\nContent-Type: '+mimeType+'\r\n\r\n'+content+'\r\n--'+boundary+'--';
-  const token=gapi.client.getToken();
-  if(!token||!token.access_token)throw new Error('Kein Google-Token vorhanden. Bitte neu anmelden.');
-  const resp=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',{
+  // gapi.client.request (bewährt, funktionierte in früheren Versionen)
+  const resp=await gapi.client.request({
+    path:'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,parents',
     method:'POST',
-    headers:{'Content-Type':'multipart/related; boundary='+boundary,'Authorization':'Bearer '+token.access_token},
+    headers:{'Content-Type':'multipart/related; boundary='+boundary},
     body:body
   });
-  if(!resp.ok){
-    const errText=await resp.text().catch(()=>'');
-    if(resp.status===401){
-      // Token abgelaufen
-      try{localStorage.removeItem('alydoc_token');}catch{}
-      gapi.client.setToken(null);
-      throw new Error('Google-Token abgelaufen. Bitte neu anmelden (Panel schliessen und öffnen).');
-    }
-    throw new Error('Upload fehlgeschlagen ('+resp.status+'): '+errText.substring(0,200));
+  const result=resp.result;
+  if(!result||!result.id){
+    throw new Error('Upload: keine File-ID. Response: '+JSON.stringify(resp).substring(0,300));
   }
-  return await resp.json();
+  // Verifizierung: Datei wirklich vorhanden?
+  try{
+    const check=await gapi.client.drive.files.get({fileId:result.id,fields:'id,name,parents'});
+    console.log('Upload verifiziert:',check.result);
+  }catch(verifyErr){
+    throw new Error('Upload-Verifizierung fehlgeschlagen: Datei '+result.id+' nicht gefunden. '+verifyErr.message);
+  }
+  return result;
 }
 
 async function uploadToDriveBytes(name,bytes,mimeType,folderId){
