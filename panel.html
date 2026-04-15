@@ -1,0 +1,992 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>alyDoc – Mail ablegen</title>
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+  <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()" async defer></script>
+  <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()" async defer></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#F5F7FA;color:#2C3E50;font-size:14px}
+    :root{--pri:#003D7A;--blue:#0072CE;--grn:#00A651;--org:#F9A800;--red:#CC0000;--bdr:#D0D9E4;--mut:#7F8C8D}
+
+    /* Header */
+    .header{background:var(--pri);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10}
+    .header .logo{background:var(--org);border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:white;letter-spacing:-.3px;flex-shrink:0}
+    .header h1{font-size:14px;font-weight:600;letter-spacing:.3px}
+    .header .sub{font-size:10px;opacity:.6;margin-top:1px}
+
+    /* States */
+    .screen{padding:14px;display:none}
+    .screen.active{display:block}
+
+    /* Login */
+    .login-card{background:#fff;border-radius:10px;padding:20px;text-align:center;border:1px solid var(--bdr);margin-top:8px}
+    .login-card .icon{font-size:36px;color:var(--pri);margin-bottom:12px}
+    .login-card p{color:var(--mut);font-size:13px;margin-bottom:16px;line-height:1.5}
+
+    /* Buttons */
+    .btn{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border-radius:7px;border:none;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;width:100%;justify-content:center}
+    .btn-primary{background:var(--blue);color:#fff}
+    .btn-primary:hover{background:#005faa}
+    .btn-primary:disabled{background:#9bb3cc;cursor:not-allowed}
+    .btn-success{background:var(--grn);color:#fff}
+    .btn-success:hover{background:#008040}
+    .btn-success:disabled{background:#7cb99a;cursor:not-allowed}
+    .btn-outline{background:#fff;color:var(--pri);border:1px solid var(--bdr)}
+    .btn-outline:hover{background:#f0f4fa}
+    .btn+.btn{margin-top:8px}
+
+    /* Mail Preview */
+    .mail-card{background:#fff;border-radius:8px;border:1px solid var(--bdr);padding:12px;margin-bottom:12px}
+    .mail-subject{font-weight:600;font-size:13px;margin-bottom:6px;line-height:1.3}
+    .mail-meta{font-size:11px;color:var(--mut);display:flex;flex-direction:column;gap:3px}
+    .mail-meta span{display:flex;align-items:flex-start;gap:5px}
+    .mail-meta i{margin-top:2px;width:12px;flex-shrink:0}
+    .att-list{margin-top:8px;padding-top:8px;border-top:1px solid #EEF2F8}
+    .att-item{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;color:var(--mut)}
+    .att-item i{color:var(--blue);width:14px}
+
+    /* Folder Tree */
+    .tree-wrap{background:#fff;border:1px solid var(--bdr);border-radius:8px;max-height:260px;overflow-y:auto;margin-bottom:12px}
+    .tree-item{display:flex;align-items:center;gap:6px;padding:7px 10px;cursor:pointer;border-bottom:1px solid #f4f7fb;user-select:none;transition:background .1s}
+    .tree-item:hover{background:#EEF4FF}
+    .tree-item.selected{background:#E0EDFF;color:var(--blue)}
+    .tree-item.selected i.fa-folder{color:var(--blue)}
+    .tree-item .chevron{width:14px;height:14px;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:10px;border-radius:3px;flex-shrink:0}
+    .tree-item .chevron:hover{background:rgba(0,0,0,.06)}
+    .tree-item i.fa-folder{color:#F7941D;font-size:13px;width:15px;flex-shrink:0}
+    .tree-item i.fa-hdd{color:#7F8C8D;font-size:13px;width:15px;flex-shrink:0}
+    .tree-item .name{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .tree-item .badge{font-size:10px;color:var(--mut);background:#F0F4F8;padding:1px 5px;border-radius:3px;flex-shrink:0}
+
+    /* Search */
+    .search-wrap{position:relative;margin-bottom:8px}
+    .search-wrap i{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--mut);font-size:12px}
+    .search-wrap input{width:100%;padding:7px 9px 7px 28px;border:1px solid var(--bdr);border-radius:6px;font-size:13px;outline:none;background:#fff}
+    .search-wrap input:focus{border-color:var(--blue)}
+    .clear-search{position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--mut);font-size:12px;background:none;border:none;padding:2px}
+
+    /* Status */
+    .status{padding:10px 12px;border-radius:7px;font-size:12px;display:flex;align-items:center;gap:8px;margin-bottom:10px}
+    .status.info{background:#EEF4FF;color:#003D7A;border:1px solid #C5D9F2}
+    .status.success{background:#E8F5E9;color:#007A3D;border:1px solid #b2dfdb}
+    .status.error{background:#FDECEC;color:#A00;border:1px solid #f5c6c6}
+    .status.warn{background:#FFF8E6;color:#7A5000;border:1px solid #FFD97A}
+
+    /* Progress */
+    .progress{background:#E8EEF6;border-radius:4px;height:6px;margin:8px 0;overflow:hidden}
+    .progress-bar{height:100%;background:var(--blue);border-radius:4px;transition:width .3s}
+
+    /* Section label */
+    .label{font-size:11px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
+
+    /* Spinner */
+    @keyframes spin{to{transform:rotate(360deg)}}
+    .spin{animation:spin .8s linear infinite;display:inline-block}
+
+    /* Selected folder display */
+    .sel-folder{background:#E8F5E9;border:1px solid #b2dfdb;border-radius:6px;padding:8px 12px;font-size:12px;color:#007A3D;display:flex;align-items:center;gap:7px;margin-bottom:12px}
+
+    /* Options */
+    .opt{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px;cursor:pointer;border-bottom:1px solid #f0f4f8}
+    .opt:last-child{border-bottom:none}
+    .opt input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--blue)}
+    .opt label{cursor:pointer;flex:1}
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">aly</div>
+  <div>
+    <div class="header h1">alyDoc</div>
+    <div class="header sub">Mail ablegen</div>
+  </div>
+  <div style="margin-left:auto;text-align:right">
+    <div style="font-size:11px;opacity:.5" id="user-name"></div>
+    <div style="font-size:9px;opacity:.3">v2.1</div>
+  </div>
+</div>
+
+<!-- SCREEN: Loading -->
+<div class="screen active" id="scr-loading">
+  <div style="text-align:center;padding:40px 20px;color:var(--mut)">
+    <i class="fas fa-circle-notch spin" style="font-size:28px;color:var(--blue);margin-bottom:12px"></i>
+    <div style="font-size:13px">Wird geladen…</div>
+  </div>
+</div>
+
+<!-- SCREEN: Login -->
+<div class="screen" id="scr-login">
+  <div class="login-card">
+    <div class="icon"><i class="fab fa-google-drive"></i></div>
+    <p>Verbinde alyDoc mit deinem Google Drive um Mails direkt abzulegen.</p>
+    <button class="btn btn-primary" onclick="signIn()">
+      <i class="fab fa-google"></i> Mit Google verbinden
+    </button>
+  </div>
+</div>
+
+<!-- SCREEN: Main -->
+<div class="screen" id="scr-main">
+
+  <!-- Mail Info -->
+  <div class="label">Aktuelle Mail</div>
+  <div class="mail-card" id="mail-card">
+    <div class="mail-subject" id="mail-subject">–</div>
+    <div class="mail-meta">
+      <span><i class="fas fa-user"></i><span id="mail-from">–</span></span>
+      <span><i class="fas fa-calendar"></i><span id="mail-date">–</span></span>
+    </div>
+    <div class="att-list" id="att-list" style="display:none">
+      <div class="label" style="margin-bottom:4px">Anhänge</div>
+      <div id="att-items"></div>
+    </div>
+  </div>
+
+  <!-- Ordner wählen -->
+  <div class="label">Zielordner in Google Drive</div>
+  <div class="search-wrap">
+    <i class="fas fa-search"></i>
+    <input type="text" id="folder-search" placeholder="Ordner suchen…" oninput="filterFolders(this.value)">
+    <button class="clear-search" onclick="clearSearch()" style="display:none" id="clear-btn">✕</button>
+  </div>
+
+  <div class="tree-wrap" id="folder-tree">
+    <div style="padding:20px;text-align:center;color:var(--mut);font-size:12px">
+      <i class="fas fa-circle-notch spin"></i> Ordner werden geladen…
+    </div>
+  </div>
+
+  <!-- Neuer Ordner -->
+  <div style="display:flex;gap:6px;margin-bottom:8px;margin-top:4px" id="new-folder-wrap">
+    <input type="text" id="new-folder-name" placeholder="Neuer Ordner…" style="flex:1;padding:6px 10px;border:1px solid var(--bdr);border-radius:6px;font-size:12px;outline:none">
+    <button class="btn btn-outline" style="width:auto;padding:6px 12px;font-size:12px" onclick="createNewFolder()">
+      <i class="fas fa-folder-plus"></i> Anlegen
+    </button>
+  </div>
+
+  <!-- Ausgewählter Ordner -->
+  <div class="sel-folder" id="sel-folder" style="display:none">
+    <i class="fas fa-folder-open"></i>
+    <span id="sel-folder-name">–</span>
+  </div>
+
+  <!-- Optionen -->
+  <div style="background:#fff;border:1px solid var(--bdr);border-radius:8px;padding:8px 12px;margin-bottom:12px">
+    <div class="opt">
+      <input type="checkbox" id="opt-delete" checked>
+      <label for="opt-delete">Mail nach Ablage aus Outlook löschen</label>
+    </div>
+    <div class="opt">
+      <input type="checkbox" id="opt-attachments" checked>
+      <label for="opt-attachments">Anhänge separat ablegen</label>
+    </div>
+  </div>
+
+  <!-- Status -->
+  <div id="status-box" style="display:none"></div>
+
+  <!-- Progress -->
+  <div id="progress-wrap" style="display:none">
+    <div class="progress"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
+    <div style="font-size:11px;color:var(--mut);text-align:center" id="progress-label"></div>
+  </div>
+
+  <!-- Action Button -->
+  <button class="btn btn-success" id="btn-ablegen" onclick="ablegen()" disabled>
+    <i class="fas fa-inbox"></i> In alyDoc ablegen
+  </button>
+  <button class="btn btn-outline" onclick="refreshFolders()" style="margin-top:8px">
+    <i class="fas fa-rotate-right"></i> Ordner neu laden
+  </button>
+</div>
+
+<!-- SCREEN: Success -->
+<div class="screen" id="scr-success">
+  <div style="text-align:center;padding:30px 20px">
+    <div style="font-size:48px;color:var(--grn);margin-bottom:12px"><i class="fas fa-check-circle"></i></div>
+    <div style="font-weight:600;font-size:15px;margin-bottom:8px">Erfolgreich abgelegt!</div>
+    <div style="font-size:12px;color:var(--mut);margin-bottom:20px" id="success-msg"></div>
+    <button class="btn btn-primary" onclick="showScreen('scr-main')">
+      <i class="fas fa-inbox"></i> Nächste Mail
+    </button>
+  </div>
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────────────────────────
+const CLIENT_ID = '633536117262-28memlfds8btpdk8facskab8aq9msjdq.apps.googleusercontent.com';
+const API_KEY   = 'AIzaSyCNXwOka6MinW9ZoCFDuwsSnOD9NGfyIg0';
+const SCOPES    = 'https://www.googleapis.com/auth/drive';
+
+// ── STATE ───────────────────────────────────────────────────────────────────
+let tokenClient, gapiReady=false, gisReady=false;
+let folders=[], expandedIds={root:true}, selectedFolderId=null, selectedFolderName='';
+let mailItem=null; // Outlook mail item
+
+// ── OFFICE.JS INIT ───────────────────────────────────────────────────────────
+Office.onReady(info=>{
+  if(info.host===Office.HostType.Outlook){
+    mailItem=Office.context.mailbox.item;
+    loadMailInfo();
+    // Bei Mailwechsel automatisch aktualisieren
+    try{
+      Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged,()=>{
+        mailItem=Office.context.mailbox.item;
+        refreshMailInfo();
+      });
+    }catch(e){console.warn('ItemChanged handler not supported:',e);}
+  }
+  initGapi();
+});
+
+// ── MAIL INFO ────────────────────────────────────────────────────────────────
+function loadMailInfo(){
+  if(!mailItem)return;
+  document.getElementById('mail-subject').textContent=mailItem.subject||'(kein Betreff)';
+  const from=mailItem.from;
+  document.getElementById('mail-from').textContent=from?(from.displayName||from.emailAddress):'–';
+  const d=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
+  document.getElementById('mail-date').textContent=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+
+  // Anhänge laden
+  const atts=mailItem.attachments||[];
+  if(atts.length>0){
+    const list=document.getElementById('att-items');
+    atts.forEach(a=>{
+      const icon=a.attachmentType==='item'?'fa-envelope':'fa-paperclip';
+      list.innerHTML+=`<div class="att-item"><i class="fas ${icon}"></i><span>${a.name}</span><span style="margin-left:auto;font-size:10px;color:#aaa">${formatSize(a.size)}</span></div>`;
+    });
+    document.getElementById('att-list').style.display='block';
+  }
+}
+
+function refreshMailInfo(){
+  // Aktualisiere Mail-Info wenn Nutzer eine andere Mail ausgewählt hat
+  mailItem=Office.context.mailbox.item;
+  if(!mailItem)return;
+  document.getElementById('mail-subject').textContent=mailItem.subject||'(kein Betreff)';
+  const from=mailItem.from;
+  document.getElementById('mail-from').textContent=from?(from.displayName||from.emailAddress):'–';
+  const d=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
+  document.getElementById('mail-date').textContent=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  // Anhänge aktualisieren
+  const list=document.getElementById('att-items');
+  list.innerHTML='';
+  const atts=mailItem.attachments||[];
+  if(atts.length>0){
+    atts.forEach(a=>{
+      const icon=a.attachmentType==='item'?'fa-envelope':'fa-paperclip';
+      list.innerHTML+=`<div class="att-item"><i class="fas ${icon}"></i><span>${a.name}</span><span style="margin-left:auto;font-size:10px;color:#aaa">${formatSize(a.size)}</span></div>`;
+    });
+    document.getElementById('att-list').style.display='block';
+  } else {
+    document.getElementById('att-list').style.display='none';
+  }
+}
+
+function formatSize(bytes){
+  if(!bytes)return'';
+  if(bytes<1024)return bytes+'B';
+  if(bytes<1024*1024)return Math.round(bytes/1024)+'KB';
+  return(bytes/(1024*1024)).toFixed(1)+'MB';
+}
+
+// ── GAPI INIT ────────────────────────────────────────────────────────────────
+function gapiLoaded(){gapi.load('client',async()=>{await gapi.client.init({apiKey:API_KEY,discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest']});gapiReady=true;checkReady();});}
+function gisLoaded(){gisReady=true;checkReady();}
+
+function checkReady(){
+  if(!gapiReady||!gisReady)return;
+  // Prüfe ob Token vorhanden (gapi oder localStorage)
+  let tok=gapi.client.getToken();
+  if(!tok||!tok.access_token){
+    // Token aus localStorage wiederherstellen (max 50 Min alt)
+    try{
+      const saved=localStorage.getItem('alydoc_token');
+      const savedTime=parseInt(localStorage.getItem('alydoc_token_time')||'0');
+      if(saved&&(Date.now()-savedTime)<50*60*1000){
+        gapi.client.setToken({access_token:saved});
+        tok={access_token:saved};
+        const user=localStorage.getItem('alydoc_user');
+        if(user)document.getElementById('user-name').textContent=user;
+      }
+    }catch{}
+  }
+  if(tok&&tok.access_token){
+    // Sofort Hauptscreen zeigen + letzten Ordner wiederherstellen
+    showScreen('scr-main');
+    try{
+      const lastId=localStorage.getItem('alydoc_lastFolder');
+      const lastName=localStorage.getItem('alydoc_lastFolderName');
+      if(lastId&&lastName)selectFolder(lastId,lastName);
+    }catch{}
+    // Ordner laden (parallel zur Token-Validierung)
+    loadFolders();
+    // Token im Hintergrund validieren
+    gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'}).then(r=>{
+      if(r.result&&r.result.name)document.getElementById('user-name').textContent=r.result.name;
+    }).catch(()=>{
+      // Token abgelaufen
+      try{localStorage.removeItem('alydoc_token');}catch{}
+      gapi.client.setToken(null);
+      showScreen('scr-login');
+    });
+  } else {
+    showScreen('scr-login');
+  }
+}
+
+function signIn(){
+  // Office Dialog API öffnet auth.html als echtes Fenster
+  // auth.html nutzt GIS Token Client (Popup) und sendet Token zurück
+  const baseUrl=window.location.href.replace(/\/[^/]*$/,'/');
+  const authUrl=baseUrl+'auth.html';
+
+  if(Office.context.ui&&Office.context.ui.displayDialogAsync){
+    Office.context.ui.displayDialogAsync(authUrl,{height:65,width:45,promptBeforeOpen:false},result=>{
+      if(result.status===Office.AsyncResultStatus.Failed){
+        showStatus('Dialog konnte nicht geöffnet werden: '+result.error.message,'error');
+        return;
+      }
+      const dialog=result.value;
+      dialog.addEventHandler(Office.EventType.DialogMessageReceived,arg=>{
+        dialog.close();
+        try{
+          const msg=JSON.parse(arg.message);
+          if(msg.type==='auth_success'&&msg.token){
+            onTokenReceived(msg.token);
+          } else {
+            showStatus('Anmeldung fehlgeschlagen','error');
+          }
+        }catch(e){
+          showStatus('Anmeldung fehlgeschlagen: '+e.message,'error');
+        }
+      });
+      dialog.addEventHandler(Office.EventType.DialogEventReceived,arg=>{
+        if(arg.error===12006)console.log('Dialog vom Nutzer geschlossen');
+      });
+    });
+  } else {
+    // Fallback: GIS direkt (außerhalb von Outlook)
+    if(typeof google==='undefined'||!google.accounts){
+      showStatus('Google APIs noch nicht geladen','warn');
+      return;
+    }
+    const tokenClient=google.accounts.oauth2.initTokenClient({
+      client_id:CLIENT_ID,
+      scope:SCOPES,
+      callback:(resp)=>{
+        if(resp.error){showStatus('Anmeldung fehlgeschlagen: '+resp.error,'error');return;}
+        onTokenReceived(resp.access_token);
+      }
+    });
+    tokenClient.requestAccessToken({prompt:'select_account'});
+  }
+}
+
+function onTokenReceived(accessToken){
+  // Token in gapi + localStorage setzen
+  gapi.client.setToken({access_token:accessToken});
+  try{localStorage.setItem('alydoc_token',accessToken);localStorage.setItem('alydoc_token_time',Date.now().toString());}catch{}
+  showScreen('scr-main');
+  loadFolders();
+  // Nutzernamen laden
+  gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'}).then(r=>{
+    if(r.result&&r.result.name){
+      document.getElementById('user-name').textContent=r.result.name;
+      try{localStorage.setItem('alydoc_user',r.result.name);}catch{}
+    }
+  }).catch(()=>{});
+}
+
+// ── FOLDER LOADING (Lazy – nur aufgeklappte Ebenen laden) ─────────────────────
+// loadedParents merkt sich, welche Ordner bereits geladen wurden
+let loadedParents=new Set();
+
+async function loadFolders(){
+  // Nur Root-Ebene laden
+  try{
+    folders=[];
+    loadedParents=new Set();
+    const kids=await listFolders('root');
+    kids.forEach(f=>{
+      folders.push({id:f.id,name:f.name,displayName:f.name,parentId:'root'});
+    });
+    loadedParents.add('root');
+    renderTree();
+  }catch(e){
+    document.getElementById('folder-tree').innerHTML='<div style="padding:12px;color:var(--red);font-size:12px"><i class="fas fa-exclamation-triangle"></i> Fehler beim Laden</div>';
+  }
+}
+
+async function loadChildren(parentId){
+  if(loadedParents.has(parentId))return;
+  loadedParents.add(parentId);
+  const parent=folders.find(f=>f.id===parentId);
+  const parentDisplay=parent?parent.displayName:'';
+  const kids=await listFolders(parentId);
+  kids.forEach(f=>{
+    if(folders.some(x=>x.id===f.id))return;
+    const displayName=parentDisplay?parentDisplay+' / '+f.name:f.name;
+    folders.push({id:f.id,name:f.name,displayName,parentId});
+  });
+}
+
+async function listFolders(parentId){
+  try{
+    const r=await gapi.client.drive.files.list({
+      q:"'"+parentId+"' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
+      fields:'files(id,name)',orderBy:'name',pageSize:150
+    });
+    return r.result.files||[];
+  }catch{return[];}
+}
+
+function refreshFolders(){
+  document.getElementById('folder-tree').innerHTML='<div style="padding:20px;text-align:center;color:var(--mut);font-size:12px"><i class="fas fa-circle-notch spin"></i> Ordner werden geladen…</div>';
+  folders=[];expandedIds={};loadedParents=new Set();
+  loadFolders();
+}
+
+// ── TREE RENDERING ────────────────────────────────────────────────────────────
+function renderTree(search){
+  if(search===undefined)search=document.getElementById('folder-search').value||'';
+  const tree=document.getElementById('folder-tree');
+  const searchLow=search.toLowerCase().trim();
+
+  const childrenOf=pid=>folders.filter(f=>f.parentId===pid);
+
+  const matchesSearch=f=>{
+    if(!searchLow)return true;
+    return f.displayName.toLowerCase().includes(searchLow)||f.name.toLowerCase().includes(searchLow);
+  };
+  const hasMatchingDesc=f=>{
+    if(matchesSearch(f))return true;
+    return childrenOf(f.id).some(c=>hasMatchingDesc(c));
+  };
+
+  let html='';
+
+  // Root – immer aufklappbar
+  const rootExp=expandedIds['root']!==false; // default offen
+  const rootSel=selectedFolderId==='root';
+  html+=`<div class="tree-item ${rootSel?'selected':''}" onclick="toggleExpand('root')" style="font-weight:500;cursor:pointer">
+    <span class="chevron"><i class="fas fa-chevron-${rootExp?'down':'right'}"></i></span>
+    <i class="fas fa-hdd"></i>
+    <span class="name">Mein Drive</span>
+  </div>`;
+
+  // Rekursive Render-Funktion
+  function renderNode(parentId, depth){
+    const kids=childrenOf(parentId);
+    kids.forEach(f=>{
+      if(searchLow&&!hasMatchingDesc(f))return;
+      const myKids=childrenOf(f.id);
+      const hasKids=myKids.length>0;
+      const mayHaveKids=hasKids||!loadedParents.has(f.id);
+      const isExp=expandedIds[f.id];
+      const isSel=selectedFolderId===f.id;
+      const pl=10+depth*18;
+      const dn=f.displayName.replace(/'/g,"\\'");
+      html+=`<div class="tree-item ${isSel?'selected':''}" style="padding-left:${pl}px" onclick="folderClick('${f.id}','${dn}')">
+        ${mayHaveKids?`<i class="fas fa-chevron-${isExp?'down':'right'}" style="width:14px;font-size:10px;flex-shrink:0"></i>`:'<span style="width:14px;flex-shrink:0"></span>'}
+        <i class="fas fa-folder${isExp?'-open':''}"></i>
+        <span class="name">${f.name}</span>
+        ${isSel?'<i class="fas fa-check-circle" style="color:var(--blue);font-size:11px"></i>':''}
+      </div>`;
+      if(isExp)renderNode(f.id,depth+1);
+    });
+  }
+
+  if(rootExp)renderNode('root',1);
+  tree.innerHTML=html;
+}
+
+async function folderClick(id,name){
+  // Ordner auswählen
+  selectedFolderId=id;
+  selectedFolderName=name;
+  try{localStorage.setItem('alydoc_lastFolder',id);localStorage.setItem('alydoc_lastFolderName',name);}catch{}
+  const sf=document.getElementById('sel-folder');
+  sf.style.display='flex';
+  document.getElementById('sel-folder-name').textContent=name;
+  document.getElementById('btn-ablegen').disabled=false;
+  // Aufklappen + Kinder laden
+  if(!expandedIds[id]){
+    expandedIds[id]=true;
+    if(!loadedParents.has(id)){
+      await loadChildren(id);
+    }
+  }
+  renderTree();
+}
+
+async function toggleExpand(id){
+  expandedIds[id]=!expandedIds[id];
+  if(expandedIds[id]&&!loadedParents.has(id)){
+    await loadChildren(id);
+  }
+  renderTree();
+}
+
+function selectFolder(id,name){
+  selectedFolderId=id;
+  selectedFolderName=name;
+  try{localStorage.setItem('alydoc_lastFolder',id);localStorage.setItem('alydoc_lastFolderName',name);}catch{}
+  const sf=document.getElementById('sel-folder');
+  sf.style.display='flex';
+  document.getElementById('sel-folder-name').textContent=name;
+  document.getElementById('btn-ablegen').disabled=false;
+  renderTree();
+}
+
+function filterFolders(val){
+  document.getElementById('clear-btn').style.display=val?'block':'none';
+  renderTree(val);
+}
+function clearSearch(){
+  document.getElementById('folder-search').value='';
+  document.getElementById('clear-btn').style.display='none';
+  renderTree('');
+}
+
+async function createNewFolder(){
+  const input=document.getElementById('new-folder-name');
+  const name=input.value.trim();
+  if(!name){input.focus();return;}
+  // Create in currently selected folder, or root
+  const parentId=selectedFolderId||'root';
+  try{
+    const meta={name,mimeType:'application/vnd.google-apps.folder',parents:[parentId==='root'?'root':parentId]};
+    const r=await gapi.client.drive.files.create({resource:meta,fields:'id,name'});
+    const newFolder=r.result;
+    // Add to local folders list
+    const parentFolder=folders.find(f=>f.id===parentId);
+    const displayName=parentFolder?(parentFolder.displayName+' / '+name):name;
+    folders.push({id:newFolder.id,name:name,displayName:displayName,parentId:parentId});
+    // Expand parent, select new folder
+    expandedIds[parentId]=true;
+    selectFolder(newFolder.id,displayName);
+    input.value='';
+    renderTree(document.getElementById('folder-search').value);
+    showStatus('Ordner "'+name+'" erstellt','success');
+  }catch(e){
+    showStatus('Ordner konnte nicht erstellt werden: '+e.message,'error');
+  }
+}
+
+// ── ABLEGEN ───────────────────────────────────────────────────────────────────
+async function ablegen(){
+  if(!selectedFolderId||!mailItem)return;
+  const deleteAfter=document.getElementById('opt-delete').checked;
+  const saveAtts=document.getElementById('opt-attachments').checked;
+
+  document.getElementById('btn-ablegen').disabled=true;
+  document.getElementById('progress-wrap').style.display='block';
+  showStatus('Mail wird abgelegt…','info');
+
+  try{
+    // 1. Mail als EML erstellen (inkl. HTML-Body + Anhänge)
+    setProgress(10,'Mail-Inhalt und Anhänge werden gelesen…');
+    const emlContent=await getEmlContent();
+
+    setProgress(40,'Token wird geprüft…');
+    // Token-Validierung vor Upload
+    const tok=gapi.client.getToken();
+    if(!tok||!tok.access_token){
+      throw new Error('Kein Google-Token! Bitte Panel schließen und neu öffnen.');
+    }
+    const tokenCheck=await fetch('https://www.googleapis.com/oauth2/v3/tokeninfo?access_token='+encodeURIComponent(tok.access_token));
+    if(!tokenCheck.ok){
+      try{localStorage.removeItem('alydoc_token');}catch{}
+      gapi.client.setToken(null);
+      throw new Error('Google-Token abgelaufen ('+tokenCheck.status+'). Panel schließen und neu öffnen.');
+    }
+
+    setProgress(50,'Wird in Google Drive gespeichert…');
+    const subject=mailItem.subject||'Mail';
+    const created=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
+    const dateStr=created.toISOString().slice(0,10).replace(/-/g,'_');
+    const safeSubject=subject.replace(/[/\\:*?"<>|]/g,'_').substring(0,60);
+    const fileName=dateStr+'_'+safeSubject+'.eml';
+
+    const uploadResult=await uploadToDrive(fileName,emlContent,'message/rfc822',selectedFolderId);
+    console.log('Upload result:',uploadResult);
+    if(!uploadResult||!uploadResult.id)throw new Error('Upload gab keine File-ID zurück: '+JSON.stringify(uploadResult).substring(0,300));
+    setProgress(70,'EML gespeichert (ID: '+uploadResult.id+')');
+
+    // 2. Anhänge zusätzlich separat speichern (wenn Option aktiv)
+    if(saveAtts&&mailItem.attachments&&mailItem.attachments.length>0){
+      setProgress(72,'Anhänge werden separat gespeichert…');
+      const atts=mailItem.attachments;
+      for(let i=0;i<atts.length;i++){
+        const att=atts[i];
+        setProgress(72+Math.round((i/atts.length)*18),'Anhang: '+att.name);
+        await saveAttachment(att,selectedFolderId);
+      }
+    }
+
+    setProgress(92,'Abschluss…');
+
+    // 3. Mail löschen
+    let wasDeleted=false;
+    let deleteError='';
+    if(deleteAfter){
+      setProgress(92,'Mail wird gelöscht…');
+      wasDeleted=await deleteMailItem();
+      if(!wasDeleted)deleteError=window._lastDeleteError||'Unbekannter Fehler';
+    }
+
+    setProgress(100,'Fertig!');
+
+    // Erfolg anzeigen
+    const attCount=mailItem.attachments?mailItem.attachments.length:0;
+    let msg='✓ Abgelegt in: '+selectedFolderName;
+    msg+='<br><small>Datei: '+fileName+(uploadResult.id?' ('+uploadResult.id+')':'')+'</small>';
+    if(attCount)msg+='<br>'+attCount+' Anhang/Anhänge';
+    if(wasDeleted)msg+='<br>✓ Mail gelöscht';
+    if(deleteAfter&&!wasDeleted)msg+='<br>⚠ Mail nicht gelöscht – Exchange erlaubt kein Löschen via Add-in. Bitte manuell löschen.';
+    showStatus(msg,'success');
+
+    // Button wieder aktivieren, Progress ausblenden
+    document.getElementById('btn-ablegen').disabled=false;
+    document.getElementById('progress-wrap').style.display='none';
+
+    // Mail-Info für nächste Mail aktualisieren (falls sich die Auswahl geändert hat)
+    refreshMailInfo();
+
+  }catch(e){
+    console.error(e);
+    showStatus('Fehler: '+e.message,'error');
+    document.getElementById('progress-wrap').style.display='none';
+  }
+}
+
+async function getEmlContent(){
+  const from=mailItem.from;
+  const to=mailItem.to||[];
+  const cc=mailItem.cc||[];
+  const subject=mailItem.subject||'';
+  const date=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated).toUTCString():new Date().toUTCString();
+  const boundary='__alyDoc_'+Date.now()+'__';
+  const mixedBoundary='__alyDoc_mixed_'+Date.now()+'__';
+
+  // HTML-Body holen
+  const htmlBody=await new Promise((resolve,reject)=>{
+    mailItem.body.getAsync(Office.CoercionType.Html,result=>{
+      if(result.status===Office.AsyncResultStatus.Failed){reject(new Error(result.error.message));return;}
+      resolve(result.value||'');
+    });
+  });
+
+  // Text-Body als Fallback
+  const textBody=await new Promise((resolve,reject)=>{
+    mailItem.body.getAsync(Office.CoercionType.Text,result=>{
+      if(result.status===Office.AsyncResultStatus.Failed){resolve('');return;}
+      resolve(result.value||'');
+    });
+  });
+
+  // Anhänge laden
+  const attachments=[];
+  const atts=mailItem.attachments||[];
+  for(const att of atts){
+    try{
+      const content=await new Promise((resolve,reject)=>{
+        mailItem.getAttachmentContentAsync(att.id,r=>{
+          if(r.status===Office.AsyncResultStatus.Failed){reject(new Error(r.error.message));return;}
+          resolve(r.value);
+        });
+      });
+      let base64Data='';
+      if(content.format===Office.AttachmentContentFormat.Base64){
+        base64Data=content.content;
+      } else {
+        base64Data=btoa(unescape(encodeURIComponent(content.content)));
+      }
+      attachments.push({name:att.name,mimeType:att.contentType||'application/octet-stream',base64:base64Data});
+    }catch(e){console.warn('Anhang konnte nicht geladen werden:',att.name,e);}
+  }
+
+  // EML-Header
+  function encodeHeader(str){
+    if(/^[\x20-\x7E]*$/.test(str))return str;
+    return '=?UTF-8?B?'+btoa(unescape(encodeURIComponent(str)))+'?=';
+  }
+  function formatAddr(r){return(r.displayName?encodeHeader(r.displayName)+' ':'')+' <'+(r.emailAddress||'')+'>';}
+
+  let eml='From: '+(from?formatAddr(from):'')+'\r\n';
+  eml+='To: '+to.map(formatAddr).join(', ')+'\r\n';
+  if(cc.length)eml+='Cc: '+cc.map(formatAddr).join(', ')+'\r\n';
+  eml+='Subject: '+encodeHeader(subject)+'\r\n';
+  eml+='Date: '+date+'\r\n';
+  eml+='MIME-Version: 1.0\r\n';
+
+  if(attachments.length>0){
+    // Multipart/mixed mit Body + Anhängen
+    eml+='Content-Type: multipart/mixed; boundary="'+mixedBoundary+'"\r\n\r\n';
+    eml+='--'+mixedBoundary+'\r\n';
+    eml+='Content-Type: multipart/alternative; boundary="'+boundary+'"\r\n\r\n';
+    eml+='--'+boundary+'\r\n';
+    eml+='Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
+    eml+=btoa(unescape(encodeURIComponent(textBody)))+'\r\n';
+    eml+='--'+boundary+'\r\n';
+    eml+='Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
+    eml+=btoa(unescape(encodeURIComponent(htmlBody)))+'\r\n';
+    eml+='--'+boundary+'--\r\n';
+    for(const att of attachments){
+      eml+='\r\n--'+mixedBoundary+'\r\n';
+      eml+='Content-Type: '+att.mimeType+'; name="'+encodeHeader(att.name)+'"\r\n';
+      eml+='Content-Disposition: attachment; filename="'+encodeHeader(att.name)+'"\r\n';
+      eml+='Content-Transfer-Encoding: base64\r\n\r\n';
+      // Base64 in 76-Zeichen-Zeilen umbrechen
+      const b64=att.base64;
+      for(let i=0;i<b64.length;i+=76){eml+=b64.substring(i,i+76)+'\r\n';}
+    }
+    eml+='--'+mixedBoundary+'--\r\n';
+  } else {
+    // Nur Body, kein Anhang
+    eml+='Content-Type: multipart/alternative; boundary="'+boundary+'"\r\n\r\n';
+    eml+='--'+boundary+'\r\n';
+    eml+='Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
+    eml+=btoa(unescape(encodeURIComponent(textBody)))+'\r\n';
+    eml+='--'+boundary+'\r\n';
+    eml+='Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
+    eml+=btoa(unescape(encodeURIComponent(htmlBody)))+'\r\n';
+    eml+='--'+boundary+'--\r\n';
+  }
+
+  return eml;
+}
+
+async function saveAttachment(att,folderId){
+  return new Promise((resolve,reject)=>{
+    mailItem.getAttachmentContentAsync(att.id,async result=>{
+      if(result.status===Office.AsyncResultStatus.Failed){resolve();return;}
+      try{
+        const content=result.value;
+        let data,mime='application/octet-stream';
+        if(content.format===Office.AttachmentContentFormat.Base64){
+          data=Uint8Array.from(atob(content.content),c=>c.charCodeAt(0));
+        } else {
+          data=new TextEncoder().encode(content.content);
+        }
+        await uploadToDriveBytes(att.name,data,mime,folderId);
+        resolve();
+      }catch(e){console.warn('Anhang Fehler:',e);resolve();}
+    });
+  });
+}
+
+async function uploadToDrive(name,content,mimeType,folderId){
+  const meta={name,parents:[folderId==='root'?'root':folderId]};
+  const boundary='alyDoc_upload_'+Date.now();
+  const body='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+JSON.stringify(meta)+'\r\n--'+boundary+'\r\nContent-Type: '+mimeType+'\r\n\r\n'+content+'\r\n--'+boundary+'--';
+  const token=gapi.client.getToken();
+  if(!token||!token.access_token)throw new Error('Kein Google-Token vorhanden. Bitte neu anmelden.');
+  const resp=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',{
+    method:'POST',
+    headers:{'Content-Type':'multipart/related; boundary='+boundary,'Authorization':'Bearer '+token.access_token},
+    body:body
+  });
+  if(!resp.ok){
+    const errText=await resp.text().catch(()=>'');
+    if(resp.status===401){
+      // Token abgelaufen
+      try{localStorage.removeItem('alydoc_token');}catch{}
+      gapi.client.setToken(null);
+      throw new Error('Google-Token abgelaufen. Bitte neu anmelden (Panel schliessen und öffnen).');
+    }
+    throw new Error('Upload fehlgeschlagen ('+resp.status+'): '+errText.substring(0,200));
+  }
+  return await resp.json();
+}
+
+async function uploadToDriveBytes(name,bytes,mimeType,folderId){
+  const meta={name,parents:[folderId==='root'?'root':folderId]};
+  const enc=new TextEncoder();
+  const boundary='alyDoc_boundary';
+  const metaStr=JSON.stringify(meta);
+  const part1='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+metaStr+'\r\n--'+boundary+'\r\nContent-Type: '+mimeType+'\r\n\r\n';
+  const part2='\r\n--'+boundary+'--';
+  const p1=enc.encode(part1),p2=enc.encode(part2);
+  const combined=new Uint8Array(p1.length+bytes.length+p2.length);
+  combined.set(p1,0);combined.set(bytes,p1.length);combined.set(p2,p1.length+bytes.length);
+  const token=gapi.client.getToken();
+  const resp=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{
+    method:'POST',
+    headers:{'Content-Type':'multipart/related; boundary='+boundary,'Authorization':'Bearer '+token.access_token},
+    body:combined
+  });
+  return resp.json();
+}
+
+function xmlEscape(str){
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+}
+
+function ewsRequest(bodyXml){
+  return new Promise((resolve)=>{
+    try{
+      const soap='<?xml version="1.0" encoding="utf-8"?>'
+        +'<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">'
+        +'<soap:Header><t:RequestServerVersion Version="Exchange2013"/></soap:Header>'
+        +'<soap:Body>'+bodyXml+'</soap:Body></soap:Envelope>';
+
+      Office.context.mailbox.makeEwsRequestAsync(soap,result=>{
+        if(result.status!==Office.AsyncResultStatus.Succeeded){
+          let err='status='+result.status;
+          if(result.error){
+            err+=', msg='+JSON.stringify(result.error.message)+', code='+JSON.stringify(result.error.code)+', name='+JSON.stringify(result.error.name);
+          }
+          try{err+=', diagnostics='+JSON.stringify(result.diagnostics);}catch{}
+          window._lastDeleteError+='[EWS: '+err+'] ';
+          resolve(false);return;
+        }
+        const xml=result.value||'';
+        if(xml.indexOf('ResponseClass="Success"')>=0){
+          resolve(true);
+        } else {
+          // Alles loggen was zurueckkommt
+          const codeMatch=xml.match(/ResponseCode>([^<]+)</);
+          const msgMatch=xml.match(/MessageText>([^<]+)</);
+          if(codeMatch||msgMatch){
+            window._lastDeleteError+='['+(codeMatch?codeMatch[1]:'')+(msgMatch?' '+msgMatch[1]:'')+'] ';
+          } else {
+            window._lastDeleteError+='['+xml.substring(0,350)+'] ';
+          }
+          resolve(false);
+        }
+      });
+    }catch(e){
+      window._lastDeleteError+='[Exception: '+e.message+'] ';
+      resolve(false);
+    }
+  });
+}
+
+// Direkter EWS-Call an Exchange (umgeht makeEwsRequestAsync-Einschränkungen)
+function directEwsRequest(bodyXml){
+  return new Promise((resolve)=>{
+    try{
+      const ewsUrl=Office.context.mailbox.ewsUrl;
+      if(!ewsUrl){window._lastDeleteError+='[Direkt: kein ewsUrl] ';resolve(false);return;}
+
+      Office.context.mailbox.getCallbackTokenAsync(tokenResult=>{
+        if(tokenResult.status!==Office.AsyncResultStatus.Succeeded){
+          let err='status='+tokenResult.status;
+          if(tokenResult.error) err+=', msg='+JSON.stringify(tokenResult.error.message)+', code='+JSON.stringify(tokenResult.error.code);
+          window._lastDeleteError+='[Direkt Token: '+err+'] ';
+          resolve(false);return;
+        }
+        const token=tokenResult.value;
+        const soap='<?xml version="1.0" encoding="utf-8"?>'
+          +'<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">'
+          +'<soap:Header><t:RequestServerVersion Version="Exchange2013"/></soap:Header>'
+          +'<soap:Body>'+bodyXml+'</soap:Body></soap:Envelope>';
+
+        fetch(ewsUrl,{
+          method:'POST',
+          headers:{'Content-Type':'text/xml; charset=utf-8','Authorization':'Bearer '+token},
+          body:soap
+        }).then(r=>{
+          if(!r.ok){window._lastDeleteError+='[Direkt HTTP '+r.status+'] ';resolve(false);return;}
+          return r.text();
+        }).then(xml=>{
+          if(!xml){resolve(false);return;}
+          if(xml.indexOf('ResponseClass="Success"')>=0){
+            resolve(true);
+          } else {
+            const codeMatch=xml.match(/ResponseCode>([^<]+)</);
+            const msgMatch=xml.match(/MessageText>([^<]+)</);
+            if(codeMatch||msgMatch){
+              window._lastDeleteError+='[Direkt: '+(codeMatch?codeMatch[1]:'')+(msgMatch?' '+msgMatch[1]:'')+'] ';
+            } else {
+              window._lastDeleteError+='[Direkt: '+xml.substring(0,300)+'] ';
+            }
+            resolve(false);
+          }
+        }).catch(e=>{window._lastDeleteError+='[Direkt fetch: '+e.message+'] ';resolve(false);});
+      });
+    }catch(e){
+      window._lastDeleteError+='[Direkt Exception: '+e.message+'] ';
+      resolve(false);
+    }
+  });
+}
+
+async function deleteMailItem(){
+  window._lastDeleteError='';
+  const itemId=mailItem.itemId;
+  if(!itemId){window._lastDeleteError='Keine itemId vorhanden.';return false;}
+
+  const safeId=xmlEscape(itemId);
+  const moveBody='<m:MoveItem>'
+    +'<m:ToFolderId><t:DistinguishedFolderId Id="deleteditems"/></m:ToFolderId>'
+    +'<m:ItemIds><t:ItemId Id="'+safeId+'"/></m:ItemIds>'
+    +'</m:MoveItem>';
+  const deleteBody='<m:DeleteItem DeleteType="MoveToDeletedItems">'
+    +'<m:ItemIds><t:ItemId Id="'+safeId+'"/></m:ItemIds>'
+    +'</m:DeleteItem>';
+
+  // Versuch 1: makeEwsRequestAsync MoveItem
+  if(Office.context.mailbox.makeEwsRequestAsync){
+    const r1=await ewsRequest(moveBody);
+    if(r1)return true;
+    // Versuch 2: makeEwsRequestAsync DeleteItem
+    const r2=await ewsRequest(deleteBody);
+    if(r2)return true;
+  } else {
+    window._lastDeleteError+='[makeEwsRequestAsync nicht verfuegbar] ';
+  }
+
+  // Versuch 3: Direkter EWS-Call mit Callback-Token
+  const r3=await directEwsRequest(moveBody);
+  if(r3)return true;
+
+  // Versuch 4: Direkter DeleteItem
+  const r4=await directEwsRequest(deleteBody);
+  if(r4)return true;
+
+  return false;
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  if(id==='scr-main'){
+    document.getElementById('status-box').style.display='none';
+    document.getElementById('progress-wrap').style.display='none';
+    document.getElementById('btn-ablegen').disabled=!selectedFolderId;
+  }
+}
+
+function showStatus(msg,type){
+  const icons={info:'fa-info-circle',success:'fa-check-circle',error:'fa-exclamation-circle',warn:'fa-exclamation-triangle'};
+  const box=document.getElementById('status-box');
+  box.style.display='flex';
+  box.className='status '+type;
+  box.innerHTML=`<i class="fas ${icons[type]||'fa-info-circle'}"></i><span>${msg}</span>`;
+}
+
+function setProgress(pct,label){
+  document.getElementById('progress-bar').style.width=pct+'%';
+  document.getElementById('progress-label').textContent=label;
+}
+
+function initGapi(){
+  // Wird durch onload-Callbacks gestartet
+}
+</script>
+</body>
+</html>
