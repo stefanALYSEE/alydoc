@@ -105,7 +105,7 @@ if(tokenFromUrl){
       +'&response_type=token'
       +'&scope='+encodeURIComponent(SCOPES)
       +'&include_granted_scopes=true'
-      +'&prompt=consent'
+      +'&prompt=select_account'
       +(state?'&state='+encodeURIComponent(state):'');
 
     window.location.href=authUrl;

@@ -383,7 +383,7 @@ function signIn(){
         onTokenReceived(resp.access_token);
       }
     });
-    tokenClient.requestAccessToken({prompt:'consent'});
+    tokenClient.requestAccessToken({prompt:'select_account'});
   }
 }
 
@@ -411,14 +411,13 @@ async function loadFolders(){
     while(queue.length>0){
       const batch=queue.splice(0,6);
       await Promise.all(batch.map(async parent=>{
-        if(parent.depth>=4)return;
         const kids=await listFolders(parent.id);
         kids.forEach(f=>{
           if(visited.has(f.id))return;
           visited.add(f.id);
           const displayName=parent.displayName?parent.displayName+' / '+f.name:f.name;
           result.push({id:f.id,name:f.name,displayName,parentId:parent.id});
-          if(parent.depth<3)queue.push({id:f.id,displayName,depth:parent.depth+1});
+          queue.push({id:f.id,displayName,depth:parent.depth+1});
         });
       }));
     }
@@ -599,7 +598,7 @@ async function ablegen(){
     let msg='Abgelegt in: '+selectedFolderName;
     if(attCount)msg+=' · '+attCount+' Anhang/Anhänge';
     if(wasDeleted)msg+=' · Mail gelöscht';
-    if(deleteAfter&&!wasDeleted)msg+='\n⚠ Mail nicht gelöscht: '+deleteError;
+    if(deleteAfter&&!wasDeleted)msg+='<br>⚠ Mail nicht gelöscht: '+deleteError;
     showStatus(msg,'success');
 
     // Button wieder aktivieren, Progress ausblenden
@@ -765,9 +764,13 @@ async function deleteMailItem(){
   const ewsResult=await tryDeleteViaEws();
   if(ewsResult)return true;
 
-  // Methode 2: REST API
+  // Methode 2: REST API (Outlook REST v2.0)
   const restResult=await tryDeleteViaRest();
   if(restResult)return true;
+
+  // Methode 3: Microsoft Graph API
+  const graphResult=await tryDeleteViaGraph();
+  if(graphResult)return true;
 
   return false;
 }
@@ -837,6 +840,36 @@ function tryDeleteViaRest(){
       });
     }catch(e){
       window._lastDeleteError+='REST Exception: '+e.message+'. ';
+      resolve(false);
+    }
+  });
+}
+
+function tryDeleteViaGraph(){
+  return new Promise((resolve)=>{
+    try{
+      const itemId=mailItem.itemId;
+      if(!itemId){resolve(false);return;}
+
+      Office.context.mailbox.getCallbackTokenAsync({isRest:true},tokenResult=>{
+        if(tokenResult.status!==Office.AsyncResultStatus.Succeeded){
+          window._lastDeleteError+='Graph Token: '+(tokenResult.error?tokenResult.error.message+' (code:'+tokenResult.error.code+')':'failed')+'. ';
+          resolve(false);return;
+        }
+        const token=tokenResult.value;
+        const restId=Office.context.mailbox.convertToRestId(itemId,Office.MailboxEnums.RestVersion.v2_0);
+        const url='https://graph.microsoft.com/v1.0/me/messages/'+restId+'/move';
+        fetch(url,{
+          method:'POST',
+          headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
+          body:JSON.stringify({destinationId:'deleteditems'})
+        }).then(r=>{
+          if(r.ok){resolve(true);}
+          else{r.text().then(t=>{window._lastDeleteError+='Graph ('+r.status+'): '+t.substring(0,120)+'. ';resolve(false);});}
+        }).catch(e=>{window._lastDeleteError+='Graph fetch: '+e.message+'. ';resolve(false);});
+      });
+    }catch(e){
+      window._lastDeleteError+='Graph Exception: '+e.message+'. ';
       resolve(false);
     }
   });
