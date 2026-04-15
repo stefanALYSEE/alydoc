@@ -600,8 +600,10 @@ async function ablegen(){
     const safeSubject=subject.replace(/[/\\:*?"<>|]/g,'_').substring(0,60);
     const fileName=dateStr+'_'+safeSubject+'.eml';
 
-    await uploadToDrive(fileName,emlContent,'message/rfc822',selectedFolderId);
-    setProgress(70,'EML mit Anhängen gespeichert…');
+    const uploadResult=await uploadToDrive(fileName,emlContent,'message/rfc822',selectedFolderId);
+    console.log('Upload result:',uploadResult);
+    if(!uploadResult||!uploadResult.id)throw new Error('Upload gab keine File-ID zurück: '+JSON.stringify(uploadResult).substring(0,300));
+    setProgress(70,'EML gespeichert (ID: '+uploadResult.id+')');
 
     // 2. Anhänge zusätzlich separat speichern (wenn Option aktiv)
     if(saveAtts&&mailItem.attachments&&mailItem.attachments.length>0){
@@ -627,12 +629,13 @@ async function ablegen(){
 
     setProgress(100,'Fertig!');
 
-    // Erfolg anzeigen – KEIN Screen-Wechsel, Add-in bleibt offen
+    // Erfolg anzeigen
     const attCount=mailItem.attachments?mailItem.attachments.length:0;
-    let msg='Abgelegt in: '+selectedFolderName;
-    if(attCount)msg+=' · '+attCount+' Anhang/Anhänge';
-    if(wasDeleted)msg+=' · Mail gelöscht';
-    if(deleteAfter&&!wasDeleted)msg+='<br>⚠ Mail nicht gelöscht: '+deleteError;
+    let msg='✓ Abgelegt in: '+selectedFolderName;
+    msg+='<br><small>Datei: '+fileName+(uploadResult.id?' ('+uploadResult.id+')':'')+'</small>';
+    if(attCount)msg+='<br>'+attCount+' Anhang/Anhänge';
+    if(wasDeleted)msg+='<br>✓ Mail gelöscht';
+    if(deleteAfter&&!wasDeleted)msg+='<br>⚠ Mail nicht gelöscht – Exchange erlaubt kein Löschen via Add-in. Bitte manuell löschen.';
     showStatus(msg,'success');
 
     // Button wieder aktivieren, Progress ausblenden
