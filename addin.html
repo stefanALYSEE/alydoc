@@ -402,30 +402,37 @@ function onTokenReceived(accessToken){
   }).catch(()=>{});
 }
 
-// ── FOLDER LOADING ────────────────────────────────────────────────────────────
+// ── FOLDER LOADING (Lazy – nur aufgeklappte Ebenen laden) ─────────────────────
+// loadedParents merkt sich, welche Ordner bereits geladen wurden
+let loadedParents=new Set();
+
 async function loadFolders(){
+  // Nur Root-Ebene laden
   try{
-    const result=[];
-    const queue=[{id:'root',displayName:'',depth:0}];
-    const visited=new Set(['root']);
-    while(queue.length>0){
-      const batch=queue.splice(0,6);
-      await Promise.all(batch.map(async parent=>{
-        const kids=await listFolders(parent.id);
-        kids.forEach(f=>{
-          if(visited.has(f.id))return;
-          visited.add(f.id);
-          const displayName=parent.displayName?parent.displayName+' / '+f.name:f.name;
-          result.push({id:f.id,name:f.name,displayName,parentId:parent.id});
-          queue.push({id:f.id,displayName,depth:parent.depth+1});
-        });
-      }));
-    }
-    folders=result;
-    renderTree('root',0,'');
+    folders=[];
+    loadedParents=new Set();
+    const kids=await listFolders('root');
+    kids.forEach(f=>{
+      folders.push({id:f.id,name:f.name,displayName:f.name,parentId:'root'});
+    });
+    loadedParents.add('root');
+    renderTree();
   }catch(e){
     document.getElementById('folder-tree').innerHTML='<div style="padding:12px;color:var(--red);font-size:12px"><i class="fas fa-exclamation-triangle"></i> Fehler beim Laden</div>';
   }
+}
+
+async function loadChildren(parentId){
+  if(loadedParents.has(parentId))return;
+  loadedParents.add(parentId);
+  const parent=folders.find(f=>f.id===parentId);
+  const parentDisplay=parent?parent.displayName:'';
+  const kids=await listFolders(parentId);
+  kids.forEach(f=>{
+    if(folders.some(x=>x.id===f.id))return;
+    const displayName=parentDisplay?parentDisplay+' / '+f.name:f.name;
+    folders.push({id:f.id,name:f.name,displayName,parentId});
+  });
 }
 
 async function listFolders(parentId){
@@ -440,12 +447,13 @@ async function listFolders(parentId){
 
 function refreshFolders(){
   document.getElementById('folder-tree').innerHTML='<div style="padding:20px;text-align:center;color:var(--mut);font-size:12px"><i class="fas fa-circle-notch spin"></i> Ordner werden geladen…</div>';
-  folders=[];expandedIds={};
+  folders=[];expandedIds={};loadedParents=new Set();
   loadFolders();
 }
 
 // ── TREE RENDERING ────────────────────────────────────────────────────────────
-function renderTree(search=''){
+function renderTree(search){
+  if(search===undefined)search=document.getElementById('folder-search').value||'';
   const tree=document.getElementById('folder-tree');
   const searchLow=search.toLowerCase().trim();
 
@@ -476,16 +484,18 @@ function renderTree(search=''){
       if(searchLow&&!hasMatchingDesc(f))return;
       const myKids=childrenOf(f.id);
       const hasKids=myKids.length>0;
-      const isExp=searchLow?hasMatchingDesc(f):expandedIds[f.id];
+      // Noch nicht geladene Ordner zeigen immer einen Chevron (könnte Kinder haben)
+      const mayHaveKids=hasKids||!loadedParents.has(f.id);
+      const isExp=expandedIds[f.id];
       const isSel=selectedFolderId===f.id;
       const pl=10+depth*18;
       html+=`<div class="tree-item ${isSel?'selected':''}" style="padding-left:${pl}px" onclick="selectFolder('${f.id}','${f.displayName.replace(/'/g,"\\'")}')">
-        <span class="chevron" onclick="event.stopPropagation();toggleExpand('${f.id}')">${hasKids?`<i class="fas fa-chevron-${isExp?'down':'right'}"></i>`:''}</span>
-        <i class="fas fa-folder"></i>
+        <span class="chevron" onclick="event.stopPropagation();toggleExpand('${f.id}')">${mayHaveKids?`<i class="fas fa-chevron-${isExp?'down':'right'}"></i>`:''}</span>
+        <i class="fas fa-folder${isExp?'-open':''}"></i>
         <span class="name">${f.name}</span>
         ${isSel?'<i class="fas fa-check-circle" style="color:var(--blue);font-size:11px"></i>':''}
       </div>`;
-      if(isExp||searchLow)renderNode(f.id,depth+1);
+      if(isExp)renderNode(f.id,depth+1);
     });
   }
 
@@ -493,9 +503,13 @@ function renderTree(search=''){
   tree.innerHTML=html;
 }
 
-function toggleExpand(id){
+async function toggleExpand(id){
   expandedIds[id]=!expandedIds[id];
-  renderTree(document.getElementById('folder-search').value);
+  if(expandedIds[id]&&!loadedParents.has(id)){
+    // Kinder laden, dann rendern
+    await loadChildren(id);
+  }
+  renderTree();
 }
 
 function selectFolder(id,name){
