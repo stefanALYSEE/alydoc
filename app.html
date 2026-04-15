@@ -516,8 +516,10 @@ async function folderClick(id,name){
   sf.style.display='flex';
   document.getElementById('sel-folder-name').textContent=name;
   document.getElementById('btn-ablegen').disabled=false;
-  // Aufklappen + Kinder laden
-  if(!expandedIds[id]){
+  // Aufklappen/Zuklappen toggle
+  if(expandedIds[id]){
+    expandedIds[id]=false;
+  } else {
     expandedIds[id]=true;
     if(!loadedParents.has(id)){
       await loadChildren(id);
