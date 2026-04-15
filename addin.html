@@ -767,10 +767,26 @@ async function saveAttachment(att,folderId){
 
 async function uploadToDrive(name,content,mimeType,folderId){
   const meta={name,parents:[folderId==='root'?'root':folderId]};
-  const boundary='alyDoc_boundary';
+  const boundary='alyDoc_upload_'+Date.now();
   const body='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+JSON.stringify(meta)+'\r\n--'+boundary+'\r\nContent-Type: '+mimeType+'\r\n\r\n'+content+'\r\n--'+boundary+'--';
-  const resp=await gapi.client.request({path:'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',method:'POST',headers:{'Content-Type':'multipart/related; boundary='+boundary},body});
-  return resp.result;
+  const token=gapi.client.getToken();
+  if(!token||!token.access_token)throw new Error('Kein Google-Token vorhanden. Bitte neu anmelden.');
+  const resp=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name',{
+    method:'POST',
+    headers:{'Content-Type':'multipart/related; boundary='+boundary,'Authorization':'Bearer '+token.access_token},
+    body:body
+  });
+  if(!resp.ok){
+    const errText=await resp.text().catch(()=>'');
+    if(resp.status===401){
+      // Token abgelaufen
+      try{localStorage.removeItem('alydoc_token');}catch{}
+      gapi.client.setToken(null);
+      throw new Error('Google-Token abgelaufen. Bitte neu anmelden (Panel schliessen und öffnen).');
+    }
+    throw new Error('Upload fehlgeschlagen ('+resp.status+'): '+errText.substring(0,200));
+  }
+  return await resp.json();
 }
 
 async function uploadToDriveBytes(name,bytes,mimeType,folderId){
@@ -806,8 +822,12 @@ function ewsRequest(bodyXml){
 
       Office.context.mailbox.makeEwsRequestAsync(soap,result=>{
         if(result.status!==Office.AsyncResultStatus.Succeeded){
-          const err=result.error?(result.error.message||'')+(result.error.code?' ('+result.error.code+')':''):'async failed';
-          window._lastDeleteError+='['+err+'] ';
+          let err='status='+result.status;
+          if(result.error){
+            err+=', msg='+JSON.stringify(result.error.message)+', code='+JSON.stringify(result.error.code)+', name='+JSON.stringify(result.error.name);
+          }
+          try{err+=', diagnostics='+JSON.stringify(result.diagnostics);}catch{}
+          window._lastDeleteError+='[EWS: '+err+'] ';
           resolve(false);return;
         }
         const xml=result.value||'';
@@ -841,7 +861,8 @@ function directEwsRequest(bodyXml){
 
       Office.context.mailbox.getCallbackTokenAsync(tokenResult=>{
         if(tokenResult.status!==Office.AsyncResultStatus.Succeeded){
-          const err=tokenResult.error?(tokenResult.error.message||'')+(tokenResult.error.code?' ('+tokenResult.error.code+')':''):'token failed';
+          let err='status='+tokenResult.status;
+          if(tokenResult.error) err+=', msg='+JSON.stringify(tokenResult.error.message)+', code='+JSON.stringify(tokenResult.error.code);
           window._lastDeleteError+='[Direkt Token: '+err+'] ';
           resolve(false);return;
         }
