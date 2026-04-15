@@ -490,8 +490,9 @@ function renderTree(search){
       const isExp=expandedIds[f.id];
       const isSel=selectedFolderId===f.id;
       const pl=10+depth*18;
-      html+=`<div class="tree-item ${isSel?'selected':''}" style="padding-left:${pl}px" onclick="selectFolder('${f.id}','${f.displayName.replace(/'/g,"\\'")}')">
-        <span class="chevron" onclick="event.stopPropagation();toggleExpand('${f.id}')">${mayHaveKids?`<i class="fas fa-chevron-${isExp?'down':'right'}"></i>`:''}</span>
+      const dn=f.displayName.replace(/'/g,"\\'");
+      html+=`<div class="tree-item ${isSel?'selected':''}" style="padding-left:${pl}px" onclick="folderClick('${f.id}','${dn}')">
+        ${mayHaveKids?`<i class="fas fa-chevron-${isExp?'down':'right'}" style="width:14px;font-size:10px;flex-shrink:0"></i>`:'<span style="width:14px;flex-shrink:0"></span>'}
         <i class="fas fa-folder${isExp?'-open':''}"></i>
         <span class="name">${f.name}</span>
         ${isSel?'<i class="fas fa-check-circle" style="color:var(--blue);font-size:11px"></i>':''}
@@ -504,10 +505,28 @@ function renderTree(search){
   tree.innerHTML=html;
 }
 
+async function folderClick(id,name){
+  // Ordner auswählen
+  selectedFolderId=id;
+  selectedFolderName=name;
+  try{localStorage.setItem('alydoc_lastFolder',id);localStorage.setItem('alydoc_lastFolderName',name);}catch{}
+  const sf=document.getElementById('sel-folder');
+  sf.style.display='flex';
+  document.getElementById('sel-folder-name').textContent=name;
+  document.getElementById('btn-ablegen').disabled=false;
+  // Aufklappen + Kinder laden
+  if(!expandedIds[id]){
+    expandedIds[id]=true;
+    if(!loadedParents.has(id)){
+      await loadChildren(id);
+    }
+  }
+  renderTree();
+}
+
 async function toggleExpand(id){
   expandedIds[id]=!expandedIds[id];
   if(expandedIds[id]&&!loadedParents.has(id)){
-    // Kinder laden, dann rendern
     await loadChildren(id);
   }
   renderTree();
@@ -521,7 +540,7 @@ function selectFolder(id,name){
   sf.style.display='flex';
   document.getElementById('sel-folder-name').textContent=name;
   document.getElementById('btn-ablegen').disabled=false;
-  renderTree(document.getElementById('folder-search').value);
+  renderTree();
 }
 
 function filterFolders(val){
