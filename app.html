@@ -106,7 +106,10 @@
     <div class="header h1">alyDoc</div>
     <div class="header sub">Mail ablegen</div>
   </div>
-  <div style="margin-left:auto;font-size:11px;opacity:.5" id="user-name"></div>
+  <div style="margin-left:auto;text-align:right">
+    <div style="font-size:11px;opacity:.5" id="user-name"></div>
+    <div style="font-size:9px;opacity:.3">v2.1</div>
+  </div>
 </div>
 
 <!-- SCREEN: Loading -->
@@ -592,6 +595,19 @@ async function ablegen(){
     // 1. Mail als EML erstellen (inkl. HTML-Body + Anhänge)
     setProgress(10,'Mail-Inhalt und Anhänge werden gelesen…');
     const emlContent=await getEmlContent();
+
+    setProgress(40,'Token wird geprüft…');
+    // Token-Validierung vor Upload
+    const tok=gapi.client.getToken();
+    if(!tok||!tok.access_token){
+      throw new Error('Kein Google-Token! Bitte Panel schließen und neu öffnen.');
+    }
+    const tokenCheck=await fetch('https://www.googleapis.com/oauth2/v3/tokeninfo?access_token='+encodeURIComponent(tok.access_token));
+    if(!tokenCheck.ok){
+      try{localStorage.removeItem('alydoc_token');}catch{}
+      gapi.client.setToken(null);
+      throw new Error('Google-Token abgelaufen ('+tokenCheck.status+'). Panel schließen und neu öffnen.');
+    }
 
     setProgress(50,'Wird in Google Drive gespeichert…');
     const subject=mailItem.subject||'Mail';
