@@ -792,130 +792,79 @@ async function uploadToDriveBytes(name,bytes,mimeType,folderId){
   return resp.json();
 }
 
-async function deleteMailItem(){
-  window._lastDeleteError='';
-  // Methode 1: EWS MoveItem (breiteste Kompatibilitaet)
-  const ewsResult=await tryDeleteViaEws();
-  if(ewsResult)return true;
-
-  // Methode 2: REST API (Outlook REST v2.0)
-  const restResult=await tryDeleteViaRest();
-  if(restResult)return true;
-
-  // Methode 3: Microsoft Graph API
-  const graphResult=await tryDeleteViaGraph();
-  if(graphResult)return true;
-
-  return false;
-}
-
 function xmlEscape(str){
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
 }
 
-function tryDeleteViaEws(){
+function ewsRequest(bodyXml){
   return new Promise((resolve)=>{
     try{
-      if(!Office.context.mailbox.makeEwsRequestAsync){
-        window._lastDeleteError+='EWS: nicht verfuegbar. ';
-        resolve(false);return;
-      }
-      const itemId=mailItem.itemId;
-      if(!itemId){window._lastDeleteError+='EWS: keine itemId. ';resolve(false);return;}
-
-      const safeId=xmlEscape(itemId);
       const soap='<?xml version="1.0" encoding="utf-8"?>'
         +'<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" xmlns:t="http://schemas.microsoft.com/exchange/services/2006/types" xmlns:m="http://schemas.microsoft.com/exchange/services/2006/messages">'
-        +'<soap:Header><t:RequestServerVersion Version="Exchange2016"/></soap:Header>'
-        +'<soap:Body><m:MoveItem>'
-        +'<m:ToFolderId><t:DistinguishedFolderId Id="deleteditems"/></m:ToFolderId>'
-        +'<m:ItemIds><t:ItemId Id="'+safeId+'"/></m:ItemIds>'
-        +'</m:MoveItem></soap:Body></soap:Envelope>';
+        +'<soap:Header><t:RequestServerVersion Version="Exchange2013"/></soap:Header>'
+        +'<soap:Body>'+bodyXml+'</soap:Body></soap:Envelope>';
 
       Office.context.mailbox.makeEwsRequestAsync(soap,result=>{
         if(result.status!==Office.AsyncResultStatus.Succeeded){
-          window._lastDeleteError+='EWS: '+(result.error?result.error.message+' (code:'+result.error.code+')':'Status failed')+'. ';
+          const err=result.error?(result.error.message||'')+(result.error.code?' ('+result.error.code+')':''):'async failed';
+          window._lastDeleteError+='['+err+'] ';
           resolve(false);return;
         }
         const xml=result.value||'';
         if(xml.indexOf('ResponseClass="Success"')>=0){
           resolve(true);
-        } else if(xml.indexOf('ResponseClass="Error"')>=0){
-          const msgMatch=xml.match(/MessageText>([^<]+)</);
-          const codeMatch=xml.match(/ResponseCode>([^<]+)</);
-          window._lastDeleteError+='EWS: '+(codeMatch?codeMatch[1]+' - ':'')+(msgMatch?msgMatch[1]:xml.substring(0,200))+'. ';
-          resolve(false);
         } else {
-          window._lastDeleteError+='EWS unbekannt: '+xml.substring(0,250)+'. ';
+          // Alles loggen was zurueckkommt
+          const codeMatch=xml.match(/ResponseCode>([^<]+)</);
+          const msgMatch=xml.match(/MessageText>([^<]+)</);
+          if(codeMatch||msgMatch){
+            window._lastDeleteError+='['+(codeMatch?codeMatch[1]:'')+(msgMatch?' '+msgMatch[1]:'')+'] ';
+          } else {
+            window._lastDeleteError+='['+xml.substring(0,350)+'] ';
+          }
           resolve(false);
         }
       });
     }catch(e){
-      window._lastDeleteError+='EWS Exception: '+e.message+'. ';
+      window._lastDeleteError+='[Exception: '+e.message+'] ';
       resolve(false);
     }
   });
 }
 
-function tryDeleteViaRest(){
-  return new Promise((resolve)=>{
-    try{
-      const itemId=mailItem.itemId;
-      if(!itemId){resolve(false);return;}
-      if(!Office.context.mailbox.restUrl){window._lastDeleteError+='REST: keine restUrl. ';resolve(false);return;}
+async function deleteMailItem(){
+  window._lastDeleteError='';
+  const itemId=mailItem.itemId;
+  if(!itemId){window._lastDeleteError='Keine itemId vorhanden.';return false;}
+  if(!Office.context.mailbox.makeEwsRequestAsync){
+    window._lastDeleteError='EWS nicht verfuegbar.';return false;
+  }
 
-      Office.context.mailbox.getCallbackTokenAsync({isRest:true},tokenResult=>{
-        if(tokenResult.status!==Office.AsyncResultStatus.Succeeded){
-          window._lastDeleteError+='REST Token: '+(tokenResult.error?tokenResult.error.message+' (code:'+tokenResult.error.code+')':'failed')+'. ';
-          resolve(false);return;
-        }
-        const restToken=tokenResult.value;
-        const restId=Office.context.mailbox.convertToRestId(itemId,Office.MailboxEnums.RestVersion.v2_0);
-        const url=Office.context.mailbox.restUrl+'/v2.0/me/messages/'+restId+'/move';
-        fetch(url,{
-          method:'POST',
-          headers:{'Authorization':'Bearer '+restToken,'Content-Type':'application/json'},
-          body:JSON.stringify({DestinationId:'DeletedItems'})
-        }).then(r=>{
-          if(r.ok){resolve(true);}
-          else{r.text().then(t=>{window._lastDeleteError+='REST ('+r.status+'): '+t.substring(0,120)+'. ';resolve(false);});}
-        }).catch(e=>{window._lastDeleteError+='REST fetch: '+e.message+'. ';resolve(false);});
-      });
-    }catch(e){
-      window._lastDeleteError+='REST Exception: '+e.message+'. ';
-      resolve(false);
-    }
-  });
-}
+  const safeId=xmlEscape(itemId);
 
-function tryDeleteViaGraph(){
-  return new Promise((resolve)=>{
-    try{
-      const itemId=mailItem.itemId;
-      if(!itemId){resolve(false);return;}
+  // Versuch 1: MoveItem → Papierkorb
+  const r1=await ewsRequest(
+    '<m:MoveItem>'
+    +'<m:ToFolderId><t:DistinguishedFolderId Id="deleteditems"/></m:ToFolderId>'
+    +'<m:ItemIds><t:ItemId Id="'+safeId+'"/></m:ItemIds>'
+    +'</m:MoveItem>');
+  if(r1)return true;
 
-      Office.context.mailbox.getCallbackTokenAsync({isRest:true},tokenResult=>{
-        if(tokenResult.status!==Office.AsyncResultStatus.Succeeded){
-          window._lastDeleteError+='Graph Token: '+(tokenResult.error?tokenResult.error.message+' (code:'+tokenResult.error.code+')':'failed')+'. ';
-          resolve(false);return;
-        }
-        const token=tokenResult.value;
-        const restId=Office.context.mailbox.convertToRestId(itemId,Office.MailboxEnums.RestVersion.v2_0);
-        const url='https://graph.microsoft.com/v1.0/me/messages/'+restId+'/move';
-        fetch(url,{
-          method:'POST',
-          headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
-          body:JSON.stringify({destinationId:'deleteditems'})
-        }).then(r=>{
-          if(r.ok){resolve(true);}
-          else{r.text().then(t=>{window._lastDeleteError+='Graph ('+r.status+'): '+t.substring(0,120)+'. ';resolve(false);});}
-        }).catch(e=>{window._lastDeleteError+='Graph fetch: '+e.message+'. ';resolve(false);});
-      });
-    }catch(e){
-      window._lastDeleteError+='Graph Exception: '+e.message+'. ';
-      resolve(false);
-    }
-  });
+  // Versuch 2: DeleteItem MoveToDeletedItems
+  const r2=await ewsRequest(
+    '<m:DeleteItem DeleteType="MoveToDeletedItems">'
+    +'<m:ItemIds><t:ItemId Id="'+safeId+'"/></m:ItemIds>'
+    +'</m:DeleteItem>');
+  if(r2)return true;
+
+  // Versuch 3: DeleteItem SoftDelete
+  const r3=await ewsRequest(
+    '<m:DeleteItem DeleteType="SoftDelete">'
+    +'<m:ItemIds><t:ItemId Id="'+safeId+'"/></m:ItemIds>'
+    +'</m:DeleteItem>');
+  if(r3)return true;
+
+  return false;
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
