@@ -1,5 +1,5 @@
 // alysee DMS Service Worker
-const CACHE = 'alydoc-v4';
+const CACHE = 'alydoc-v5';
 const OFFLINE_URL = 'index.html';
 
 // Assets die beim Install gecacht werden

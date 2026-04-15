@@ -1014,7 +1014,7 @@ function Main({onOut,isDemo}){
   },[]);
 
   const load=async fid=>{setLoading(true);setSel(null);setMultiSel([]);try{setFiles(await DR.ls(fid));}catch(e){console.error(e);toast('Ladefehler','e');}setLoading(false);};
-  const go=f=>{const idx=path.findIndex(x=>x.id===f.id);setPath(idx>=0?path.slice(0,idx+1):[...path,{id:f.id,name:f.name}]);setCur(f);setRes(null);setQ('');setExp(p=>({...p,[f.id]:!p[f.id]}));if(!isDemo){load(f.id);if(!treeCache[f.id])loadTreeChildren(f.id,true);}else setFiles(DF);};
+  const go=f=>{const isSame=cur.id===f.id;if(isSame){setExp(p=>({...p,[f.id]:!p[f.id]}));return;}const idx=path.findIndex(x=>x.id===f.id);setPath(idx>=0?path.slice(0,idx+1):[...path,{id:f.id,name:f.name}]);setCur(f);setRes(null);setQ('');setExp(p=>({...p,[f.id]:true}));if(!isDemo){load(f.id);if(!treeCache[f.id])loadTreeChildren(f.id,true);}else setFiles(DF);};
   const click=(f,e)=>{
   if(f.mimeType==='application/vnd.google-apps.folder'){if(!e?.ctrlKey&&!e?.metaKey)go(f);return;}
   if(e?.ctrlKey||e?.metaKey){
