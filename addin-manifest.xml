@@ -6,7 +6,7 @@
            xsi:type="MailApp">
 
   <Id>c4e8a40d-e33a-4773-94f0-cd55d1b41f03</Id>
-  <Version>1.7.0.0</Version>
+  <Version>2.0.0.0</Version>
   <ProviderName>alysee GmbH</ProviderName>
   <DefaultLocale>de-DE</DefaultLocale>
   <DisplayName DefaultValue="alyDoc"/>
@@ -36,7 +36,7 @@
   <FormSettings>
     <Form xsi:type="ItemRead">
       <DesktopSettings>
-        <SourceLocation DefaultValue="https://alydoc.alysee.de/addin.html?v=8"/>
+        <SourceLocation DefaultValue="https://alydoc.alysee.de/app.html"/>
         <RequestedHeight>450</RequestedHeight>
       </DesktopSettings>
     </Form>
@@ -94,8 +94,8 @@
         <bt:Image id="icon80" DefaultValue="https://alydoc.alysee.de/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="residFunctionUrl" DefaultValue="https://alydoc.alysee.de/addin.html?v=8"/>
-        <bt:Url id="residTaskpaneUrl" DefaultValue="https://alydoc.alysee.de/addin.html?v=8"/>
+        <bt:Url id="residFunctionUrl" DefaultValue="https://alydoc.alysee.de/app.html"/>
+        <bt:Url id="residTaskpaneUrl" DefaultValue="https://alydoc.alysee.de/app.html"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="grpLabel" DefaultValue="alyDoc"/>
@@ -150,8 +150,8 @@
           <bt:Image id="icon80" DefaultValue="https://alydoc.alysee.de/icon-80.png"/>
         </bt:Images>
         <bt:Urls>
-          <bt:Url id="residFunctionUrl" DefaultValue="https://alydoc.alysee.de/addin.html?v=8"/>
-          <bt:Url id="residTaskpaneUrl" DefaultValue="https://alydoc.alysee.de/addin.html?v=8"/>
+          <bt:Url id="residFunctionUrl" DefaultValue="https://alydoc.alysee.de/app.html"/>
+          <bt:Url id="residTaskpaneUrl" DefaultValue="https://alydoc.alysee.de/app.html"/>
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="grpLabel" DefaultValue="alyDoc"/>
