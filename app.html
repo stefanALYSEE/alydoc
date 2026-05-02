@@ -205,6 +205,8 @@ const CONTENT_BASE='https://content.dropboxapi.com/2';
 let folders=[], expandedIds={'':true}, selectedFolderPath=null, selectedFolderName='';
 let mailItem=null;
 let accessToken=null, refreshToken=null, tokenExpiresAt=0;
+// Bei Dropbox-Business: Team-Namespace-ID, damit list_folder/upload Team-Root statt Member-Folder sehen
+let rootNsId=null;
 
 // ── OFFICE.JS INIT ───────────────────────────────────────────────────────────
 Office.onReady(info=>{
@@ -271,36 +273,36 @@ function formatSize(bytes){
 }
 
 // ── AUTH (Dropbox) ───────────────────────────────────────────────────────────
-function initAuth(){
+async function initAuth(){
   // Token aus localStorage wiederherstellen
   try{
     accessToken=localStorage.getItem('alydoc_dbx_token')||null;
     refreshToken=localStorage.getItem('alydoc_dbx_refresh')||null;
     tokenExpiresAt=parseInt(localStorage.getItem('alydoc_dbx_expires')||'0');
+    rootNsId=localStorage.getItem('alydoc_dbx_root_ns')||null;
     const user=localStorage.getItem('alydoc_dbx_user');
     if(user)document.getElementById('user-name').textContent=user;
   }catch{}
 
-  if(accessToken){
-    showScreen('scr-main');
-    try{
-      const lastPath=localStorage.getItem('alydoc_lastFolder');
-      const lastName=localStorage.getItem('alydoc_lastFolderName');
-      if(lastPath!==null&&lastName)selectFolder(lastPath,lastName);
-    }catch{}
-    loadFolders();
-    // Token-Validierung im Hintergrund (lädt Username gleich mit)
-    fetchUserInfo().catch(async()=>{
-      // Token abgelaufen → Refresh versuchen
-      const ok=await tryRefreshToken();
-      if(!ok){
-        clearAuth();
-        showScreen('scr-login');
-      }
-    });
-  } else {
+  if(!accessToken){
     showScreen('scr-login');
+    return;
   }
+  showScreen('scr-main');
+  try{
+    const lastPath=localStorage.getItem('alydoc_lastFolder');
+    const lastName=localStorage.getItem('alydoc_lastFolderName');
+    if(lastPath!==null&&lastName)selectFolder(lastPath,lastName);
+  }catch{}
+  // ZUERST UserInfo holen, damit rootNsId gesetzt ist BEVOR Folder-Calls rausgehen
+  try{
+    await fetchUserInfo();
+  }catch{
+    const ok=await tryRefreshToken();
+    if(!ok){clearAuth();showScreen('scr-login');return;}
+    try{await fetchUserInfo();}catch{clearAuth();showScreen('scr-login');return;}
+  }
+  loadFolders();
 }
 
 async function fetchUserInfo(){
@@ -313,6 +315,14 @@ async function fetchUserInfo(){
   const name=(data.name&&data.name.display_name)||data.email||'';
   document.getElementById('user-name').textContent=name;
   try{localStorage.setItem('alydoc_dbx_user',name);}catch{}
+  // Team-Account-Erkennung: bei Dropbox Business root_info.root_namespace_id != home_namespace_id
+  if(data.root_info&&data.root_info.root_namespace_id){
+    rootNsId=String(data.root_info.root_namespace_id);
+    try{localStorage.setItem('alydoc_dbx_root_ns',rootNsId);}catch{}
+  } else {
+    rootNsId=null;
+    try{localStorage.removeItem('alydoc_dbx_root_ns');}catch{}
+  }
   return data;
 }
 
@@ -350,12 +360,13 @@ async function ensureToken(){
 }
 
 function clearAuth(){
-  accessToken=null;refreshToken=null;tokenExpiresAt=0;
+  accessToken=null;refreshToken=null;tokenExpiresAt=0;rootNsId=null;
   try{
     localStorage.removeItem('alydoc_dbx_token');
     localStorage.removeItem('alydoc_dbx_refresh');
     localStorage.removeItem('alydoc_dbx_expires');
     localStorage.removeItem('alydoc_dbx_user');
+    localStorage.removeItem('alydoc_dbx_root_ns');
   }catch{}
 }
 
@@ -404,7 +415,7 @@ function signIn(){
   }
 }
 
-function onTokenReceived(token,refresh,expiresIn){
+async function onTokenReceived(token,refresh,expiresIn){
   accessToken=token;
   refreshToken=refresh||null;
   tokenExpiresAt=Date.now()+(parseInt(expiresIn||14400))*1000;
@@ -414,18 +425,25 @@ function onTokenReceived(token,refresh,expiresIn){
     localStorage.setItem('alydoc_dbx_expires',tokenExpiresAt.toString());
   }catch{}
   showScreen('scr-main');
+  // ZUERST UserInfo (setzt rootNsId für Team-Accounts), DANN Folder laden
+  try{await fetchUserInfo();}catch{}
   loadFolders();
-  fetchUserInfo().catch(()=>{});
 }
 
 // ── DROPBOX API HELPERS ──────────────────────────────────────────────────────
+function pathRootHeader(){
+  // Bei Team-Accounts: Header zwingt API auf Team-Root statt Member-Folder
+  return rootNsId ? {'Dropbox-API-Path-Root':JSON.stringify({'.tag':'namespace_id','namespace_id':rootNsId})} : {};
+}
+
 async function dbxRpc(path,arg){
   await ensureToken();
   const r=await fetch(API_BASE+path,{
     method:'POST',
     headers:{
       'Authorization':'Bearer '+accessToken,
-      'Content-Type':'application/json'
+      'Content-Type':'application/json',
+      ...pathRootHeader()
     },
     body:JSON.stringify(arg||null)
   });
@@ -451,7 +469,8 @@ async function dbxUpload(path,bytesOrString,mode){
     headers:{
       'Authorization':'Bearer '+accessToken,
       'Dropbox-API-Arg':JSON.stringify(arg),
-      'Content-Type':'application/octet-stream'
+      'Content-Type':'application/octet-stream',
+      ...pathRootHeader()
     },
     body:body
   });
