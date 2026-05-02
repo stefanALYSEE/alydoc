@@ -8,30 +8,24 @@
   <meta http-equiv="Expires" content="0">
   <title>alyDoc – Mail ablegen</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
-  <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()" async defer></script>
-  <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()" async defer></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#F5F7FA;color:#2C3E50;font-size:14px}
-    :root{--pri:#003D7A;--blue:#0072CE;--grn:#00A651;--org:#F9A800;--red:#CC0000;--bdr:#D0D9E4;--mut:#7F8C8D}
+    :root{--pri:#003D7A;--blue:#0072CE;--grn:#00A651;--org:#F9A800;--red:#CC0000;--bdr:#D0D9E4;--mut:#7F8C8D;--dbx:#0061FF}
 
-    /* Header */
     .header{background:var(--pri);color:#fff;padding:10px 14px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:10}
     .header .logo{background:var(--org);border-radius:6px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700;color:white;letter-spacing:-.3px;flex-shrink:0}
     .header h1{font-size:14px;font-weight:600;letter-spacing:.3px}
     .header .sub{font-size:10px;opacity:.6;margin-top:1px}
 
-    /* States */
     .screen{padding:14px;display:none}
     .screen.active{display:block}
 
-    /* Login */
     .login-card{background:#fff;border-radius:10px;padding:20px;text-align:center;border:1px solid var(--bdr);margin-top:8px}
-    .login-card .icon{font-size:36px;color:var(--pri);margin-bottom:12px}
+    .login-card .icon{font-size:36px;color:var(--dbx);margin-bottom:12px}
     .login-card p{color:var(--mut);font-size:13px;margin-bottom:16px;line-height:1.5}
 
-    /* Buttons */
     .btn{display:inline-flex;align-items:center;gap:7px;padding:9px 16px;border-radius:7px;border:none;cursor:pointer;font-size:13px;font-weight:500;transition:all .15s;width:100%;justify-content:center}
     .btn-primary{background:var(--blue);color:#fff}
     .btn-primary:hover{background:#005faa}
@@ -43,7 +37,6 @@
     .btn-outline:hover{background:#f0f4fa}
     .btn+.btn{margin-top:8px}
 
-    /* Mail Preview */
     .mail-card{background:#fff;border-radius:8px;border:1px solid var(--bdr);padding:12px;margin-bottom:12px}
     .mail-subject{font-weight:600;font-size:13px;margin-bottom:6px;line-height:1.3}
     .mail-meta{font-size:11px;color:var(--mut);display:flex;flex-direction:column;gap:3px}
@@ -53,7 +46,6 @@
     .att-item{display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;color:var(--mut)}
     .att-item i{color:var(--blue);width:14px}
 
-    /* Folder Tree */
     .tree-wrap{background:#fff;border:1px solid var(--bdr);border-radius:8px;max-height:260px;overflow-y:auto;margin-bottom:12px}
     .tree-item{display:flex;align-items:center;gap:6px;padding:7px 10px;cursor:pointer;border-bottom:1px solid #f4f7fb;user-select:none;transition:background .1s}
     .tree-item:hover{background:#EEF4FF}
@@ -62,39 +54,31 @@
     .tree-item .chevron{width:14px;height:14px;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:10px;border-radius:3px;flex-shrink:0}
     .tree-item .chevron:hover{background:rgba(0,0,0,.06)}
     .tree-item i.fa-folder{color:#F7941D;font-size:13px;width:15px;flex-shrink:0}
-    .tree-item i.fa-hdd{color:#7F8C8D;font-size:13px;width:15px;flex-shrink:0}
+    .tree-item i.fa-dropbox{color:var(--dbx);font-size:13px;width:15px;flex-shrink:0}
     .tree-item .name{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .tree-item .badge{font-size:10px;color:var(--mut);background:#F0F4F8;padding:1px 5px;border-radius:3px;flex-shrink:0}
 
-    /* Search */
     .search-wrap{position:relative;margin-bottom:8px}
     .search-wrap i{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--mut);font-size:12px}
     .search-wrap input{width:100%;padding:7px 9px 7px 28px;border:1px solid var(--bdr);border-radius:6px;font-size:13px;outline:none;background:#fff}
     .search-wrap input:focus{border-color:var(--blue)}
     .clear-search{position:absolute;right:8px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--mut);font-size:12px;background:none;border:none;padding:2px}
 
-    /* Status */
     .status{padding:10px 12px;border-radius:7px;font-size:12px;display:flex;align-items:center;gap:8px;margin-bottom:10px}
     .status.info{background:#EEF4FF;color:#003D7A;border:1px solid #C5D9F2}
     .status.success{background:#E8F5E9;color:#007A3D;border:1px solid #b2dfdb}
     .status.error{background:#FDECEC;color:#A00;border:1px solid #f5c6c6}
     .status.warn{background:#FFF8E6;color:#7A5000;border:1px solid #FFD97A}
 
-    /* Progress */
     .progress{background:#E8EEF6;border-radius:4px;height:6px;margin:8px 0;overflow:hidden}
     .progress-bar{height:100%;background:var(--blue);border-radius:4px;transition:width .3s}
 
-    /* Section label */
     .label{font-size:11px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-bottom:6px}
 
-    /* Spinner */
     @keyframes spin{to{transform:rotate(360deg)}}
     .spin{animation:spin .8s linear infinite;display:inline-block}
 
-    /* Selected folder display */
     .sel-folder{background:#E8F5E9;border:1px solid #b2dfdb;border-radius:6px;padding:8px 12px;font-size:12px;color:#007A3D;display:flex;align-items:center;gap:7px;margin-bottom:12px}
 
-    /* Options */
     .opt{display:flex;align-items:center;gap:8px;padding:8px 0;font-size:13px;cursor:pointer;border-bottom:1px solid #f0f4f8}
     .opt:last-child{border-bottom:none}
     .opt input[type=checkbox]{width:16px;height:16px;cursor:pointer;accent-color:var(--blue)}
@@ -111,7 +95,7 @@
   </div>
   <div style="margin-left:auto;text-align:right">
     <div style="font-size:11px;opacity:.5" id="user-name"></div>
-    <div style="font-size:9px;opacity:.3">v2.3</div>
+    <div style="font-size:9px;opacity:.3">v4.0</div>
   </div>
 </div>
 
@@ -126,10 +110,10 @@
 <!-- SCREEN: Login -->
 <div class="screen" id="scr-login">
   <div class="login-card">
-    <div class="icon"><i class="fab fa-google-drive"></i></div>
-    <p>Verbinde alyDoc mit deinem Google Drive um Mails direkt abzulegen.</p>
+    <div class="icon"><i class="fab fa-dropbox"></i></div>
+    <p>Verbinde alyDoc mit deiner Dropbox um Mails direkt abzulegen.</p>
     <button class="btn btn-primary" onclick="signIn()">
-      <i class="fab fa-google"></i> Mit Google verbinden
+      <i class="fab fa-dropbox"></i> Mit Dropbox verbinden
     </button>
   </div>
 </div>
@@ -137,7 +121,6 @@
 <!-- SCREEN: Main -->
 <div class="screen" id="scr-main">
 
-  <!-- Mail Info -->
   <div class="label">Aktuelle Mail</div>
   <div class="mail-card" id="mail-card">
     <div class="mail-subject" id="mail-subject">–</div>
@@ -151,8 +134,7 @@
     </div>
   </div>
 
-  <!-- Ordner wählen -->
-  <div class="label">Zielordner in Google Drive</div>
+  <div class="label">Zielordner in Dropbox</div>
   <div class="search-wrap">
     <i class="fas fa-search"></i>
     <input type="text" id="folder-search" placeholder="Ordner suchen…" oninput="filterFolders(this.value)">
@@ -165,7 +147,6 @@
     </div>
   </div>
 
-  <!-- Neuer Ordner -->
   <div style="display:flex;gap:6px;margin-bottom:8px;margin-top:4px" id="new-folder-wrap">
     <input type="text" id="new-folder-name" placeholder="Neuer Ordner…" style="flex:1;padding:6px 10px;border:1px solid var(--bdr);border-radius:6px;font-size:12px;outline:none">
     <button class="btn btn-outline" style="width:auto;padding:6px 12px;font-size:12px" onclick="createNewFolder()">
@@ -173,13 +154,11 @@
     </button>
   </div>
 
-  <!-- Ausgewählter Ordner -->
   <div class="sel-folder" id="sel-folder" style="display:none">
     <i class="fas fa-folder-open"></i>
     <span id="sel-folder-name">–</span>
   </div>
 
-  <!-- Optionen -->
   <div style="background:#fff;border:1px solid var(--bdr);border-radius:8px;padding:8px 12px;margin-bottom:12px">
     <div class="opt">
       <input type="checkbox" id="opt-attachments" checked>
@@ -187,16 +166,13 @@
     </div>
   </div>
 
-  <!-- Status -->
   <div id="status-box" style="display:none"></div>
 
-  <!-- Progress -->
   <div id="progress-wrap" style="display:none">
     <div class="progress"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
     <div style="font-size:11px;color:var(--mut);text-align:center" id="progress-label"></div>
   </div>
 
-  <!-- Action Button -->
   <button class="btn btn-success" id="btn-ablegen" onclick="ablegen()" disabled>
     <i class="fas fa-inbox"></i> In alyDoc ablegen
   </button>
@@ -218,22 +194,23 @@
 </div>
 
 <script>
-// ── CONFIG ──────────────────────────────────────────────────────────────────
-const CLIENT_ID = '633536117262-28memlfds8btpdk8facskab8aq9msjdq.apps.googleusercontent.com';
-const API_KEY   = 'AIzaSyCNXwOka6MinW9ZoCFDuwsSnOD9NGfyIg0';
-const SCOPES    = 'https://www.googleapis.com/auth/drive';
+// ── CONFIG (Dropbox OAuth 2 + PKCE) ─────────────────────────────────────────
+const DROPBOX_APP_KEY='2gz5l15uzq63ppy';
+const API_BASE='https://api.dropboxapi.com/2';
+const CONTENT_BASE='https://content.dropboxapi.com/2';
 
 // ── STATE ───────────────────────────────────────────────────────────────────
-let tokenClient, gapiReady=false, gisReady=false;
-let folders=[], expandedIds={root:true}, selectedFolderId=null, selectedFolderName='';
-let mailItem=null; // Outlook mail item
+// folders: Liste {path, name, displayName, parentPath}
+// path = Dropbox-Pfad ('/Alysee_GmbH/...' oder '' für Root)
+let folders=[], expandedIds={'':true}, selectedFolderPath=null, selectedFolderName='';
+let mailItem=null;
+let accessToken=null, refreshToken=null, tokenExpiresAt=0;
 
 // ── OFFICE.JS INIT ───────────────────────────────────────────────────────────
 Office.onReady(info=>{
   if(info.host===Office.HostType.Outlook){
     mailItem=Office.context.mailbox.item;
     loadMailInfo();
-    // Bei Mailwechsel automatisch aktualisieren
     try{
       Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged,()=>{
         mailItem=Office.context.mailbox.item;
@@ -241,7 +218,7 @@ Office.onReady(info=>{
       });
     }catch(e){console.warn('ItemChanged handler not supported:',e);}
   }
-  initGapi();
+  initAuth();
 });
 
 // ── MAIL INFO ────────────────────────────────────────────────────────────────
@@ -253,7 +230,6 @@ function loadMailInfo(){
   const d=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
   document.getElementById('mail-date').textContent=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
 
-  // Anhänge laden
   const atts=mailItem.attachments||[];
   if(atts.length>0){
     const list=document.getElementById('att-items');
@@ -266,7 +242,6 @@ function loadMailInfo(){
 }
 
 function refreshMailInfo(){
-  // Aktualisiere Mail-Info wenn Nutzer eine andere Mail ausgewählt hat
   mailItem=Office.context.mailbox.item;
   if(!mailItem)return;
   document.getElementById('mail-subject').textContent=mailItem.subject||'(kein Betreff)';
@@ -274,7 +249,6 @@ function refreshMailInfo(){
   document.getElementById('mail-from').textContent=from?(from.displayName||from.emailAddress):'–';
   const d=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
   document.getElementById('mail-date').textContent=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-  // Anhänge aktualisieren
   const list=document.getElementById('att-items');
   list.innerHTML='';
   const atts=mailItem.attachments||[];
@@ -296,54 +270,96 @@ function formatSize(bytes){
   return(bytes/(1024*1024)).toFixed(1)+'MB';
 }
 
-// ── GAPI INIT ────────────────────────────────────────────────────────────────
-function gapiLoaded(){gapi.load('client',async()=>{await gapi.client.init({apiKey:API_KEY,discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest']});gapiReady=true;checkReady();});}
-function gisLoaded(){gisReady=true;checkReady();}
+// ── AUTH (Dropbox) ───────────────────────────────────────────────────────────
+function initAuth(){
+  // Token aus localStorage wiederherstellen
+  try{
+    accessToken=localStorage.getItem('alydoc_dbx_token')||null;
+    refreshToken=localStorage.getItem('alydoc_dbx_refresh')||null;
+    tokenExpiresAt=parseInt(localStorage.getItem('alydoc_dbx_expires')||'0');
+    const user=localStorage.getItem('alydoc_dbx_user');
+    if(user)document.getElementById('user-name').textContent=user;
+  }catch{}
 
-function checkReady(){
-  if(!gapiReady||!gisReady)return;
-  // Prüfe ob Token vorhanden (gapi oder localStorage)
-  let tok=gapi.client.getToken();
-  if(!tok||!tok.access_token){
-    // Token aus localStorage wiederherstellen (max 50 Min alt)
-    try{
-      const saved=localStorage.getItem('alydoc_token');
-      const savedTime=parseInt(localStorage.getItem('alydoc_token_time')||'0');
-      if(saved&&(Date.now()-savedTime)<50*60*1000){
-        gapi.client.setToken({access_token:saved});
-        tok={access_token:saved};
-        const user=localStorage.getItem('alydoc_user');
-        if(user)document.getElementById('user-name').textContent=user;
-      }
-    }catch{}
-  }
-  if(tok&&tok.access_token){
-    // Sofort Hauptscreen zeigen + letzten Ordner wiederherstellen
+  if(accessToken){
     showScreen('scr-main');
     try{
-      const lastId=localStorage.getItem('alydoc_lastFolder');
+      const lastPath=localStorage.getItem('alydoc_lastFolder');
       const lastName=localStorage.getItem('alydoc_lastFolderName');
-      if(lastId&&lastName)selectFolder(lastId,lastName);
+      if(lastPath!==null&&lastName)selectFolder(lastPath,lastName);
     }catch{}
-    // Ordner laden (parallel zur Token-Validierung)
     loadFolders();
-    // Token im Hintergrund validieren
-    gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'}).then(r=>{
-      if(r.result&&r.result.name)document.getElementById('user-name').textContent=r.result.name;
-    }).catch(()=>{
-      // Token abgelaufen
-      try{localStorage.removeItem('alydoc_token');}catch{}
-      gapi.client.setToken(null);
-      showScreen('scr-login');
+    // Token-Validierung im Hintergrund (lädt Username gleich mit)
+    fetchUserInfo().catch(async()=>{
+      // Token abgelaufen → Refresh versuchen
+      const ok=await tryRefreshToken();
+      if(!ok){
+        clearAuth();
+        showScreen('scr-login');
+      }
     });
   } else {
     showScreen('scr-login');
   }
 }
 
+async function fetchUserInfo(){
+  const r=await fetch(API_BASE+'/users/get_current_account',{
+    method:'POST',
+    headers:{'Authorization':'Bearer '+accessToken}
+  });
+  if(!r.ok)throw new Error('User-Info fehlgeschlagen: '+r.status);
+  const data=await r.json();
+  const name=(data.name&&data.name.display_name)||data.email||'';
+  document.getElementById('user-name').textContent=name;
+  try{localStorage.setItem('alydoc_dbx_user',name);}catch{}
+  return data;
+}
+
+async function tryRefreshToken(){
+  if(!refreshToken)return false;
+  try{
+    const body=new URLSearchParams();
+    body.set('grant_type','refresh_token');
+    body.set('refresh_token',refreshToken);
+    body.set('client_id',DROPBOX_APP_KEY);
+    const r=await fetch('https://api.dropboxapi.com/oauth2/token',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:body.toString()
+    });
+    if(!r.ok)return false;
+    const data=await r.json();
+    if(!data.access_token)return false;
+    accessToken=data.access_token;
+    tokenExpiresAt=Date.now()+(data.expires_in||14400)*1000;
+    try{
+      localStorage.setItem('alydoc_dbx_token',accessToken);
+      localStorage.setItem('alydoc_dbx_expires',tokenExpiresAt.toString());
+    }catch{}
+    return true;
+  }catch{return false;}
+}
+
+async function ensureToken(){
+  // Wenn weniger als 60s Restzeit → refreshen
+  if(tokenExpiresAt&&tokenExpiresAt-Date.now()<60000){
+    await tryRefreshToken();
+  }
+  return accessToken;
+}
+
+function clearAuth(){
+  accessToken=null;refreshToken=null;tokenExpiresAt=0;
+  try{
+    localStorage.removeItem('alydoc_dbx_token');
+    localStorage.removeItem('alydoc_dbx_refresh');
+    localStorage.removeItem('alydoc_dbx_expires');
+    localStorage.removeItem('alydoc_dbx_user');
+  }catch{}
+}
+
 function signIn(){
-  // Office Dialog API öffnet auth.html als echtes Fenster
-  // auth.html nutzt GIS Token Client (Popup) und sendet Token zurück
   const baseUrl=window.location.href.replace(/\/[^/]*$/,'/');
   const authUrl=baseUrl+'auth.html';
 
@@ -359,9 +375,9 @@ function signIn(){
         try{
           const msg=JSON.parse(arg.message);
           if(msg.type==='auth_success'&&msg.token){
-            onTokenReceived(msg.token);
+            onTokenReceived(msg.token,msg.refresh,msg.expires_in);
           } else {
-            showStatus('Anmeldung fehlgeschlagen','error');
+            showStatus('Anmeldung fehlgeschlagen: '+(msg.error||'unbekannt'),'error');
           }
         }catch(e){
           showStatus('Anmeldung fehlgeschlagen: '+e.message,'error');
@@ -372,84 +388,137 @@ function signIn(){
       });
     });
   } else {
-    // Fallback: GIS direkt (außerhalb von Outlook)
-    if(typeof google==='undefined'||!google.accounts){
-      showStatus('Google APIs noch nicht geladen','warn');
-      return;
-    }
-    const tokenClient=google.accounts.oauth2.initTokenClient({
-      client_id:CLIENT_ID,
-      scope:SCOPES,
-      callback:(resp)=>{
-        if(resp.error){showStatus('Anmeldung fehlgeschlagen: '+resp.error,'error');return;}
-        onTokenReceived(resp.access_token);
-      }
-    });
-    tokenClient.requestAccessToken({prompt:'select_account'});
+    // Fallback: Outside Outlook → window.open
+    const popup=window.open(authUrl,'alydoc_auth','width=480,height=650');
+    const onMsg=(e)=>{
+      try{
+        const msg=typeof e.data==='string'?JSON.parse(e.data):e.data;
+        if(msg&&msg.type==='auth_success'&&msg.token){
+          window.removeEventListener('message',onMsg);
+          if(popup)popup.close();
+          onTokenReceived(msg.token,msg.refresh,msg.expires_in);
+        }
+      }catch{}
+    };
+    window.addEventListener('message',onMsg);
   }
 }
 
-function onTokenReceived(accessToken){
-  // Token in gapi + localStorage setzen
-  gapi.client.setToken({access_token:accessToken});
-  try{localStorage.setItem('alydoc_token',accessToken);localStorage.setItem('alydoc_token_time',Date.now().toString());}catch{}
+function onTokenReceived(token,refresh,expiresIn){
+  accessToken=token;
+  refreshToken=refresh||null;
+  tokenExpiresAt=Date.now()+(parseInt(expiresIn||14400))*1000;
+  try{
+    localStorage.setItem('alydoc_dbx_token',accessToken);
+    if(refreshToken)localStorage.setItem('alydoc_dbx_refresh',refreshToken);
+    localStorage.setItem('alydoc_dbx_expires',tokenExpiresAt.toString());
+  }catch{}
   showScreen('scr-main');
   loadFolders();
-  // Nutzernamen laden
-  gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'}).then(r=>{
-    if(r.result&&r.result.name){
-      document.getElementById('user-name').textContent=r.result.name;
-      try{localStorage.setItem('alydoc_user',r.result.name);}catch{}
-    }
-  }).catch(()=>{});
+  fetchUserInfo().catch(()=>{});
 }
 
-// ── FOLDER LOADING (Lazy – nur aufgeklappte Ebenen laden) ─────────────────────
-// loadedParents merkt sich, welche Ordner bereits geladen wurden
+// ── DROPBOX API HELPERS ──────────────────────────────────────────────────────
+async function dbxRpc(path,arg){
+  await ensureToken();
+  const r=await fetch(API_BASE+path,{
+    method:'POST',
+    headers:{
+      'Authorization':'Bearer '+accessToken,
+      'Content-Type':'application/json'
+    },
+    body:JSON.stringify(arg||null)
+  });
+  if(r.status===401){
+    if(await tryRefreshToken()){
+      return dbxRpc(path,arg);
+    }
+    throw new Error('Nicht authentifiziert (401)');
+  }
+  const text=await r.text();
+  let data; try{data=text?JSON.parse(text):{};}catch{data={raw:text};}
+  if(!r.ok)throw new Error('Dropbox '+path+' '+r.status+': '+(data.error_summary||text));
+  return data;
+}
+
+async function dbxUpload(path,bytesOrString,mode){
+  await ensureToken();
+  const arg={path:path,mode:mode||'add',autorename:true,mute:false,strict_conflict:false};
+  let body=bytesOrString;
+  if(typeof body==='string')body=new TextEncoder().encode(body);
+  const r=await fetch(CONTENT_BASE+'/files/upload',{
+    method:'POST',
+    headers:{
+      'Authorization':'Bearer '+accessToken,
+      'Dropbox-API-Arg':JSON.stringify(arg),
+      'Content-Type':'application/octet-stream'
+    },
+    body:body
+  });
+  if(r.status===401){
+    if(await tryRefreshToken())return dbxUpload(path,bytesOrString,mode);
+    throw new Error('Nicht authentifiziert (401)');
+  }
+  const text=await r.text();
+  let data; try{data=text?JSON.parse(text):{};}catch{data={raw:text};}
+  if(!r.ok)throw new Error('Upload '+r.status+': '+(data.error_summary||text));
+  return data;
+}
+
+// ── FOLDER LOADING (Lazy) ────────────────────────────────────────────────────
 let loadedParents=new Set();
 
 async function loadFolders(){
-  // Nur Root-Ebene laden
   try{
     folders=[];
     loadedParents=new Set();
-    const kids=await listFolders('root');
+    const kids=await listFolders('');
     kids.forEach(f=>{
-      folders.push({id:f.id,name:f.name,displayName:f.name,parentId:'root'});
+      folders.push({path:f.path_lower,displayPath:f.path_display,name:f.name,displayName:f.name,parentPath:''});
     });
-    loadedParents.add('root');
+    loadedParents.add('');
     renderTree();
   }catch(e){
-    document.getElementById('folder-tree').innerHTML='<div style="padding:12px;color:var(--red);font-size:12px"><i class="fas fa-exclamation-triangle"></i> Fehler beim Laden</div>';
+    document.getElementById('folder-tree').innerHTML='<div style="padding:12px;color:var(--red);font-size:12px"><i class="fas fa-exclamation-triangle"></i> Fehler: '+e.message+'</div>';
   }
 }
 
-async function loadChildren(parentId){
-  if(loadedParents.has(parentId))return;
-  loadedParents.add(parentId);
-  const parent=folders.find(f=>f.id===parentId);
+async function loadChildren(parentPath){
+  if(loadedParents.has(parentPath))return;
+  loadedParents.add(parentPath);
+  const parent=folders.find(f=>f.path===parentPath);
   const parentDisplay=parent?parent.displayName:'';
-  const kids=await listFolders(parentId);
+  const kids=await listFolders(parentPath);
   kids.forEach(f=>{
-    if(folders.some(x=>x.id===f.id))return;
+    if(folders.some(x=>x.path===f.path_lower))return;
     const displayName=parentDisplay?parentDisplay+' / '+f.name:f.name;
-    folders.push({id:f.id,name:f.name,displayName,parentId});
+    folders.push({path:f.path_lower,displayPath:f.path_display,name:f.name,displayName,parentPath});
   });
 }
 
-async function listFolders(parentId){
+async function listFolders(parentPath){
+  // parentPath: '' für Root, sonst Dropbox-Pfad mit führendem '/'
   try{
-    const r=await gapi.client.drive.files.list({
-      q:"'"+parentId+"' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-      fields:'files(id,name)',orderBy:'name',pageSize:150
-    });
-    return r.result.files||[];
-  }catch{return[];}
+    const out=[];
+    let res=await dbxRpc('/files/list_folder',{path:parentPath,recursive:false,include_non_downloadable_files:false});
+    while(true){
+      for(const e of (res.entries||[])){
+        if(e['.tag']==='folder')out.push(e);
+      }
+      if(!res.has_more)break;
+      res=await dbxRpc('/files/list_folder/continue',{cursor:res.cursor});
+    }
+    out.sort((a,b)=>a.name.localeCompare(b.name,'de'));
+    return out;
+  }catch(e){
+    console.warn('listFolders failed',parentPath,e);
+    return[];
+  }
 }
 
 function refreshFolders(){
   document.getElementById('folder-tree').innerHTML='<div style="padding:20px;text-align:center;color:var(--mut);font-size:12px"><i class="fas fa-circle-notch spin"></i> Ordner werden geladen…</div>';
-  folders=[];expandedIds={};loadedParents=new Set();
+  folders=[];expandedIds={'':true};loadedParents=new Set();
   loadFolders();
 }
 
@@ -459,7 +528,7 @@ function renderTree(search){
   const tree=document.getElementById('folder-tree');
   const searchLow=search.toLowerCase().trim();
 
-  const childrenOf=pid=>folders.filter(f=>f.parentId===pid);
+  const childrenOf=pp=>folders.filter(f=>f.parentPath===pp);
 
   const matchesSearch=f=>{
     if(!searchLow)return true;
@@ -467,81 +536,71 @@ function renderTree(search){
   };
   const hasMatchingDesc=f=>{
     if(matchesSearch(f))return true;
-    return childrenOf(f.id).some(c=>hasMatchingDesc(c));
+    return childrenOf(f.path).some(c=>hasMatchingDesc(c));
   };
 
   let html='';
-
-  // Root – immer aufklappbar
-  const rootExp=expandedIds['root']!==false; // default offen
-  const rootSel=selectedFolderId==='root';
-  html+=`<div class="tree-item ${rootSel?'selected':''}" onclick="toggleExpand('root')" style="font-weight:500;cursor:pointer">
+  const rootExp=expandedIds['']!==false;
+  const rootSel=selectedFolderPath==='';
+  html+=`<div class="tree-item ${rootSel?'selected':''}" onclick="folderClick('','Dropbox')" style="font-weight:500;cursor:pointer">
     <span class="chevron"><i class="fas fa-chevron-${rootExp?'down':'right'}"></i></span>
-    <i class="fas fa-hdd"></i>
-    <span class="name">Mein Drive</span>
+    <i class="fab fa-dropbox"></i>
+    <span class="name">Dropbox (Root)</span>
   </div>`;
 
-  // Rekursive Render-Funktion
-  function renderNode(parentId, depth){
-    const kids=childrenOf(parentId);
+  function renderNode(parentPath, depth){
+    const kids=childrenOf(parentPath);
     kids.forEach(f=>{
       if(searchLow&&!hasMatchingDesc(f))return;
-      const myKids=childrenOf(f.id);
+      const myKids=childrenOf(f.path);
       const hasKids=myKids.length>0;
-      const mayHaveKids=hasKids||!loadedParents.has(f.id);
-      const isExp=expandedIds[f.id];
-      const isSel=selectedFolderId===f.id;
+      const mayHaveKids=hasKids||!loadedParents.has(f.path);
+      const isExp=expandedIds[f.path];
+      const isSel=selectedFolderPath===f.path;
       const pl=10+depth*18;
       const dn=f.displayName.replace(/'/g,"\\'");
-      html+=`<div class="tree-item ${isSel?'selected':''}" style="padding-left:${pl}px" onclick="folderClick('${f.id}','${dn}')">
+      const pp=f.path.replace(/'/g,"\\'");
+      html+=`<div class="tree-item ${isSel?'selected':''}" style="padding-left:${pl}px" onclick="folderClick('${pp}','${dn}')">
         ${mayHaveKids?`<i class="fas fa-chevron-${isExp?'down':'right'}" style="width:14px;font-size:10px;flex-shrink:0"></i>`:'<span style="width:14px;flex-shrink:0"></span>'}
         <i class="fas fa-folder${isExp?'-open':''}"></i>
         <span class="name">${f.name}</span>
         ${isSel?'<i class="fas fa-check-circle" style="color:var(--blue);font-size:11px"></i>':''}
       </div>`;
-      if(isExp)renderNode(f.id,depth+1);
+      if(isExp)renderNode(f.path,depth+1);
     });
   }
 
-  if(rootExp)renderNode('root',1);
+  if(rootExp)renderNode('',1);
   tree.innerHTML=html;
 }
 
-async function folderClick(id,name){
-  // Ordner auswählen
-  selectedFolderId=id;
+async function folderClick(path,name){
+  selectedFolderPath=path;
   selectedFolderName=name;
-  try{localStorage.setItem('alydoc_lastFolder',id);localStorage.setItem('alydoc_lastFolderName',name);}catch{}
-  const sf=document.getElementById('sel-folder');
-  sf.style.display='flex';
+  try{localStorage.setItem('alydoc_lastFolder',path);localStorage.setItem('alydoc_lastFolderName',name);}catch{}
+  document.getElementById('sel-folder').style.display='flex';
   document.getElementById('sel-folder-name').textContent=name;
   document.getElementById('btn-ablegen').disabled=false;
-  // Aufklappen/Zuklappen toggle
-  if(expandedIds[id]){
-    expandedIds[id]=false;
+  if(expandedIds[path]){
+    expandedIds[path]=false;
   } else {
-    expandedIds[id]=true;
-    if(!loadedParents.has(id)){
-      await loadChildren(id);
-    }
+    expandedIds[path]=true;
+    if(!loadedParents.has(path))await loadChildren(path);
   }
   renderTree();
 }
 
-async function toggleExpand(id){
-  expandedIds[id]=!expandedIds[id];
-  if(expandedIds[id]&&!loadedParents.has(id)){
-    await loadChildren(id);
-  }
+async function toggleExpand(path){
+  expandedIds[path]=!expandedIds[path];
+  if(expandedIds[path]&&!loadedParents.has(path))await loadChildren(path);
   renderTree();
 }
 
-function selectFolder(id,name){
-  selectedFolderId=id;
+function selectFolder(path,name){
+  selectedFolderPath=path;
   selectedFolderName=name;
-  try{localStorage.setItem('alydoc_lastFolder',id);localStorage.setItem('alydoc_lastFolderName',name);}catch{}
-  const sf=document.getElementById('sel-folder');
-  sf.style.display='flex';
+  try{localStorage.setItem('alydoc_lastFolder',path);localStorage.setItem('alydoc_lastFolderName',name);}catch{}
+  document.getElementById('sel-folder').style.display='flex';
   document.getElementById('sel-folder-name').textContent=name;
   document.getElementById('btn-ablegen').disabled=false;
   renderTree();
@@ -561,22 +620,19 @@ async function createNewFolder(){
   const input=document.getElementById('new-folder-name');
   const name=input.value.trim();
   if(!name){input.focus();return;}
-  // Create in currently selected folder, or root
-  const parentId=selectedFolderId||'root';
+  const parentPath=selectedFolderPath===null?'':selectedFolderPath;
   try{
-    const meta={name,mimeType:'application/vnd.google-apps.folder',parents:[parentId==='root'?'root':parentId]};
-    const r=await gapi.client.drive.files.create({resource:meta,fields:'id,name'});
-    const newFolder=r.result;
-    // Add to local folders list
-    const parentFolder=folders.find(f=>f.id===parentId);
-    const displayName=parentFolder?(parentFolder.displayName+' / '+name):name;
-    folders.push({id:newFolder.id,name:name,displayName:displayName,parentId:parentId});
-    // Expand parent, select new folder
-    expandedIds[parentId]=true;
-    selectFolder(newFolder.id,displayName);
+    const newPath=parentPath+'/'+name;
+    const r=await dbxRpc('/files/create_folder_v2',{path:newPath,autorename:false});
+    const meta=r.metadata;
+    const parentFolder=folders.find(f=>f.path===parentPath);
+    const displayName=parentFolder?(parentFolder.displayName+' / '+meta.name):meta.name;
+    folders.push({path:meta.path_lower,displayPath:meta.path_display,name:meta.name,displayName,parentPath});
+    expandedIds[parentPath]=true;
+    selectFolder(meta.path_lower,displayName);
     input.value='';
     renderTree(document.getElementById('folder-search').value);
-    showStatus('Ordner "'+name+'" erstellt','success');
+    showStatus('Ordner "'+meta.name+'" erstellt','success');
   }catch(e){
     showStatus('Ordner konnte nicht erstellt werden: '+e.message,'error');
   }
@@ -584,7 +640,7 @@ async function createNewFolder(){
 
 // ── ABLEGEN ───────────────────────────────────────────────────────────────────
 async function ablegen(){
-  if(!selectedFolderId||!mailItem)return;
+  if(selectedFolderPath===null||!mailItem)return;
   const saveAtts=document.getElementById('opt-attachments').checked;
 
   document.getElementById('btn-ablegen').disabled=true;
@@ -592,66 +648,51 @@ async function ablegen(){
   showStatus('Mail wird abgelegt…','info');
 
   try{
-    // 1. Mail als EML erstellen (inkl. HTML-Body + Anhänge)
     setProgress(10,'Mail-Inhalt und Anhänge werden gelesen…');
     const emlContent=await getEmlContent();
 
     setProgress(40,'Token wird geprüft…');
-    // Token-Validierung vor Upload
-    const tok=gapi.client.getToken();
-    if(!tok||!tok.access_token){
-      throw new Error('Kein Google-Token! Bitte Panel schließen und neu öffnen.');
-    }
-    const tokenCheck=await fetch('https://www.googleapis.com/oauth2/v3/tokeninfo?access_token='+encodeURIComponent(tok.access_token));
-    if(!tokenCheck.ok){
-      try{localStorage.removeItem('alydoc_token');}catch{}
-      gapi.client.setToken(null);
-      throw new Error('Google-Token abgelaufen ('+tokenCheck.status+'). Panel schließen und neu öffnen.');
-    }
+    if(!accessToken)throw new Error('Kein Dropbox-Token! Bitte Panel schließen und neu öffnen.');
+    await ensureToken();
 
-    setProgress(50,'Wird in Google Drive gespeichert…');
+    setProgress(50,'Wird in Dropbox gespeichert…');
     const subject=mailItem.subject||'Mail';
     const created=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
     const dateStr=created.toISOString().slice(0,10).replace(/-/g,'_');
     const safeSubject=subject.replace(/[/\\:*?"<>|]/g,'_').substring(0,60);
     const fileName=dateStr+'_'+safeSubject+'.eml';
+    const targetPath=(selectedFolderPath||'')+'/'+fileName;
 
-    const uploadResult=await uploadToDrive(fileName,emlContent,'message/rfc822',selectedFolderId);
-    console.log('Upload result:',uploadResult);
-    if(!uploadResult||!uploadResult.id)throw new Error('Upload gab keine File-ID zurück: '+JSON.stringify(uploadResult).substring(0,300));
-    setProgress(70,'EML gespeichert (ID: '+uploadResult.id+')');
+    const uploadResult=await dbxUpload(targetPath,emlContent);
+    setProgress(70,'EML gespeichert: '+(uploadResult.path_display||targetPath));
 
-    // 2. Anhänge zusätzlich separat speichern (wenn Option aktiv)
     if(saveAtts&&mailItem.attachments&&mailItem.attachments.length>0){
       setProgress(72,'Anhänge werden separat gespeichert…');
       const atts=mailItem.attachments;
       for(let i=0;i<atts.length;i++){
         const att=atts[i];
         setProgress(72+Math.round((i/atts.length)*18),'Anhang: '+att.name);
-        await saveAttachment(att,selectedFolderId);
+        await saveAttachment(att,selectedFolderPath||'');
       }
     }
 
     setProgress(100,'Fertig!');
 
-    // Erfolg anzeigen
     const attCount=mailItem.attachments?mailItem.attachments.length:0;
     let msg='✓ Abgelegt in: '+selectedFolderName;
-    msg+='<br><small>Datei: '+fileName+'</small>';
-    msg+='<br><small>ID: '+(uploadResult.id||'?')+' | Ordner: '+JSON.stringify(uploadResult.parents||[])+'</small>';
+    msg+='<br><small>Datei: '+(uploadResult.name||fileName)+'</small>';
+    msg+='<br><small>Pfad: '+(uploadResult.path_display||targetPath)+'</small>';
     if(attCount)msg+='<br>'+attCount+' Anhang/Anhänge';
     showStatus(msg,'success');
 
-    // Button wieder aktivieren, Progress ausblenden
     document.getElementById('btn-ablegen').disabled=false;
     document.getElementById('progress-wrap').style.display='none';
-
-    // Mail-Info für nächste Mail aktualisieren (falls sich die Auswahl geändert hat)
     refreshMailInfo();
 
   }catch(e){
     console.error(e);
     showStatus('Fehler: '+e.message,'error');
+    document.getElementById('btn-ablegen').disabled=false;
     document.getElementById('progress-wrap').style.display='none';
   }
 }
@@ -665,7 +706,6 @@ async function getEmlContent(){
   const boundary='__alyDoc_'+Date.now()+'__';
   const mixedBoundary='__alyDoc_mixed_'+Date.now()+'__';
 
-  // HTML-Body holen
   const htmlBody=await new Promise((resolve,reject)=>{
     mailItem.body.getAsync(Office.CoercionType.Html,result=>{
       if(result.status===Office.AsyncResultStatus.Failed){reject(new Error(result.error.message));return;}
@@ -673,15 +713,13 @@ async function getEmlContent(){
     });
   });
 
-  // Text-Body als Fallback
-  const textBody=await new Promise((resolve,reject)=>{
+  const textBody=await new Promise((resolve)=>{
     mailItem.body.getAsync(Office.CoercionType.Text,result=>{
       if(result.status===Office.AsyncResultStatus.Failed){resolve('');return;}
       resolve(result.value||'');
     });
   });
 
-  // Anhänge laden
   const attachments=[];
   const atts=mailItem.attachments||[];
   for(const att of atts){
@@ -702,7 +740,6 @@ async function getEmlContent(){
     }catch(e){console.warn('Anhang konnte nicht geladen werden:',att.name,e);}
   }
 
-  // EML-Header
   function encodeHeader(str){
     if(/^[\x20-\x7E]*$/.test(str))return str;
     return '=?UTF-8?B?'+btoa(unescape(encodeURIComponent(str)))+'?=';
@@ -717,7 +754,6 @@ async function getEmlContent(){
   eml+='MIME-Version: 1.0\r\n';
 
   if(attachments.length>0){
-    // Multipart/mixed mit Body + Anhängen
     eml+='Content-Type: multipart/mixed; boundary="'+mixedBoundary+'"\r\n\r\n';
     eml+='--'+mixedBoundary+'\r\n';
     eml+='Content-Type: multipart/alternative; boundary="'+boundary+'"\r\n\r\n';
@@ -733,13 +769,11 @@ async function getEmlContent(){
       eml+='Content-Type: '+att.mimeType+'; name="'+encodeHeader(att.name)+'"\r\n';
       eml+='Content-Disposition: attachment; filename="'+encodeHeader(att.name)+'"\r\n';
       eml+='Content-Transfer-Encoding: base64\r\n\r\n';
-      // Base64 in 76-Zeichen-Zeilen umbrechen
       const b64=att.base64;
       for(let i=0;i<b64.length;i+=76){eml+=b64.substring(i,i+76)+'\r\n';}
     }
     eml+='--'+mixedBoundary+'--\r\n';
   } else {
-    // Nur Body, kein Anhang
     eml+='Content-Type: multipart/alternative; boundary="'+boundary+'"\r\n\r\n';
     eml+='--'+boundary+'\r\n';
     eml+='Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
@@ -753,67 +787,24 @@ async function getEmlContent(){
   return eml;
 }
 
-async function saveAttachment(att,folderId){
-  return new Promise((resolve,reject)=>{
+async function saveAttachment(att,folderPath){
+  return new Promise((resolve)=>{
     mailItem.getAttachmentContentAsync(att.id,async result=>{
       if(result.status===Office.AsyncResultStatus.Failed){resolve();return;}
       try{
         const content=result.value;
-        let data,mime='application/octet-stream';
+        let data;
         if(content.format===Office.AttachmentContentFormat.Base64){
           data=Uint8Array.from(atob(content.content),c=>c.charCodeAt(0));
         } else {
           data=new TextEncoder().encode(content.content);
         }
-        await uploadToDriveBytes(att.name,data,mime,folderId);
+        const safeName=att.name.replace(/[/\\:*?"<>|]/g,'_');
+        await dbxUpload((folderPath||'')+'/'+safeName,data);
         resolve();
       }catch(e){console.warn('Anhang Fehler:',e);resolve();}
     });
   });
-}
-
-async function uploadToDrive(name,content,mimeType,folderId){
-  const meta={name,parents:[folderId==='root'?'root':folderId]};
-  const boundary='alyDoc_upload_'+Date.now();
-  const body='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+JSON.stringify(meta)+'\r\n--'+boundary+'\r\nContent-Type: '+mimeType+'\r\n\r\n'+content+'\r\n--'+boundary+'--';
-  // gapi.client.request (bewährt, funktionierte in früheren Versionen)
-  const resp=await gapi.client.request({
-    path:'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,parents',
-    method:'POST',
-    headers:{'Content-Type':'multipart/related; boundary='+boundary},
-    body:body
-  });
-  const result=resp.result;
-  if(!result||!result.id){
-    throw new Error('Upload: keine File-ID. Response: '+JSON.stringify(resp).substring(0,300));
-  }
-  // Verifizierung: Datei wirklich vorhanden?
-  try{
-    const check=await gapi.client.drive.files.get({fileId:result.id,fields:'id,name,parents'});
-    console.log('Upload verifiziert:',check.result);
-  }catch(verifyErr){
-    throw new Error('Upload-Verifizierung fehlgeschlagen: Datei '+result.id+' nicht gefunden. '+verifyErr.message);
-  }
-  return result;
-}
-
-async function uploadToDriveBytes(name,bytes,mimeType,folderId){
-  const meta={name,parents:[folderId==='root'?'root':folderId]};
-  const enc=new TextEncoder();
-  const boundary='alyDoc_boundary';
-  const metaStr=JSON.stringify(meta);
-  const part1='--'+boundary+'\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n'+metaStr+'\r\n--'+boundary+'\r\nContent-Type: '+mimeType+'\r\n\r\n';
-  const part2='\r\n--'+boundary+'--';
-  const p1=enc.encode(part1),p2=enc.encode(part2);
-  const combined=new Uint8Array(p1.length+bytes.length+p2.length);
-  combined.set(p1,0);combined.set(bytes,p1.length);combined.set(p2,p1.length+bytes.length);
-  const token=gapi.client.getToken();
-  const resp=await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',{
-    method:'POST',
-    headers:{'Content-Type':'multipart/related; boundary='+boundary,'Authorization':'Bearer '+token.access_token},
-    body:combined
-  });
-  return resp.json();
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
@@ -823,7 +814,7 @@ function showScreen(id){
   if(id==='scr-main'){
     document.getElementById('status-box').style.display='none';
     document.getElementById('progress-wrap').style.display='none';
-    document.getElementById('btn-ablegen').disabled=!selectedFolderId;
+    document.getElementById('btn-ablegen').disabled=(selectedFolderPath===null);
   }
 }
 
@@ -838,10 +829,6 @@ function showStatus(msg,type){
 function setProgress(pct,label){
   document.getElementById('progress-bar').style.width=pct+'%';
   document.getElementById('progress-label').textContent=label;
-}
-
-function initGapi(){
-  // Wird durch onload-Callbacks gestartet
 }
 </script>
 </body>

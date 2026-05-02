@@ -2,111 +2,154 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-  <title>alyDoc – Google Anmeldung</title>
+  <title>alyDoc – Dropbox Anmeldung</title>
   <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <style>
     body{font-family:'Segoe UI',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#F5F7FA;margin:0}
     .card{background:#fff;border-radius:10px;padding:32px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.1);max-width:360px;width:90%}
     .card h2{color:#003D7A;font-size:16px;margin-bottom:8px}
     .card p{color:#7F8C8D;font-size:13px;margin-bottom:20px;line-height:1.5}
-    .btn{display:inline-flex;align-items:center;gap:8px;padding:10px 20px;border-radius:7px;border:none;cursor:pointer;font-size:14px;font-weight:500;background:#0072CE;color:#fff;transition:background .15s;width:100%;justify-content:center}
-    .btn:hover{background:#005faa}
-    .btn:disabled{background:#9bb3cc;cursor:not-allowed}
-    .btn+.btn{margin-top:8px}
     .status{margin-top:16px;font-size:12px;color:#7F8C8D}
     .spin{animation:sp .8s linear infinite;display:inline-block}
     @keyframes sp{to{transform:rotate(360deg)}}
     .success{color:#00A651;font-size:36px;margin-bottom:12px}
+    .err{color:#CC0000;font-size:36px;margin-bottom:12px}
   </style>
 </head>
 <body>
 <div class="card" id="card">
-  <h2>Mit Google verbinden</h2>
-  <p>Du wirst automatisch zu Google weitergeleitet…</p>
+  <h2>Mit Dropbox verbinden</h2>
+  <p>Du wirst automatisch zu Dropbox weitergeleitet…</p>
   <div class="status" id="status"><span class="spin">⏳</span> Weiterleitung…</div>
 </div>
 
 <script>
-const CLIENT_ID='633536117262-28memlfds8btpdk8facskab8aq9msjdq.apps.googleusercontent.com';
-const SCOPES='https://www.googleapis.com/auth/drive';
+// ── DROPBOX OAUTH 2 + PKCE (Public Client, kein App-Secret) ─────────────────
+const DROPBOX_APP_KEY='2gz5l15uzq63ppy';
+const SCOPES='files.content.write files.content.read files.metadata.read files.metadata.write account_info.read';
 const REDIRECT_URI=window.location.origin+'/auth.html';
 
-// ══════════════════════════════════════════════════════════════════════
-// PHASE 1: Google redirected zurück → Token im Hash
-// Wir müssen die Seite KOMPLETT neu laden mit _host_Info im Query-String,
-// damit Office.js beim Initialisieren den Kontext bekommt.
-// ══════════════════════════════════════════════════════════════════════
-(function interceptRedirectReturn(){
-  const hash=window.location.hash.substring(1);
-  if(!hash||!hash.includes('access_token'))return;
+// ── PKCE Helpers ────────────────────────────────────────────────────────────
+function b64url(buf){
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function randStr(len){
+  const bytes=new Uint8Array(len);
+  crypto.getRandomValues(bytes);
+  return b64url(bytes).substring(0,len);
+}
+async function sha256b64url(s){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+  return b64url(buf);
+}
 
-  const params=new URLSearchParams(hash);
-  const token=params.get('access_token');
-  const expiresIn=params.get('expires_in')||'3600';
-  const state=params.get('state')||'';
-
-  if(!token)return;
-
-  // _host_Info aus state dekodieren
-  let hostInfo='';
-  if(state){try{hostInfo=atob(state);}catch{}}
-
-  // Kompletter Seiten-Reload mit _host_Info + Token im Query-String
-  // So sieht Office.js beim Laden die _host_Info und kann messageParent nutzen
-  const newUrl=window.location.origin+'/auth.html'
-    +'?token='+encodeURIComponent(token)
-    +'&expires_in='+encodeURIComponent(expiresIn)
-    +(hostInfo?'&_host_Info='+encodeURIComponent(hostInfo):'');
-
-  // Redirect (voller Page Load!)
-  window.location.replace(newUrl);
-})();
-
-// ══════════════════════════════════════════════════════════════════════
-// PHASE 2: Seite wurde mit Token + _host_Info im Query-String geladen
-// Office.js hat _host_Info gesehen → messageParent funktioniert
-// ══════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
+// PHASE 2 (Re-Load mit ?token=... + _host_Info): Token an Outlook senden
+// ══════════════════════════════════════════════════════════════════════════
 const urlParams=new URLSearchParams(window.location.search);
 const tokenFromUrl=urlParams.get('token');
 
 if(tokenFromUrl){
-  // Erfolg anzeigen
   document.addEventListener('DOMContentLoaded',()=>{
     document.getElementById('card').innerHTML='<div class="success">✓</div><h2>Verbunden!</h2><p style="color:#7F8C8D;font-size:13px">Anmeldung erfolgreich.<br>Dieses Fenster schliesst sich automatisch.</p>';
   });
-
-  // Warten bis Office.js bereit ist, dann Token senden
   Office.onReady(()=>{
     const msg=JSON.stringify({
       type:'auth_success',
       token:tokenFromUrl,
-      expires_in:parseInt(urlParams.get('expires_in')||'3600')
+      refresh:urlParams.get('refresh')||'',
+      expires_in:parseInt(urlParams.get('expires_in')||'14400'),
+      account_id:urlParams.get('account_id')||''
     });
-    try{
-      Office.context.ui.messageParent(msg);
-    }catch(e){
-      console.warn('messageParent failed:',e);
-      // Fallback
-      if(window.opener){try{window.opener.postMessage(msg,'*');}catch{}}
-    }
+    try{Office.context.ui.messageParent(msg);}
+    catch(e){if(window.opener){try{window.opener.postMessage(msg,'*');}catch{}}}
   });
-} else {
-  // ════════════════════════════════════════════════════════════════════
-  // PHASE 0: Erster Aufruf – zu Google weiterleiten
-  // ════════════════════════════════════════════════════════════════════
-  Office.onReady(()=>{
-    // _host_Info aus der URL lesen (von Office angehängt) und im state mitnehmen
-    const hostInfo=urlParams.get('_host_Info')||'';
-    const state=hostInfo?btoa(hostInfo):'';
+}
+// ══════════════════════════════════════════════════════════════════════════
+// PHASE 1 (Return mit ?code=...&state=...): Code → Token tauschen
+// ══════════════════════════════════════════════════════════════════════════
+else if(urlParams.get('code')){
+  (async()=>{
+    try{
+      const code=urlParams.get('code');
+      const state=urlParams.get('state')||'';
+      const verifier=sessionStorage.getItem('alydoc_pkce_verifier')||'';
+      if(!verifier)throw new Error('PKCE-Verifier verloren – bitte neu anmelden');
 
-    const authUrl='https://accounts.google.com/o/oauth2/v2/auth'
-      +'?client_id='+encodeURIComponent(CLIENT_ID)
+      // _host_Info aus state (state = base64(hostInfo + '|' + verifier-tag))
+      let hostInfo='';
+      if(state){
+        try{
+          const decoded=atob(state);
+          const parts=decoded.split('|');
+          hostInfo=parts[0]||'';
+        }catch{}
+      }
+
+      // Token-Tausch
+      const body=new URLSearchParams();
+      body.set('code',code);
+      body.set('grant_type','authorization_code');
+      body.set('client_id',DROPBOX_APP_KEY);
+      body.set('redirect_uri',REDIRECT_URI);
+      body.set('code_verifier',verifier);
+
+      const resp=await fetch('https://api.dropboxapi.com/oauth2/token',{
+        method:'POST',
+        headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:body.toString()
+      });
+      const data=await resp.json();
+      if(!resp.ok||!data.access_token){
+        throw new Error('Token-Tausch fehlgeschlagen: '+(data.error_description||data.error||resp.status));
+      }
+      sessionStorage.removeItem('alydoc_pkce_verifier');
+
+      // Reload mit Token + _host_Info im Query-String → Phase 2
+      const newUrl=window.location.origin+'/auth.html'
+        +'?token='+encodeURIComponent(data.access_token)
+        +(data.refresh_token?'&refresh='+encodeURIComponent(data.refresh_token):'')
+        +'&expires_in='+encodeURIComponent(data.expires_in||14400)
+        +(data.account_id?'&account_id='+encodeURIComponent(data.account_id):'')
+        +(hostInfo?'&_host_Info='+encodeURIComponent(hostInfo):'');
+      window.location.replace(newUrl);
+    }catch(e){
+      document.getElementById('card').innerHTML='<div class="err">✕</div><h2>Anmeldung fehlgeschlagen</h2><p style="color:#CC0000;font-size:13px">'+e.message+'</p>';
+      Office.onReady(()=>{
+        try{Office.context.ui.messageParent(JSON.stringify({type:'auth_error',error:e.message}));}catch{}
+      });
+    }
+  })();
+}
+// ══════════════════════════════════════════════════════════════════════════
+// PHASE 0 (Erstaufruf): PKCE generieren + Redirect zu Dropbox
+// ══════════════════════════════════════════════════════════════════════════
+else if(urlParams.get('error')){
+  document.getElementById('card').innerHTML='<div class="err">✕</div><h2>Anmeldung abgebrochen</h2><p style="color:#CC0000;font-size:13px">'+(urlParams.get('error_description')||urlParams.get('error'))+'</p>';
+  Office.onReady(()=>{
+    try{Office.context.ui.messageParent(JSON.stringify({type:'auth_error',error:urlParams.get('error')}));}catch{}
+  });
+}
+else{
+  Office.onReady(async()=>{
+    const verifier=randStr(64);
+    sessionStorage.setItem('alydoc_pkce_verifier',verifier);
+    const challenge=await sha256b64url(verifier);
+
+    const hostInfo=urlParams.get('_host_Info')||'';
+    const stateRaw=hostInfo+'|'+verifier.substring(0,8);
+    const state=btoa(stateRaw);
+
+    const authUrl='https://www.dropbox.com/oauth2/authorize'
+      +'?client_id='+encodeURIComponent(DROPBOX_APP_KEY)
       +'&redirect_uri='+encodeURIComponent(REDIRECT_URI)
-      +'&response_type=token'
+      +'&response_type=code'
+      +'&token_access_type=offline'
+      +'&code_challenge='+encodeURIComponent(challenge)
+      +'&code_challenge_method=S256'
       +'&scope='+encodeURIComponent(SCOPES)
-      +'&include_granted_scopes=true'
-      +'&prompt=select_account'
-      +(state?'&state='+encodeURIComponent(state):'');
+      +'&state='+encodeURIComponent(state);
 
     window.location.href=authUrl;
   });
