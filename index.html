@@ -29,6 +29,14 @@
     async function dbxDownloadBlob(dropboxPath){await _dbxEnsureToken();const r=await fetch(DBX_CONTENT+'/files/download',{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Dropbox-API-Arg':JSON.stringify({path:dropboxPath}),..._dbxPathRootHeader()}});if(!r.ok)throw new Error('Download '+r.status);return r.blob();}
     // Load tokens from localStorage on startup
     try{_dbxToken=localStorage.getItem('alydoc_dbx_token')||null;_dbxRefresh=localStorage.getItem('alydoc_dbx_refresh')||null;_dbxExpires=parseInt(localStorage.getItem('alydoc_dbx_expires')||'0');_dbxRootNs=localStorage.getItem('alydoc_dbx_root_ns')||null;}catch{}
+    // Microsoft OAuth config
+    const MS_TENANT='a90aaebb-0744-4f82-b5fd-512e457d8c76';
+    const MS_CLIENT='8a52a75f-667c-4829-ab0e-4a314852505d';
+    let _msToken=null,_msRefresh=null,_msExpires=0;
+    try{_msToken=localStorage.getItem('alydoc_ms_token')||null;_msRefresh=localStorage.getItem('alydoc_ms_refresh')||null;_msExpires=parseInt(localStorage.getItem('alydoc_ms_expires')||'0');}catch{}
+    async function msTryRefresh(){if(!_msRefresh)return false;try{const b=new URLSearchParams();b.set('grant_type','refresh_token');b.set('refresh_token',_msRefresh);b.set('client_id',MS_CLIENT);b.set('scope','Mail.Send User.Read offline_access');const r=await fetch(`https://login.microsoftonline.com/${MS_TENANT}/oauth2/v2.0/token`,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b.toString()});if(!r.ok)return false;const d=await r.json();if(!d.access_token)return false;_msToken=d.access_token;_msExpires=Date.now()+(d.expires_in||3600)*1000;if(d.refresh_token)_msRefresh=d.refresh_token;try{localStorage.setItem('alydoc_ms_token',_msToken);localStorage.setItem('alydoc_ms_refresh',_msRefresh||'');localStorage.setItem('alydoc_ms_expires',_msExpires.toString());}catch{}return true;}catch{return false;}}
+    async function msEnsureToken(){if(_msToken&&Date.now()<_msExpires-60000)return;if(await msTryRefresh())return;throw new Error('MS_LOGIN_REQUIRED');}
+    async function msRpc(url,body){await msEnsureToken();const r=await fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+_msToken,'Content-Type':'application/json'},body:JSON.stringify(body)});if(r.status===401){if(await msTryRefresh()){return msRpc(url,body);}throw new Error('MS_LOGIN_REQUIRED');}if(!r.ok){const t=await r.text();throw new Error('Graph '+r.status+': '+t);}return r.status===202?null:r.json().catch(()=>null);}
   </script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
@@ -345,6 +353,12 @@ const DR={
     if(!path)throw new Error('Kein Pfad');
     const blob=await dbxDownloadBlob(path);
     return URL.createObjectURL(blob);
+  },
+  async prevBlob(path){
+    await _dbxEnsureToken();
+    const r=await fetch(DBX_CONTENT+'/files/download',{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Dropbox-API-Arg':JSON.stringify({path}),..._dbxPathRootHeader()}});
+    if(!r.ok)throw new Error('Download '+r.status);
+    return r.blob();
   },
   async me(){
     try{
@@ -964,6 +978,77 @@ function RenMod({file,onClose,onDone,isDemo}){
   return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{width:400}}><h2><i className="fas fa-pencil" style={{color:'var(--blue)'}}/>Umbenennen</h2><div className="fg"><label>Neuer Name</label><input className="fc" autoFocus value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()}/></div><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose}>Abbrechen</button><button className="btn bp" onClick={go} disabled={b||!n.trim()||n===file.name}>{b?'…':'Speichern'}</button></div></div></div>);
 }
 
+function MailMod({file,onClose,isDemo}){
+  const [to,setTo]=useState('');
+  const [subj,setSubj]=useState(file?file.name:'');
+  const [body,setBody]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [msReady,setMsReady]=useState(!!_msToken&&Date.now()<_msExpires-60000);
+  const toast=useContext(TC);
+
+  const loginMs=()=>{
+    const baseUrl=window.location.origin+window.location.pathname.replace(/[^/]*$/,'');
+    const popup=window.open(baseUrl+'ms-auth.html','ms_auth','width=480,height=650');
+    if(!popup){toast('Popup blockiert','e');return;}
+    const handler=e=>{
+      if(e.data?.type==='ms_auth_success'){
+        window.removeEventListener('message',handler);
+        _msToken=e.data.token;
+        _msRefresh=e.data.refresh||'';
+        _msExpires=Date.now()+(e.data.expires_in||3600)*1000;
+        try{localStorage.setItem('alydoc_ms_token',_msToken);localStorage.setItem('alydoc_ms_refresh',_msRefresh);localStorage.setItem('alydoc_ms_expires',_msExpires.toString());}catch{}
+        setMsReady(true);
+        toast('Microsoft-Konto verbunden','s');
+      }
+    };
+    window.addEventListener('message',handler);
+  };
+
+  const send=async()=>{
+    if(!to.trim()||!file)return;
+    setBusy(true);
+    try{
+      const blob=await DR.prevBlob(file.id);
+      const b64=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.readAsDataURL(blob);});
+      const mime=blob.type||'application/octet-stream';
+      await msRpc('https://graph.microsoft.com/v1.0/me/sendMail',{
+        message:{
+          subject:subj||file.name,
+          body:{contentType:'Text',content:body||''},
+          toRecipients:[{emailAddress:{address:to.trim()}}],
+          attachments:[{'@odata.type':'#microsoft.graph.fileAttachment',name:file.name,contentType:mime,contentBytes:b64}]
+        },
+        saveToSentItems:true
+      });
+      toast('E-Mail gesendet','s');
+      onClose();
+    }catch(e){
+      if(e.message==='MS_LOGIN_REQUIRED'){setMsReady(false);toast('Bitte zuerst mit Microsoft anmelden','e');}
+      else toast('Fehler: '+e.message,'e');
+    }
+    setBusy(false);
+  };
+
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal">
+      <h2><i className="fas fa-envelope" style={{color:'var(--blue)'}}/>E-Mail senden</h2>
+      {!msReady&&<div style={{background:'#EEF4FF',borderRadius:6,padding:'10px 14px',marginBottom:14,fontSize:13,display:'flex',alignItems:'center',gap:10}}>
+        <i className="fas fa-info-circle" style={{color:'var(--blue)'}}/>
+        <span style={{flex:1}}>Microsoft-Konto noch nicht verbunden.</span>
+        <button className="btn bp" style={{padding:'5px 12px',fontSize:12}} onClick={loginMs}>Anmelden</button>
+      </div>}
+      <div className="fg"><label>An</label><input className="fc" type="email" value={to} onChange={e=>setTo(e.target.value)} placeholder="empfaenger@beispiel.de"/></div>
+      <div className="fg"><label>Betreff</label><input className="fc" value={subj} onChange={e=>setSubj(e.target.value)}/></div>
+      <div className="fg"><label>Nachricht</label><textarea className="fc" rows={4} value={body} onChange={e=>setBody(e.target.value)} style={{resize:'vertical'}}/></div>
+      {file&&<div style={{fontSize:12,color:'var(--mut)',marginBottom:14,display:'flex',alignItems:'center',gap:6}}><i className="fas fa-paperclip"/>{file.name}</div>}
+      <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
+        <button className="btn bs" onClick={onClose} disabled={busy}>Abbrechen</button>
+        <button className="btn bp" onClick={send} disabled={busy||!to.trim()||!msReady}>{busy?<><i className="fas fa-spinner fa-spin"/>Sendet…</>:<><i className="fas fa-paper-plane"/>Senden</>}</button>
+      </div>
+    </div>
+  </div>);
+}
+
 const PRI={low:{l:'Niedrig',b:'b-blue'},normal:{l:'Normal',b:'b-grn'},high:{l:'Hoch',b:'b-org'},urgent:{l:'Dringend',b:'b-red'}};
 function WF({tasks,onAdd,onTog,onDel}){
   const [sn,setSn]=useState(false);
@@ -1260,6 +1345,7 @@ function Main({onOut,isDemo}){
         <button className="tbtn" onClick={()=>setBig(true)}><i className="fas fa-expand-alt"/><span>Gross</span></button>
         <button className="tbtn" onClick={()=>setModal('ren')}><i className="fas fa-pencil"/><span>Umbenennen</span></button>
         <button className="tbtn grn" onClick={()=>doMove(sel)}><i className="fas fa-share-square"/><span>Verschieben</span></button>
+        {!sel.mimeType.includes('folder')&&<button className="tbtn" onClick={()=>setModal('mail')}><i className="fas fa-envelope"/><span>Senden</span></button>}
         {!isDemo&&<button className="tbtn red" onClick={async()=>{if(window.confirm(`"${sel.name}" loeschen?`)){try{await DR.del(sel.path_lower||sel.id);toast('Geloescht','i');rf();setSel(null);}catch{toast('Fehler','e');}}}}>
           <i className="fas fa-trash"/><span>Loeschen</span>
         </button>}
@@ -1454,6 +1540,7 @@ function Main({onOut,isDemo}){
     {modal==='up'&&<UpMod fid={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
     {modal==='mk'&&<MkMod par={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
     {modal==='ren'&&sel&&<RenMod file={sel} onClose={()=>setModal(null)} onDone={()=>{rf();setModal(null);}} isDemo={isDemo}/>}
+    {modal==='mail'&&sel&&<MailMod file={sel} onClose={()=>setModal(null)} isDemo={isDemo}/>}
     {moveFile&&<MoveMod file={moveFile} curFolderId={cur.id} onClose={()=>setMoveFile(null)} onDone={onMoveDone} isDemo={isDemo} folders={allFolders} onReloadFolders={async()=>{const f=await DR.allFolders();console.log('reload:',f.length);setAllFolders(f);return f;}}/>}
   </div>);
 }
