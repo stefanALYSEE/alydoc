@@ -16,12 +16,20 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script>
-    let _gapiReady=false,_gisReady=false,_gapiResolvers=[],_gisResolvers=[];
-    function gapiLoaded(){gapi.load('client',()=>{_gapiReady=true;_gapiResolvers.forEach(r=>r());_gapiResolvers=[];window.dispatchEvent(new Event('gapiOk'));});}
-    function gisLoaded(){_gisReady=true;_gisResolvers.forEach(r=>r());_gisResolvers=[];window.dispatchEvent(new Event('gisOk'));}
+    // Dropbox OAuth config
+    const DROPBOX_APP_KEY='2gz5l15uzq63ppy';
+    const DBX_API='https://api.dropboxapi.com/2';
+    const DBX_CONTENT='https://content.dropboxapi.com/2';
+    let _dbxToken=null,_dbxRefresh=null,_dbxExpires=0,_dbxRootNs=null;
+    function _dbxPathRootHeader(){return _dbxRootNs?{'Dropbox-API-Path-Root':JSON.stringify({'.tag':'namespace_id','namespace_id':_dbxRootNs})}:{};}
+    async function _dbxEnsureToken(){if(_dbxExpires&&_dbxExpires-Date.now()<60000){await _dbxTryRefresh();}return _dbxToken;}
+    async function _dbxTryRefresh(){if(!_dbxRefresh)return false;try{const b=new URLSearchParams();b.set('grant_type','refresh_token');b.set('refresh_token',_dbxRefresh);b.set('client_id',DROPBOX_APP_KEY);const r=await fetch('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b.toString()});if(!r.ok)return false;const d=await r.json();if(!d.access_token)return false;_dbxToken=d.access_token;_dbxExpires=Date.now()+(d.expires_in||14400)*1000;try{localStorage.setItem('alydoc_dbx_token',_dbxToken);localStorage.setItem('alydoc_dbx_expires',_dbxExpires.toString());}catch{}return true;}catch{return false;}}
+    async function dbxRpc(path,arg){await _dbxEnsureToken();const r=await fetch(DBX_API+path,{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Content-Type':'application/json',..._dbxPathRootHeader()},body:JSON.stringify(arg||null)});if(r.status===401){if(await _dbxTryRefresh())return dbxRpc(path,arg);throw new Error('401');}const t=await r.text();let d;try{d=t?JSON.parse(t):{};}catch{d={raw:t};}if(!r.ok)throw new Error('Dropbox '+path+' '+r.status+': '+(d.error_summary||t));return d;}
+    async function dbxUploadRaw(dropboxPath,data,mode){await _dbxEnsureToken();const arg={path:dropboxPath,mode:mode||'add',autorename:true,mute:false};let body=data;if(typeof body==='string')body=new TextEncoder().encode(body);const r=await fetch(DBX_CONTENT+'/files/upload',{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Dropbox-API-Arg':JSON.stringify(arg),'Content-Type':'application/octet-stream',..._dbxPathRootHeader()},body});if(r.status===401){if(await _dbxTryRefresh())return dbxUploadRaw(dropboxPath,data,mode);throw new Error('401');}const t=await r.text();let d;try{d=t?JSON.parse(t):{};}catch{d={raw:t};}if(!r.ok)throw new Error('Upload '+r.status+': '+(d.error_summary||t));return d;}
+    async function dbxDownloadBlob(dropboxPath){await _dbxEnsureToken();const r=await fetch(DBX_CONTENT+'/files/download',{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Dropbox-API-Arg':JSON.stringify({path:dropboxPath}),..._dbxPathRootHeader()}});if(!r.ok)throw new Error('Download '+r.status);return r.blob();}
+    // Load tokens from localStorage on startup
+    try{_dbxToken=localStorage.getItem('alydoc_dbx_token')||null;_dbxRefresh=localStorage.getItem('alydoc_dbx_refresh')||null;_dbxExpires=parseInt(localStorage.getItem('alydoc_dbx_expires')||'0');_dbxRootNs=localStorage.getItem('alydoc_dbx_root_ns')||null;}catch{}
   </script>
-  <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()" async defer></script>
-  <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()" async defer></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script>if(window.pdfjsLib){pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';}</script>
@@ -211,7 +219,7 @@ const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-dig
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
 const fs=b=>{if(!b)return'–';b=+b;if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB';};
 function mi(mt='',nm=''){
-  if(mt==='application/vnd.google-apps.folder')return{i:'fa-folder',c:'#F7941D',l:'Ordner'};
+  if(mt==='application/vnd.dropbox.folder')return{i:'fa-folder',c:'#F7941D',l:'Ordner'};
   if(mt.includes('pdf'))return{i:'fa-file-pdf',c:'#CC0000',l:'PDF'};
   if(mt.includes('word')||mt.includes('wordprocessing'))return{i:'fa-file-word',c:'#2B579A',l:'Word'};
   if(mt.includes('sheet')||mt.includes('excel'))return{i:'fa-file-excel',c:'#217346',l:'Excel'};
@@ -219,12 +227,11 @@ function mi(mt='',nm=''){
   if(mt.includes('image'))return{i:'fa-file-image',c:'#8E44AD',l:'Bild'};
   if(mt.includes('video'))return{i:'fa-file-video',c:'#E74C3C',l:'Video'};
   if(mt.includes('zip')||mt.includes('archive'))return{i:'fa-file-zipper',c:'#F39C12',l:'Archiv'};
-  if(mt.includes('email')||nm.endsWith('.eml')||nm.endsWith('.msg'))return{i:'fa-envelope',c:'#3498DB',l:'E-Mail'};
+  if(mt.includes('rfc822')||mt.includes('email')||nm.endsWith('.eml')||nm.endsWith('.msg'))return{i:'fa-envelope',c:'#3498DB',l:'E-Mail'};
   const n2=nm.toLowerCase();
   if(['.stl','.3mf','.fbx','.obj','.glb','.gltf'].some(e=>n2.endsWith(e)))return{i:'fa-cube',c:'#7C3AED',l:'3D-Modell'};
   if(['.step','.stp','.3dm','.iges','.igs'].some(e=>n2.endsWith(e)))return{i:'fa-cube',c:'#059669',l:'CAD-3D'};
   if(['.dxf','.dwg'].some(e=>n2.endsWith(e)))return{i:'fa-drafting-compass',c:'#0EA5E9',l:'CAD-Zeichnung'};
-  if(mt.startsWith('application/vnd.google-apps'))return{i:'fa-file-circle-check',c:'#4285F4',l:'Google'};
   return{i:'fa-file',c:'#7F8C8D',l:'Datei'};
 }
 
@@ -235,98 +242,166 @@ const AlyseeLogo=({size=40,radius=6})=>(
   </svg>
 );
 
-/* ── GOOGLE DRIVE API ── */
+/* ── DROPBOX API ── */
+// path-based: '' = root, '/Ordner/Unterordner' = subfolder
+// file objects: {id: path_lower, name, mimeType (synthetic), modifiedTime, size, path_lower, path_display}
+function _dbxToFile(e){
+  const isFolder=e['.tag']==='folder';
+  return{
+    id:e.path_lower,
+    name:e.name,
+    mimeType:isFolder?'application/vnd.dropbox.folder':(e.media_info?.metadata?.['.tag']==='photo'?'image/jpeg':_mimeFromName(e.name)),
+    modifiedTime:e.client_modified||e.server_modified||null,
+    size:e.size||0,
+    path_lower:e.path_lower,
+    path_display:e.path_display,
+  };
+}
+function _mimeFromName(n){
+  if(!n)return'application/octet-stream';
+  const ext=n.toLowerCase().split('.').pop();
+  const m={pdf:'application/pdf',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xls:'application/vnd.ms-excel',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',svg:'image/svg+xml',mp4:'video/mp4',mov:'video/quicktime',avi:'video/x-msvideo',mp3:'audio/mpeg',zip:'application/zip',eml:'message/rfc822',msg:'message/rfc822',txt:'text/plain',csv:'text/csv',html:'text/html',stl:'model/stl',obj:'model/obj',gltf:'model/gltf+json',glb:'model/gltf-binary','3mf':'application/3mf',fbx:'application/octet-stream',step:'application/step',stp:'application/step',dxf:'application/dxf',dwg:'application/dwg',ply:'application/ply'};
+  return m[ext]||'application/octet-stream';
+}
 const DR={
-  async init(cid,key){await gapi.client.init({apiKey:key,discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest']});},
-  mkT(cid,cb){return google.accounts.oauth2.initTokenClient({client_id:cid,scope:'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',callback:cb});},
-  async ls(fid='root'){const r=await gapi.client.drive.files.list({q:`'${fid}' in parents and trashed=false`,fields:'files(id,name,mimeType,modifiedTime,size,webViewLink,parents)',orderBy:'folder,name',pageSize:300});return r.result.files||[];},
-  async find(q){const e=q.replace(/'/g,"\\'");const r=await gapi.client.drive.files.list({q:`(name contains '${e}' or fullText contains '${e}') and trashed=false`,fields:'files(id,name,mimeType,modifiedTime,size,webViewLink,parents)',pageSize:100});return r.result.files||[];},
-  async mkdir(name,par='root'){const r=await gapi.client.drive.files.create({resource:{name,mimeType:'application/vnd.google-apps.folder',parents:[par]},fields:'id,name,mimeType'});return r.result;},
-  async up(file,par,onP){
-    const tok=gapi.client.getToken().access_token,fm=new FormData();
-    fm.append('metadata',new Blob([JSON.stringify({name:file.name,parents:[par]})],{type:'application/json'}));
-    fm.append('file',file);
-    return new Promise((res,rej)=>{const x=new XMLHttpRequest();x.open('POST','https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size');x.setRequestHeader('Authorization','Bearer '+tok);x.upload.onprogress=e=>e.lengthComputable&&onP&&onP(Math.round(e.loaded/e.total*100));x.onload=()=>x.status===200?res(JSON.parse(x.responseText)):rej(new Error(x.statusText));x.onerror=()=>rej(new Error('Fehler'));x.send(fm);});
+  async ls(folderPath=''){
+    // folderPath: '' = root, else '/path'
+    const out=[];
+    let res=await dbxRpc('/files/list_folder',{path:folderPath,recursive:false,include_non_downloadable_files:false});
+    while(true){
+      for(const e of(res.entries||[]))out.push(_dbxToFile(e));
+      if(!res.has_more)break;
+      res=await dbxRpc('/files/list_folder/continue',{cursor:res.cursor});
+    }
+    out.sort((a,b)=>{if(a.mimeType==='application/vnd.dropbox.folder'&&b.mimeType!=='application/vnd.dropbox.folder')return -1;if(b.mimeType==='application/vnd.dropbox.folder'&&a.mimeType!=='application/vnd.dropbox.folder')return 1;return a.name.localeCompare(b.name,'de');});
+    return out;
   },
-  async del(id){await gapi.client.drive.files.delete({fileId:id});},
-  async ren(id,name){const r=await gapi.client.drive.files.update({fileId:id,resource:{name},fields:'id,name'});return r.result;},
-  async move(fileId,newParentId,oldParentId){
-    const r=await gapi.client.drive.files.update({fileId,addParents:newParentId,removeParents:oldParentId||'root',fields:'id,name,parents'});
-    return r.result;
-  },
-  async listSubfolders(parentId='root'){
-    const isElo=n=>/^[0-9A-Fa-f]{4,10}$/.test(n);
+  async find(q){
     try{
-      const r=await gapi.client.drive.files.list({
-        q:"'" + parentId + "' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false",
-        fields:'files(id,name,parents)',orderBy:'name',pageSize:200
-      });
-      return (r.result.files||[]).filter(f=>!isElo(f.name)).map(f=>({...f,parentId}));
+      const r=await dbxRpc('/files/search_v2',{query:q,options:{max_results:100,file_status:'active'}});
+      return(r.matches||[]).map(m=>_dbxToFile(m.metadata.metadata));
+    }catch(e){console.warn('find err:',e);return[];}
+  },
+  async mkdir(name,parentPath=''){
+    const newPath=(parentPath||'')+'/'+name;
+    const r=await dbxRpc('/files/create_folder_v2',{path:newPath,autorename:false});
+    const meta=r.metadata;
+    return{id:meta.path_lower,name:meta.name,mimeType:'application/vnd.dropbox.folder',path_lower:meta.path_lower,path_display:meta.path_display};
+  },
+  async up(file,parentPath,onP){
+    const targetPath=(parentPath||'')+'/'+file.name;
+    await _dbxEnsureToken();
+    const arg={path:targetPath,mode:'add',autorename:true,mute:false};
+    return new Promise((res,rej)=>{
+      const x=new XMLHttpRequest();
+      x.open('POST',DBX_CONTENT+'/files/upload');
+      x.setRequestHeader('Authorization','Bearer '+_dbxToken);
+      x.setRequestHeader('Dropbox-API-Arg',JSON.stringify(arg));
+      x.setRequestHeader('Content-Type','application/octet-stream');
+      if(_dbxRootNs)x.setRequestHeader('Dropbox-API-Path-Root',JSON.stringify({'.tag':'namespace_id','namespace_id':_dbxRootNs}));
+      x.upload.onprogress=e=>e.lengthComputable&&onP&&onP(Math.round(e.loaded/e.total*100));
+      x.onload=()=>x.status===200?res(JSON.parse(x.responseText)):rej(new Error(x.statusText));
+      x.onerror=()=>rej(new Error('Upload-Fehler'));
+      x.send(file);
+    });
+  },
+  async del(path){await dbxRpc('/files/delete_v2',{path});},
+  async ren(path,newName){
+    const parentPath=path.substring(0,path.lastIndexOf('/'));
+    const newPath=(parentPath||'')+'/'+newName;
+    const r=await dbxRpc('/files/move_v2',{from_path:path,to_path:newPath,autorename:false,allow_ownership_transfer:false});
+    return _dbxToFile(r.metadata);
+  },
+  async move(filePath,newParentPath){
+    const name=filePath.split('/').pop();
+    const toPath=(newParentPath||'')+'/'+name;
+    const r=await dbxRpc('/files/move_v2',{from_path:filePath,to_path:toPath,autorename:true,allow_ownership_transfer:false});
+    return _dbxToFile(r.metadata);
+  },
+  async listSubfolders(parentPath=''){
+    try{
+      const out=[];
+      let res=await dbxRpc('/files/list_folder',{path:parentPath,recursive:false,include_non_downloadable_files:false});
+      while(true){
+        for(const e of(res.entries||[])){if(e['.tag']==='folder')out.push({id:e.path_lower,name:e.name,path_lower:e.path_lower,path_display:e.path_display,parentId:parentPath});}
+        if(!res.has_more)break;
+        res=await dbxRpc('/files/list_folder/continue',{cursor:res.cursor});
+      }
+      out.sort((a,b)=>a.name.localeCompare(b.name,'de'));
+      return out;
     }catch(e){console.warn('listSubfolders err:',e);return[];}
   },
-  // Compat: allFolders fuer MoveMod – laedt flach alle Ordner (BFS, max 4 Ebenen)
   async allFolders(){
-    const result=[];const queue=['root'];const visited=new Set(['root']);let depth=0;
+    const result=[];const queue=[''];const visited=new Set(['']);let depth=0;
     while(queue.length>0&&depth<4){
       const batch=queue.splice(0,queue.length);
-      const lists=await Promise.all(batch.map(id=>this.listSubfolders(id)));
+      const lists=await Promise.all(batch.map(p=>this.listSubfolders(p)));
       lists.flat().forEach(f=>{if(!visited.has(f.id)){visited.add(f.id);result.push(f);queue.push(f.id);}});
       depth++;
     }
     return result.sort((a,b)=>a.name.localeCompare(b.name,'de'));
   },
-  async prev(id){
-    const tok=gapi.client.getToken()?.access_token;
-    if(!tok)throw new Error('Nicht angemeldet');
-    // XMLHttpRequest statt fetch (zuverlaessiger auf iPad Safari mit Auth)
-    return new Promise((resolve,reject)=>{
-      const x=new XMLHttpRequest();
-      x.open('GET','https://www.googleapis.com/drive/v3/files/'+id+'?alt=media');
-      x.setRequestHeader('Authorization','Bearer '+tok);
-      x.responseType='blob';
-      x.onload=()=>{
-        if(x.status!==200){reject(new Error('Download fehlgeschlagen: '+x.status));return;}
-        const blob=x.response;
-        if(blob.type&&blob.type.includes('text/html')){reject(new Error('Authentifizierung fehlgeschlagen'));return;}
-        resolve(URL.createObjectURL(blob));
-      };
-      x.onerror=()=>reject(new Error('Netzwerkfehler'));
-      x.send();
-    });
+  async prev(path){
+    if(!path)throw new Error('Kein Pfad');
+    const blob=await dbxDownloadBlob(path);
+    return URL.createObjectURL(blob);
   },
-  async me(){try{const r=await gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'});return r.result;}catch{return null;}},
-  WF:'.alysee_wf.json',
-  async loadWF(){try{const r=await gapi.client.drive.files.list({q:`name='${DR.WF}' and trashed=false`,fields:'files(id)',pageSize:1});if(r.result.files?.length){const c=await gapi.client.drive.files.get({fileId:r.result.files[0].id,alt:'media'});return typeof c.result==='string'?JSON.parse(c.result):c.result;}}catch{}return{tasks:[]};},
-  async saveWF(data){const j=JSON.stringify(data),tok=gapi.client.getToken()?.access_token;if(!tok)return;try{const r=await gapi.client.drive.files.list({q:`name='${DR.WF}' and trashed=false`,fields:'files(id)',pageSize:1});const s=(url,m)=>{const x=new XMLHttpRequest();x.open(m,url);x.setRequestHeader('Authorization','Bearer '+tok);x.setRequestHeader('Content-Type','application/json');x.send(j);};if(r.result.files?.length)s(`https://www.googleapis.com/upload/drive/v3/files/${r.result.files[0].id}?uploadType=media`,'PATCH');else{const f=new FormData();f.append('metadata',new Blob([JSON.stringify({name:DR.WF})],{type:'application/json'}));f.append('file',new Blob([j],{type:'application/json'}));const x=new XMLHttpRequest();x.open('POST','https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart');x.setRequestHeader('Authorization','Bearer '+tok);x.send(f);}}catch(e){console.warn(e);}}
+  async me(){
+    try{
+      const r=await dbxRpc('/users/get_current_account',null);
+      const name=(r.name&&r.name.display_name)||r.email||'';
+      // Team-Account-Erkennung
+      if(r.root_info&&r.root_info.root_namespace_id){
+        _dbxRootNs=String(r.root_info.root_namespace_id);
+        try{localStorage.setItem('alydoc_dbx_root_ns',_dbxRootNs);}catch{}
+      } else {
+        _dbxRootNs=null;
+        try{localStorage.removeItem('alydoc_dbx_root_ns');}catch{}
+      }
+      return{name,email:r.email};
+    }catch{return null;}
+  },
+  WF:'/.alysee_wf.json',
+  async loadWF(){
+    try{
+      const blob=await dbxDownloadBlob(DR.WF);
+      const text=await blob.text();
+      return JSON.parse(text);
+    }catch{return{tasks:[]};}
+  },
+  async saveWF(data){
+    const j=JSON.stringify(data);
+    try{await dbxUploadRaw(DR.WF,j,'overwrite');}catch(e){console.warn('saveWF err:',e);}
+  },
 };
 
 /* ── DEMO DATEN ── */
 const DF=[
-  {id:'f1',name:'Angebote',mimeType:'application/vnd.google-apps.folder',modifiedTime:'2025-02-10T09:00:00',parents:['root']},
-  {id:'f2',name:'Rechnungen',mimeType:'application/vnd.google-apps.folder',modifiedTime:'2025-02-08T14:30:00',parents:['root']},
-  {id:'f3',name:'Projekte',mimeType:'application/vnd.google-apps.folder',modifiedTime:'2025-01-29T11:00:00',parents:['root']},
-  {id:'f4',name:'Lieferanten',mimeType:'application/vnd.google-apps.folder',modifiedTime:'2025-01-15T08:00:00',parents:['root']},
-  {id:'d1',name:'Angebot_Muster_AG.pdf',mimeType:'application/pdf',modifiedTime:'2025-02-12T10:30:00',size:'245000',parents:['root']},
-  {id:'d2',name:'Rechnung_2025_001.pdf',mimeType:'application/pdf',modifiedTime:'2025-02-11T16:00:00',size:'182000',parents:['root']},
-  {id:'d3',name:'Preisliste_2025.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',modifiedTime:'2025-02-05T09:15:00',size:'84000',parents:['root']},
-  {id:'d4',name:'Produktkatalog.pdf',mimeType:'application/pdf',modifiedTime:'2025-01-28T14:00:00',size:'4200000',parents:['root']},
-  {id:'d5',name:'Schulung_Rhino_VRay.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',modifiedTime:'2025-01-20T11:00:00',size:'17000',parents:['root']},
+  {id:'/angebote',name:'Angebote',mimeType:'application/vnd.dropbox.folder',modifiedTime:'2025-02-10T09:00:00',path_lower:'/angebote',path_display:'/Angebote'},
+  {id:'/rechnungen',name:'Rechnungen',mimeType:'application/vnd.dropbox.folder',modifiedTime:'2025-02-08T14:30:00',path_lower:'/rechnungen',path_display:'/Rechnungen'},
+  {id:'/projekte',name:'Projekte',mimeType:'application/vnd.dropbox.folder',modifiedTime:'2025-01-29T11:00:00',path_lower:'/projekte',path_display:'/Projekte'},
+  {id:'/lieferanten',name:'Lieferanten',mimeType:'application/vnd.dropbox.folder',modifiedTime:'2025-01-15T08:00:00',path_lower:'/lieferanten',path_display:'/Lieferanten'},
+  {id:'/angebot_muster_ag.pdf',name:'Angebot_Muster_AG.pdf',mimeType:'application/pdf',modifiedTime:'2025-02-12T10:30:00',size:245000,path_lower:'/angebot_muster_ag.pdf',path_display:'/Angebot_Muster_AG.pdf'},
+  {id:'/rechnung_2025_001.pdf',name:'Rechnung_2025_001.pdf',mimeType:'application/pdf',modifiedTime:'2025-02-11T16:00:00',size:182000,path_lower:'/rechnung_2025_001.pdf',path_display:'/Rechnung_2025_001.pdf'},
+  {id:'/preisliste_2025.xlsx',name:'Preisliste_2025.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',modifiedTime:'2025-02-05T09:15:00',size:84000,path_lower:'/preisliste_2025.xlsx',path_display:'/Preisliste_2025.xlsx'},
+  {id:'/produktkatalog.pdf',name:'Produktkatalog.pdf',mimeType:'application/pdf',modifiedTime:'2025-01-28T14:00:00',size:4200000,path_lower:'/produktkatalog.pdf',path_display:'/Produktkatalog.pdf'},
+  {id:'/schulung_rhino_vray.docx',name:'Schulung_Rhino_VRay.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',modifiedTime:'2025-01-20T11:00:00',size:17000,path_lower:'/schulung_rhino_vray.docx',path_display:'/Schulung_Rhino_VRay.docx'},
 ];
 const DT=[{id:'t1',title:'Angebot Muster AG pruefen',priority:'high',dueDate:'2025-03-15',note:'',done:false},{id:'t2',title:'Preisliste aktualisieren',priority:'normal',dueDate:'',note:'Q1 2025',done:false}];
 const DTREE=[
-  {id:'root',name:'Mein Drive',icon:'fa-hdd',color:'#F7941D',ch:[
-    {id:'f1',name:'Angebote',icon:'fa-folder',color:'#F7941D'},
-    {id:'f2',name:'Rechnungen',icon:'fa-folder',color:'#F7941D'},
-    {id:'f3',name:'Projekte',icon:'fa-folder',color:'#F7941D'},
-    {id:'f4',name:'Lieferanten',icon:'fa-folder',color:'#F7941D'},
+  {id:'',name:'Dropbox',icon:'fa-dropbox',color:'#0061FF',ch:[
+    {id:'/angebote',name:'Angebote',icon:'fa-folder',color:'#F7941D'},
+    {id:'/rechnungen',name:'Rechnungen',icon:'fa-folder',color:'#F7941D'},
+    {id:'/projekte',name:'Projekte',icon:'fa-folder',color:'#F7941D'},
+    {id:'/lieferanten',name:'Lieferanten',icon:'fa-folder',color:'#F7941D'},
   ]},
 ];
 const DEMO_FOLDERS=[
-  {id:'root',name:'Mein Drive (Wurzel)',displayName:'Mein Drive (Wurzel)'},
-  {id:'f1',name:'Angebote',displayName:'Angebote'},
-  {id:'f2',name:'Rechnungen',displayName:'Rechnungen'},
-  {id:'f3',name:'Projekte',displayName:'Projekte'},
-  {id:'f4',name:'Lieferanten',displayName:'Lieferanten'},
+  {id:'',name:'Dropbox (Root)',displayName:'Dropbox (Root)'},
+  {id:'/angebote',name:'Angebote',displayName:'Angebote'},
+  {id:'/rechnungen',name:'Rechnungen',displayName:'Rechnungen'},
+  {id:'/projekte',name:'Projekte',displayName:'Projekte'},
+  {id:'/lieferanten',name:'Lieferanten',displayName:'Lieferanten'},
 ];
 
 /* ── TOAST ── */
@@ -349,8 +424,8 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
   const toast=useContext(TC);
 
   const isMulti=Array.isArray(file);
-  const isCur=id=>id===curFolderId||(id==='root'&&(!curFolderId||curFolderId==='root'));
-  const isSelf=id=>!isMulti&&file.mimeType==='application/vnd.google-apps.folder'&&id===file.id;
+  const isCur=id=>id===curFolderId||(id===''&&(!curFolderId||curFolderId===''));
+  const isSelf=id=>!isMulti&&file.mimeType==='application/vnd.dropbox.folder'&&id===file.id;
 
   const reloadFolders=async()=>{
     setReloading(true);
@@ -360,26 +435,26 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
   };
 
   // Alle Ordner inkl. Root aufbauen
-  const rootEntry={id:'root',name:'Mein Drive',parentId:null};
+  const rootEntry={id:'',name:'Dropbox',parentId:null};
   const allDirs=isDemo
     ?[rootEntry,
-      {id:'f1',name:'Angebote',parentId:'root'},
-      {id:'f2',name:'Rechnungen',parentId:'root'},
-      {id:'f2a',name:'2024',parentId:'f2'},
-      {id:'f2b',name:'2025',parentId:'f2'},
-      {id:'f3',name:'Projekte',parentId:'root'},
-      {id:'f3a',name:'Laufend',parentId:'f3'},
-      {id:'f3b',name:'Abgeschlossen',parentId:'f3'},
+      {id:'/angebote',name:'Angebote',parentId:''},
+      {id:'/rechnungen',name:'Rechnungen',parentId:''},
+      {id:'/rechnungen/2024',name:'2024',parentId:'/rechnungen'},
+      {id:'/rechnungen/2025',name:'2025',parentId:'/rechnungen'},
+      {id:'/projekte',name:'Projekte',parentId:''},
+      {id:'/projekte/laufend',name:'Laufend',parentId:'/projekte'},
+      {id:'/projekte/abgeschlossen',name:'Abgeschlossen',parentId:'/projekte'},
     ]
     :[rootEntry,...(folders||[]).map(f=>({
         id:f.id,
         name:f.displayName?f.displayName.split(' / ').pop():f.name,
         fullName:f.displayName||f.name,
-        parentId:f.parentId||(f.parents&&f.parents[0])||'root'
+        parentId:f.parentId||''
       })),...localNewFolders.filter(nf=>!(folders||[]).some(f=>f.id===nf.id))];
 
   // Kinder eines Ordners ermitteln
-  const childrenOf=parentId=>allDirs.filter(d=>d.id!=='root'&&d.parentId===parentId);
+  const childrenOf=parentId=>allDirs.filter(d=>d.id!==''&&d.parentId===parentId);
 
   // Suchfilter: alle Ordner die den Suchbegriff enthalten (und ihre Eltern)
   const searchLower=search.toLowerCase().trim();
@@ -415,7 +490,7 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
       const f=await DR.mkdir(name.trim(),parentId);
       toast('Ordner erstellt: '+name.trim(),'s');
       // Sofort lokal anzeigen und auswählen
-      setLocalNewFolders(p=>[...p,{id:f.id,name:name.trim(),parentId:parentId}]);
+      setLocalNewFolders(p=>[...p,{id:f.id,name:name.trim(),parentId:parentId,path_lower:f.path_lower}]);
       setSelId(f.id);setSelName(name.trim());
       setExpandedIds(p=>({...p,[parentId]:true}));
       // Im Hintergrund alle Ordner neu laden
@@ -429,10 +504,10 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
     setBusy(true);
     try{
       if(isMulti){
-        if(!isDemo){for(const f of file){const oldPar=(f.parents||[])[0]||curFolderId||'root';await DR.move(f.id,selId,oldPar);}}
+        if(!isDemo){for(const f of file){await DR.move(f.id,selId);}}
         toast(file.length+' Dateien verschoben nach "'+selName+'"','s');
       }else{
-        if(!isDemo){const oldPar=(file.parents||[])[0]||curFolderId||'root';await DR.move(file.id,selId,oldPar);}
+        if(!isDemo){await DR.move(file.id,selId);}
         toast('"'+file.name+'" verschoben nach "'+selName+'"','s');
       }
       onDone();
@@ -444,7 +519,7 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
   const FolderRow=({d,depth=0})=>{
     const kids=childrenOf(d.id);
     const hasKids=kids.length>0;
-    const isExp=d.id==='root'||expandedIds[d.id];
+    const isExp=d.id===''||expandedIds[d.id];
     const dis=isCur(d.id)||isSelf(d.id);
     const isSelected=selId===d.id;
     const indent=depth*18;
@@ -478,8 +553,8 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
           >
             {hasKids&&<i className={`fas fa-chevron-${isExp?'down':'right'}`}/>}
           </span>
-          <i className={`fas ${d.id==='root'?'fa-hdd':'fa-folder'}`}
-            style={{color:d.id==='root'?'#7F8C8D':'#F7941D',fontSize:13,width:16,flexShrink:0}}/>
+          <i className={`fas ${d.id===''?'fa-dropbox':'fa-folder'}`}
+            style={{color:d.id===''?'#0061FF':'#F7941D',fontSize:13,width:16,flexShrink:0}}/>
           <span style={{flex:1,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{shortName}</span>
           {isCur(d.id)&&<span style={{fontSize:10,color:'var(--mut)',background:'#F0F4F8',padding:'1px 5px',borderRadius:3,flexShrink:0}}>aktuell</span>}
           {isSelected&&<i className="fas fa-check-circle" style={{color:'var(--blue)',fontSize:12,flexShrink:0}}/>}
@@ -520,7 +595,7 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
             />
             {search&&<span style={{position:'absolute',right:8,top:'50%',transform:'translateY(-50%)',cursor:'pointer',color:'var(--mut)',fontSize:12}} onClick={()=>setSearch('')}>✕</span>}
           </div>
-          {!isDemo&&<button className="btn bp" style={{padding:'0 10px',fontSize:11,flexShrink:0,whiteSpace:'nowrap'}} onClick={()=>createMoveFolder(selId||'root')}>
+          {!isDemo&&<button className="btn bp" style={{padding:'0 10px',fontSize:11,flexShrink:0,whiteSpace:'nowrap'}} onClick={()=>createMoveFolder(selId||'')}>
             <i className="fas fa-folder-plus"/> Neu
           </button>}
           {!isDemo&&<button className="btn bs" style={{padding:'0 10px',fontSize:11,flexShrink:0}} onClick={reloadFolders} disabled={reloading}>
@@ -668,7 +743,7 @@ function useBlobUrl(file,isDemo){
   useEffect(()=>{
     let revoke=null;
     setUrl(null);setErr(null);
-    if(!file||isDemo||file.mimeType==='application/vnd.google-apps.folder')return;
+    if(!file||isDemo||file.mimeType==='application/vnd.dropbox.folder')return;
     setLoading(true);
     DR.prev(file.id).then(u=>{revoke=u;setUrl(u);}).catch(e=>setErr(e.message)).finally(()=>setLoading(false));
     return()=>{if(revoke)URL.revokeObjectURL(revoke);};
@@ -759,7 +834,7 @@ function useEmlPreview(file,isDemo){
   const [loading,setLoading]=useState(false);
   useEffect(()=>{
     setHtml(null);
-    if(!file||isDemo||!isEmlFile(file))return;
+    if(!file||isDemo||!isEmlFile(file)||file.mimeType==='application/vnd.dropbox.folder')return;
     setLoading(true);
     DR.prev(file.id).then(async blobUrl=>{
       const r=await fetch(blobUrl);
@@ -803,18 +878,17 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
   const [tab,setTab]=useState('prev');
   const isPdf=file&&(file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf')));
   const isImg=file&&file.mimeType&&file.mimeType.startsWith('image/');
-  const isGoogleDoc=file&&file.mimeType&&file.mimeType.startsWith('application/vnd.google-apps.')&&file.mimeType!=='application/vnd.google-apps.folder';
   const isOffice=isOfficeFile(file);
   const isEml=isEmlFile(file);
-  // PDFs: Blob + PDF.js | Bilder: Blob + img | Google Docs: Link | EML: Custom parser | Office: Drive preview | Rest: Blob in iframe
-  const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isGoogleDoc&&!isOffice&&!isEml)?file:null,isDemo);
+  // PDFs: Blob + PDF.js | Bilder: Blob + img | EML: Custom parser | Office: blob iframe | Rest: Blob in iframe
+  const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isOffice&&!isEml)?file:null,isDemo);
   const {html:emlHtml,loading:emlLoading}=useEmlPreview(isEml?file:null,isDemo);
   useEffect(()=>setTab('prev'),[file?.id]);
   const ps={width:width||310,minWidth:150};
   const rsBtn={background:'none',border:'1px solid var(--bdr)',cursor:'pointer',color:'var(--mut)',padding:'2px 8px',borderRadius:4,fontSize:13,lineHeight:1,fontWeight:700};
   if(!file)return(<div className="prev-panel" style={ps}><div className="prev-head"><span>Vorschau</span><div style={{display:'flex',gap:3}}>{onWider&&<button style={rsBtn} onClick={onWider} title="Breiter">◀</button>}{onNarrower&&<button style={rsBtn} onClick={onNarrower} title="Schmaler">▶</button>}</div></div><div className="ctr"><i className="fas fa-file-alt" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13,textAlign:'center'}}>Datei anklicken<br/>fuer Vorschau</p></div></div>);
   const {i,c}=mi(file.mimeType,file.name);
-  const isDir=file.mimeType==='application/vnd.google-apps.folder';
+  const isDir=file.mimeType==='application/vnd.dropbox.folder';
   return(
     <div className="prev-panel" style={ps}>
       <div className="prev-head">
@@ -838,11 +912,12 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
             :isPdf?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>PDF wird geladen…</p></div>
               :pUrl?<PdfViewer blobUrl={pUrl}/>
               :<div className="ctr"><i className="fas fa-file-pdf" style={{fontSize:52,color:'#CC0000'}}/><p style={{fontSize:12}}>{file.name}</p></div>)
-            :isGoogleDoc?<div className="ctr"><i className={`fas ${i}`} style={{fontSize:52,color:c}}/><p style={{fontSize:13,fontWeight:500}}>{file.name}</p><p style={{fontSize:11,color:'var(--mut)',marginBottom:8}}>{mi(file.mimeType,file.name).l}</p>{file.webViewLink&&file.webViewLink!=='#'&&<a href={file.webViewLink} target="_blank" rel="noopener" className="btn bp" style={{textDecoration:'none',fontSize:12}}><i className="fas fa-external-link-alt"/>In Google Drive oeffnen</a>}</div>
             :isEml?(emlLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>E-Mail wird geladen…</p></div>
               :emlHtml?<iframe src={emlHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="E-Mail Vorschau" sandbox="allow-same-origin"/>
               :<div className="ctr"><i className="fas fa-envelope" style={{fontSize:52,color:'#3498DB'}}/><p style={{fontSize:12}}>{file.name}</p></div>)
-            :isOffice?<iframe src={'https://drive.google.com/file/d/'+file.id+'/preview'} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Vorschau" allow="autoplay"/>
+            :isOffice?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>
+              :pUrl?<iframe src={pUrl} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Vorschau" allow="autoplay"/>
+              :<div className="ctr"><i className={`fas ${i}`} style={{fontSize:52,color:c}}/><p style={{fontSize:12}}>{file.name}</p></div>)
             :loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>
             :err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:32,color:'var(--org)'}}/><p style={{fontSize:12,color:'var(--red)',textAlign:'center',padding:'0 12px'}}>{err}</p></div>
             :pUrl&&isImg?<div style={{flex:1,overflow:'auto',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:8,minHeight:0}}><img src={pUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',borderRadius:4}} alt={file.name}/></div>
@@ -852,8 +927,7 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
             {[['Dateiname',file.name],['Dateityp',mi(file.mimeType,file.name).l],['Groesse',fs(file.size)],['Geaendert',fdt(file.modifiedTime)]].map(([l,v])=>(
               <div key={l} style={{marginBottom:12}}><div style={{fontSize:10,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.6px',fontWeight:600,marginBottom:3}}>{l}</div><div style={{fontSize:13,fontWeight:500,wordBreak:'break-word',color:'var(--txt)'}}>{v||'–'}</div></div>
             ))}
-            {!isDemo&&file.id&&<div style={{marginBottom:12}}><div style={{fontSize:10,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.6px',fontWeight:600,marginBottom:3}}>Drive-ID</div><div style={{fontSize:11,color:'var(--mut)',wordBreak:'break-all'}}>{file.id}</div></div>}
-            {file.webViewLink&&file.webViewLink!=='#'&&<a href={file.webViewLink} target="_blank" rel="noopener" className="btn bp" style={{display:'flex',textDecoration:'none',marginTop:8}}><i className="fas fa-external-link-alt"/>In Drive oeffnen</a>}
+            {!isDemo&&file.id&&<div style={{marginBottom:12}}><div style={{fontSize:10,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.6px',fontWeight:600,marginBottom:3}}>Dropbox-Pfad</div><div style={{fontSize:11,color:'var(--mut)',wordBreak:'break-all'}}>{file.path_display||file.id}</div></div>}
           </div>
         }
       </div>
@@ -864,25 +938,25 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
 function ExpandMod({file,isDemo,onClose}){
   const {i,c}=mi(file.mimeType,file.name);
   const isPdf=file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf'));
-  const isGoogleDoc=file.mimeType&&file.mimeType.startsWith('application/vnd.google-apps.')&&file.mimeType!=='application/vnd.google-apps.folder';
-  const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isGoogleDoc)?file:null,isDemo);
+  const {url:pUrl,loading,err}=useBlobUrl(!isDemo?file:null,isDemo);
   const is3d=isCad3d(file.name);
-  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span><button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{isPdf?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>PDF wird geladen…</p></div>:pUrl?<PdfViewer blobUrl={pUrl}/>:<div className="ctr"><i className="fas fa-file-pdf" style={{fontSize:64,color:'#CC0000'}}/></div>):isGoogleDoc?<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p>{file.webViewLink&&file.webViewLink!=='#'&&<a href={file.webViewLink} target="_blank" rel="noopener" className="btn bp" style={{textDecoration:'none'}}><i className="fas fa-external-link-alt"/>In Drive oeffnen</a>}</div>:loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?(is3d?<Cad3DViewer url={pUrl} fileName={file.name}/>:<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>):<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span><button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{isPdf?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>PDF wird geladen…</p></div>:pUrl?<PdfViewer blobUrl={pUrl}/>:<div className="ctr"><i className="fas fa-file-pdf" style={{fontSize:64,color:'#CC0000'}}/></div>):loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?(is3d?<Cad3DViewer url={pUrl} fileName={file.name}/>:<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>):<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
 }
 
 function UpMod({fid,onClose,onDone,isDemo}){
   const [files,setFiles]=useState([]);const [busy,setBusy]=useState(false);const [prog,setProg]=useState({});const [drag,setDrag]=useState(false);
   const ref=useRef();const toast=useContext(TC);
-  const go=async()=>{setBusy(true);let ok=0;if(isDemo){await new Promise(r=>setTimeout(r,900));ok=files.length;}else for(const f of files){try{await DR.up(f,fid,p=>setProg(v=>({...v,[f.name]:p})));ok++;}catch{toast('Upload-Fehler: '+f.name,'e');}}setBusy(false);toast(`${ok} Datei(en) hochgeladen`,'s');onDone();onClose();};
+  const go=async()=>{setBusy(true);let ok=0;if(isDemo){await new Promise(r=>setTimeout(r,900));ok=files.length;}else for(const f of files){try{await DR.up(f,fid||'',p=>setProg(v=>({...v,[f.name]:p})));ok++;}catch{toast('Upload-Fehler: '+f.name,'e');}}setBusy(false);toast(`${ok} Datei(en) hochgeladen`,'s');onDone();onClose();};
   return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal"><h2><i className="fas fa-upload" style={{color:'var(--blue)'}}/>Dokument hochladen</h2><div className={`drop-zone ${drag?'dov':''}`} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);setFiles(Array.from(e.dataTransfer.files))}} onClick={()=>ref.current?.click()}><i className="fas fa-cloud-upload-alt" style={{fontSize:36,display:'block',marginBottom:10}}/><p style={{fontWeight:500}}>Dateien ablegen oder klicken</p><p style={{fontSize:12,marginTop:4}}>PDF, Word, Excel, E-Mails, Bilder …</p></div><input ref={ref} type="file" multiple style={{display:'none'}} onChange={e=>setFiles(Array.from(e.target.files))}/>{files.length>0&&<div style={{marginTop:12}}>{files.map(f=>{const {i,c}=mi(f.type,f.name);return(<div key={f.name} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:'1px solid #f0f0f0',fontSize:13}}><i className={`fas ${i}`} style={{color:c,width:18}}/><span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span><span style={{color:'var(--mut)'}}>{fs(f.size)}</span>{prog[f.name]!=null&&<span style={{color:'var(--blue)',fontSize:11}}>{prog[f.name]}%</span>}</div>);})}</div>}<div style={{display:'flex',gap:8,marginTop:20,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose} disabled={busy}>Abbrechen</button><button className="btn bp" onClick={go} disabled={busy||!files.length}>{busy?<><i className="fas fa-spinner fa-spin"/>Laedt…</>:<><i className="fas fa-upload"/>Hochladen</>}</button></div></div></div>);
 }
 function MkMod({par,onClose,onDone,isDemo}){
   const [n,setN]=useState('');const [b,setB]=useState(false);const t=useContext(TC);
-  const go=async()=>{if(!n.trim())return;setB(true);try{if(!isDemo)await DR.mkdir(n,par);t('Ordner erstellt: '+n,'s');onDone();}catch{t('Fehler','e');}setB(false);onClose();};
+  const go=async()=>{if(!n.trim())return;setB(true);try{if(!isDemo)await DR.mkdir(n,par||'');t('Ordner erstellt: '+n,'s');onDone();}catch{t('Fehler','e');}setB(false);onClose();};
   return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{width:400}}><h2><i className="fas fa-folder-plus" style={{color:'var(--org)'}}/>Neuer Ordner</h2><div className="fg"><label>Name</label><input className="fc" autoFocus value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} placeholder="z.B. Rechnungen 2025"/></div><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose}>Abbrechen</button><button className="btn bp" onClick={go} disabled={b||!n.trim()}>{b?'…':'Erstellen'}</button></div></div></div>);
 }
 function RenMod({file,onClose,onDone,isDemo}){
   const [n,setN]=useState(file.name);const [b,setB]=useState(false);const t=useContext(TC);
+  // file.id = path_lower for Dropbox
   const go=async()=>{if(!n.trim()||n===file.name)return;setB(true);try{if(!isDemo)await DR.ren(file.id,n);t('Umbenannt: '+n,'s');onDone();}catch{t('Fehler','e');}setB(false);onClose();};
   return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{width:400}}><h2><i className="fas fa-pencil" style={{color:'var(--blue)'}}/>Umbenennen</h2><div className="fg"><label>Neuer Name</label><input className="fc" autoFocus value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()}/></div><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose}>Abbrechen</button><button className="btn bp" onClick={go} disabled={b||!n.trim()||n===file.name}>{b?'…':'Speichern'}</button></div></div></div>);
 }
@@ -924,26 +998,18 @@ function WF({tasks,onAdd,onTog,onDel}){
   </div>);
 }
 
-function Login({onIn,onDemo,gapiOk,gisOk}){
-  const ready=gapiOk&&gisOk;
+function Login({onIn,onDemo}){
   return(
     <div className="setup-bg">
       <div className="setup-card" style={{textAlign:'center',padding:'44px',maxWidth:440}}>
         <div style={{display:'inline-block',marginBottom:18}}><AlyseeLogo size={80} radius={14}/></div>
         <div style={{fontWeight:700,fontSize:26,color:'var(--pri)',marginBottom:4}}>alyDoc</div>
         <div style={{color:'var(--mut)',marginBottom:32,fontSize:14}}>Dokumentenmanagement · alysee GmbH</div>
-        {!ready?(<div style={{marginBottom:20,padding:'16px',background:'#EEF3FA',borderRadius:8}}><div className="spin" style={{margin:'0 auto 10px'}}/><p style={{fontSize:13,color:'var(--mut)'}}>Google APIs werden geladen…</p></div>):(
-          <button style={{width:'100%',padding:'13px',fontSize:14,justifyContent:'center',marginBottom:10,background:'#4285F4',color:'#fff',border:'none',borderRadius:5,cursor:'pointer',fontWeight:500,display:'flex',alignItems:'center',gap:10}} onClick={onIn}>
-            <svg width="20" height="20" viewBox="0 0 48 48" style={{flexShrink:0}}>
-              <path fill="#fff" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
-              <path fill="#fff" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
-              <path fill="#fff" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
-              <path fill="#fff" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
-            </svg>
-            Mit Google-Konto anmelden
-          </button>
-        )}
-        <p style={{fontSize:11,color:'var(--mut)',marginBottom:16}}>Google Drive Zugriff · Deine Dateien bleiben privat</p>
+        <button style={{width:'100%',padding:'13px',fontSize:14,justifyContent:'center',marginBottom:10,background:'#0061FF',color:'#fff',border:'none',borderRadius:5,cursor:'pointer',fontWeight:500,display:'flex',alignItems:'center',gap:10}} onClick={onIn}>
+          <i className="fab fa-dropbox" style={{fontSize:20}}/>
+          Mit Dropbox verbinden
+        </button>
+        <p style={{fontSize:11,color:'var(--mut)',marginBottom:16}}>Dropbox-Zugriff · Deine Dateien bleiben privat</p>
         <hr style={{border:'none',borderTop:'1px solid var(--bdr)',margin:'12px 0'}}/>
         <button className="btn bs" style={{width:'100%',justifyContent:'center',fontSize:12}} onClick={onDemo}><i className="fas fa-eye"/>Demo-Modus</button>
         <div style={{marginTop:20,fontSize:11,color:'var(--mut)'}}><a href="privacy.html" style={{color:'var(--mut)',textDecoration:'underline'}}>Datenschutzerklaerung</a></div>
@@ -955,8 +1021,8 @@ function Login({onIn,onDemo,gapiOk,gisOk}){
 /* ── HAUPT-APP ── */
 function Main({onOut,isDemo}){
   const [nav,setNav]=useState('archive');
-  const [cur,setCur]=useState({id:'root',name:'Mein Drive'});
-  const [path,setPath]=useState([{id:'root',name:'Mein Drive'}]);
+  const [cur,setCur]=useState({id:'',name:'Dropbox'});
+  const [path,setPath]=useState([{id:'',name:'Dropbox'}]);
   const [files,setFiles]=useState([]);
   const [sel,setSel]=useState(null);
   const [multiSel,setMultiSel]=useState([]);
@@ -968,7 +1034,7 @@ function Main({onOut,isDemo}){
   const [modal,setModal]=useState(null);
   const [ctx,setCtx]=useState(null);
   const [user,setUser]=useState(null);
-  const [exp,setExp]=useState({'root':true});
+  const [exp,setExp]=useState({'':true});
   const [big,setBig]=useState(false);
   const [prevW,setPrevW]=useState(()=>window.innerWidth>1200?480:window.innerWidth>1024?340:260);
   const [resizing,setResizing]=useState(false);
@@ -988,7 +1054,7 @@ function Main({onOut,isDemo}){
   const createTreeFolder=async(name,parentId)=>{
     if(!name.trim()||isDemo)return;
     try{
-      await DR.mkdir(name,parentId);
+      await DR.mkdir(name,parentId||'');
       toast('Ordner erstellt: '+name,'s');
       // Cache fuer parent invalidieren und neu laden
       setTreeCache(p=>{const n={...p};delete n[parentId];return n;});
@@ -1001,11 +1067,11 @@ function Main({onOut,isDemo}){
   useEffect(()=>{
     if(isDemo){setFiles(DF);setTasks(DT);}
     else{
-      load('root');
+      load('');
       DR.loadWF().then(d=>setTasks(d.tasks||[]));
       DR.me().then(u=>{if(u)setUser(u);});
       // Strukturbaum: nur Root-Ebene sofort laden (Rest lazy)
-      DR.listSubfolders('root').then(f=>{setTreeCache(p=>({...p,root:f}));f.forEach(k=>{if(!treeCache[k.id])loadTreeChildren(k.id,false);});}).catch(e=>console.error('tree root FEHLER:',e));
+      DR.listSubfolders('').then(f=>{setTreeCache(p=>({...p,'':f}));f.forEach(k=>{if(!treeCache[k.id])loadTreeChildren(k.id,false);});}).catch(e=>console.error('tree root FEHLER:',e));
     }
     const h=e=>{if(!e.target.closest('.ctx'))setCtx(null);};
     document.addEventListener('click',h);
@@ -1020,7 +1086,7 @@ function Main({onOut,isDemo}){
   const load=async fid=>{setLoading(true);setSel(null);setMultiSel([]);try{setFiles(await DR.ls(fid));}catch(e){console.error(e);toast('Ladefehler','e');}setLoading(false);};
   const go=f=>{const isSame=cur.id===f.id;if(isSame){setExp(p=>({...p,[f.id]:!p[f.id]}));return;}const idx=path.findIndex(x=>x.id===f.id);setPath(idx>=0?path.slice(0,idx+1):[...path,{id:f.id,name:f.name}]);setCur(f);setRes(null);setQ('');setExp(p=>({...p,[f.id]:true}));if(!isDemo){load(f.id);if(!treeCache[f.id])loadTreeChildren(f.id,true);}else setFiles(DF);};
   const click=(f,e)=>{
-  if(f.mimeType==='application/vnd.google-apps.folder'){if(!e?.ctrlKey&&!e?.metaKey)go(f);return;}
+  if(f.mimeType==='application/vnd.dropbox.folder'){if(!e?.ctrlKey&&!e?.metaKey)go(f);return;}
   if(e?.ctrlKey||e?.metaKey){
     setMultiSel(prev=>{
       const exists=prev.find(s=>s.id===f.id);
@@ -1035,7 +1101,7 @@ function Main({onOut,isDemo}){
     const toIdx=list.findIndex(x=>x.id===f.id);
     if(fromIdx>=0&&toIdx>=0){
       const start=Math.min(fromIdx,toIdx),end=Math.max(fromIdx,toIdx);
-      setMultiSel(list.slice(start,end+1).filter(x=>x.mimeType!=='application/vnd.google-apps.folder'));
+      setMultiSel(list.slice(start,end+1).filter(x=>x.mimeType!=='application/vnd.dropbox.folder'));
     }
     setSel(f);
   } else {
@@ -1043,11 +1109,11 @@ function Main({onOut,isDemo}){
     setSel(f);
   }
 };
-  const dbl=f=>{if(f.mimeType==='application/vnd.google-apps.folder')go(f);else{setSel(f);setBig(true);}};
+  const dbl=f=>{if(f.mimeType==='application/vnd.dropbox.folder')go(f);else{setSel(f);setBig(true);}};
   const search=async qry=>{if(!qry.trim()){setRes(null);return;}setSrc(true);try{if(isDemo)setRes(DF.filter(f=>f.name.toLowerCase().includes(qry.toLowerCase())));else setRes(await DR.find(qry));}catch{toast('Suche fehlgeschlagen','e');}setSrc(false);};
   const swf=t=>{setTasks(t);if(!isDemo)DR.saveWF({tasks:t});};
   const rf=()=>{if(isDemo)setFiles(DF);else load(cur.id);};
-  const doMove=f=>{setSel(f);setMoveFile(f);if(!isDemo&&allFolders.length===0)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));};
+  const doMove=f=>{setSel(f);setMoveFile(f);if(!isDemo)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));};
   const onMoveDone=()=>{rf();setMoveFile(null);setSel(null);setMultiSel([]);};
 
   // Lazy-Load Unterordner fuer Strukturbaum
@@ -1103,10 +1169,11 @@ function Main({onOut,isDemo}){
         const df=dragRef.current;
         dragRef.current=null;
         if(!df||df.id===targetFolder.id)return;
-        const oldPar=(df.parents||[])[0]||cur.id||'root';
-        if(oldPar===targetFolder.id){toast('Datei ist bereits in diesem Ordner','i');return;}
+        // Dropbox: derive parent from path_lower
+        const dfParent=df.path_lower?df.path_lower.substring(0,df.path_lower.lastIndexOf('/'))||'':cur.id||'';
+        if(dfParent===targetFolder.id){toast('Datei ist bereits in diesem Ordner','i');return;}
         try{
-          if(!isDemo)await DR.move(df.id,targetFolder.id,oldPar);
+          if(!isDemo)await DR.move(df.id,targetFolder.id);
           toast(`"${df.name}" nach "${targetFolder.name}" verschoben`,'s');
           rf();if(sel?.id===df.id)setSel(null);
         }catch(err){console.error(err);toast('Verschieben fehlgeschlagen','e');}
@@ -1132,7 +1199,7 @@ function Main({onOut,isDemo}){
   const NI=[{id:'archive',ic:'fa-archive',l:'Archiv'},{id:'workflow',ic:'fa-tasks',l:'Aufgaben',b:pend||null},{id:'inbox',ic:'fa-inbox',l:'E-Mails'},{id:'settings',ic:'fa-gear',l:'Einstellungen'}];
   // Rekursiver Ordnerbaum aus treeCache (lazy loaded)
   const treeChildrenOf=parentId=>treeCache[parentId]||[];
-  const folders4tree=isDemo?DTREE:[{id:'root',name:'Mein Drive',icon:'fa-hdd',color:'#F7941D'}];
+  const folders4tree=isDemo?DTREE:[{id:'',name:'Dropbox',icon:'fa-dropbox',color:'#0061FF'}];
   const isDragging=!!dragRef.current; // Wird nur für die Drag-Bar genutzt
 
   return(<div style={{height:'100%',display:'flex',flexDirection:'column'}}>
@@ -1169,14 +1236,14 @@ function Main({onOut,isDemo}){
       <button className="tbtn" onClick={rf}><i className="fas fa-rotate-right"/><span>Aktualisieren</span></button>
       {multiSel.length>0?<><div className="tsep"/>
         <span style={{fontSize:12,color:'var(--blue)',fontWeight:600,padding:'0 6px'}}>{multiSel.length} ausgewaehlt</span>
-        <button className="tbtn grn" onClick={()=>{setMoveFile(multiSel);if(!isDemo&&allFolders.length===0)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));}}><i className="fas fa-share-square"/><span>Verschieben</span></button>
-        {!isDemo&&<button className="tbtn red" onClick={async()=>{if(window.confirm(multiSel.length+' Dateien loeschen?')){try{for(const f of multiSel)await DR.del(f.id);toast(multiSel.length+' Dateien geloescht','i');rf();setSel(null);setMultiSel([]);}catch{toast('Fehler','e');}}}}><i className="fas fa-trash"/><span>Loeschen</span></button>}
+        <button className="tbtn grn" onClick={()=>{setMoveFile(multiSel);if(!isDemo)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));}}><i className="fas fa-share-square"/><span>Verschieben</span></button>
+        {!isDemo&&<button className="tbtn red" onClick={async()=>{if(window.confirm(multiSel.length+' Dateien loeschen?')){try{for(const f of multiSel)await DR.del(f.path_lower||f.id);toast(multiSel.length+' Dateien geloescht','i');rf();setSel(null);setMultiSel([]);}catch{toast('Fehler','e');}}}}><i className="fas fa-trash"/><span>Loeschen</span></button>}
         <button className="tbtn" onClick={()=>setMultiSel([])}><i className="fas fa-times"/><span>Aufheben</span></button>
       </>:sel&&<><div className="tsep"/>
         <button className="tbtn" onClick={()=>setBig(true)}><i className="fas fa-expand-alt"/><span>Gross</span></button>
         <button className="tbtn" onClick={()=>setModal('ren')}><i className="fas fa-pencil"/><span>Umbenennen</span></button>
         <button className="tbtn grn" onClick={()=>doMove(sel)}><i className="fas fa-share-square"/><span>Verschieben</span></button>
-        {!isDemo&&<button className="tbtn red" onClick={async()=>{if(window.confirm(`"${sel.name}" loeschen?`)){try{await DR.del(sel.id);toast('Geloescht','i');rf();setSel(null);}catch{toast('Fehler','e');}}}}>
+        {!isDemo&&<button className="tbtn red" onClick={async()=>{if(window.confirm(`"${sel.name}" loeschen?`)){try{await DR.del(sel.path_lower||sel.id);toast('Geloescht','i');rf();setSel(null);}catch{toast('Fehler','e');}}}}>
           <i className="fas fa-trash"/><span>Loeschen</span>
         </button>}
       </>}
@@ -1242,8 +1309,8 @@ function Main({onOut,isDemo}){
                   <div
                     className={`tree-item ${cur.id===node.id?'active':''} ${dragOverId===node.id?'drop-target':''}`}
                     style={{paddingLeft:12+depth*14}}
-                    onClick={()=>go({...node,mimeType:'application/vnd.google-apps.folder'})}
-                    {...dropProps({...node,mimeType:'application/vnd.google-apps.folder'})}
+                    onClick={()=>go({...node,mimeType:'application/vnd.dropbox.folder'})}
+                    {...dropProps({...node,mimeType:'application/vnd.dropbox.folder'})}
                   >
                     {isLoading?<i className="fas fa-spinner fa-spin" style={{fontSize:10,color:'var(--mut)',width:10,flexShrink:0}}/>
                     :showChevron?<i className={`fas fa-chevron-${exp[node.id]?'down':'right'}`} style={{fontSize:10,color:'var(--mut)',width:10,flexShrink:0,cursor:'pointer'}} onClick={toggleExpand}/>
@@ -1282,7 +1349,7 @@ function Main({onOut,isDemo}){
             :disp.length===0?<div className="ctr"><i className="fas fa-folder-open" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13}}>{res!==null?'Keine Treffer':'Ordner leer'}</p></div>
             :disp.map(f=>{
               const {i,c,l}=mi(f.mimeType,f.name);
-              const isFd=f.mimeType==='application/vnd.google-apps.folder';
+              const isFd=f.mimeType==='application/vnd.dropbox.folder';
               const isDragOver=dragOverId===f.id&&isFd;
               const openCtx=(f,e)=>{setSel(f);if(isMobile||isTouch){setShowActionSheet(true);}else{setCtx({x:Math.min(e.clientX,window.innerWidth-195),y:Math.min(e.clientY,window.innerHeight-220),f});}};
               return(<div key={f.id}
@@ -1338,7 +1405,7 @@ function Main({onOut,isDemo}){
           <div className="as-item" onClick={()=>{setModal('ren');setShowActionSheet(false);}}><i className="fas fa-pencil"/>Umbenennen</div>
           <div className="as-item" onClick={()=>{setModal('up');setShowActionSheet(false);}}><i className="fas fa-upload"/>Hochladen</div>
           <div className="as-item" onClick={()=>{setModal('mk');setShowActionSheet(false);}}><i className="fas fa-folder-plus"/>Neuer Ordner</div>
-          {!isDemo&&sel&&<div className="as-item danger" onClick={()=>{if(window.confirm('"'+sel.name+'" loeschen?')){DR.del(sel.id).then(()=>{toast('Geloescht','i');rf();setSel(null);}).catch(()=>toast('Fehler','e'));}setShowActionSheet(false);}}><i className="fas fa-trash"/>Loeschen</div>}
+          {!isDemo&&sel&&<div className="as-item danger" onClick={()=>{if(window.confirm('"'+sel.name+'" loeschen?')){DR.del(sel.path_lower||sel.id).then(()=>{toast('Geloescht','i');rf();setSel(null);}).catch(()=>toast('Fehler','e'));}setShowActionSheet(false);}}><i className="fas fa-trash"/>Loeschen</div>}
         </div>
       </div>
     )}
@@ -1360,8 +1427,7 @@ function Main({onOut,isDemo}){
         <div className="cxs"/>
         <div className="cxi grn" onClick={()=>{doMove(ctx.f);setCtx(null);}}><i className="fas fa-share-square"/>Verschieben nach…</div>
         <div className="cxs"/>
-        {ctx.f.webViewLink&&ctx.f.webViewLink!=='#'&&<><div className="cxi" onClick={()=>{window.open(ctx.f.webViewLink,'_blank');setCtx(null);}}><i className="fas fa-external-link-alt"/>In Drive oeffnen</div><div className="cxs"/></>}
-        {!isDemo&&<div className="cxi danger" onClick={()=>{if(window.confirm(`"${ctx.f.name}" loeschen?`)){DR.del(ctx.f.id).then(()=>{toast('Geloescht','i');rf();setSel(null);}).catch(()=>toast('Fehler','e'));}setCtx(null);}}><i className="fas fa-trash"/>Loeschen</div>}
+        {!isDemo&&<div className="cxi danger" onClick={()=>{if(window.confirm(`"${ctx.f.name}" loeschen?`)){DR.del(ctx.f.path_lower||ctx.f.id).then(()=>{toast('Geloescht','i');rf();setSel(null);}).catch(()=>toast('Fehler','e'));}setCtx(null);}}><i className="fas fa-trash"/>Loeschen</div>}
       </div>
     )}
 
@@ -1370,29 +1436,81 @@ function Main({onOut,isDemo}){
     {modal==='up'&&<UpMod fid={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
     {modal==='mk'&&<MkMod par={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
     {modal==='ren'&&sel&&<RenMod file={sel} onClose={()=>setModal(null)} onDone={()=>{rf();setModal(null);}} isDemo={isDemo}/>}
-    {moveFile&&<MoveMod file={moveFile} curFolderId={cur.id} onClose={()=>setMoveFile(null)} onDone={onMoveDone} isDemo={isDemo} folders={allFolders} onReloadFolders={()=>DR.allFolders().then(f=>{console.log('reload:',f.length);setAllFolders(f);return f;})}/>}
+    {moveFile&&<MoveMod file={moveFile} curFolderId={cur.id} onClose={()=>setMoveFile(null)} onDone={onMoveDone} isDemo={isDemo} folders={allFolders} onReloadFolders={async()=>{const f=await DR.allFolders();console.log('reload:',f.length);setAllFolders(f);return f;}}/>}
   </div>);
 }
-
-const DEF_CID='633536117262-28memlfds8btpdk8facskab8aq9msjdq.apps.googleusercontent.com';
-const DEF_KEY='AIzaSyCNXwOka6MinW9ZoCFDuwsSnOD9NGfyIg0';
 
 function App(){
   const [state,setState]=useState('init');
   const [isDemo,setIsDemo]=useState(false);
-  const [gapiOk,setGapiOk]=useState(_gapiReady);
-  const [gisOk,setGisOk]=useState(_gisReady);
-  const tokRef=useRef(null);
   const toast=useContext(TC);
-  useEffect(()=>{const a=()=>setGapiOk(true),b=()=>setGisOk(true);window.addEventListener('gapiOk',a);window.addEventListener('gisOk',b);return()=>{window.removeEventListener('gapiOk',a);window.removeEventListener('gisOk',b);};}, []);
+
   useEffect(()=>{
-    if(!gapiOk||!gisOk)return;
-    DR.init(DEF_CID,DEF_KEY).then(()=>{tokRef.current=DR.mkT(DEF_CID,r=>{if(r.error){console.error('OAuth:',r.error);toast('Anmeldung fehlgeschlagen: '+r.error,'e');}else setState('app');});setState('login');}).catch(e=>{console.error(e);setState('login');});
-  },[gapiOk,gisOk]);
-  const signIn=()=>{if(!tokRef.current){toast('APIs noch nicht bereit','e');return;}tokRef.current.requestAccessToken({prompt:''});};
-  const signOut=()=>{try{if(window.gapi?.client?.getToken()){google.accounts.oauth2.revoke(gapi.client.getToken().access_token,()=>{});gapi.client.setToken('');}}catch{}setState('login');};
+    // Check for auth callback params in URL (after Dropbox redirect)
+    const params=new URLSearchParams(window.location.search);
+    const urlToken=params.get('access_token');
+    const urlRefresh=params.get('refresh_token');
+    const urlExpires=params.get('expires_in');
+    if(urlToken){
+      _dbxToken=urlToken;
+      _dbxRefresh=urlRefresh||null;
+      _dbxExpires=Date.now()+(parseInt(urlExpires||14400))*1000;
+      try{
+        localStorage.setItem('alydoc_dbx_token',_dbxToken);
+        if(_dbxRefresh)localStorage.setItem('alydoc_dbx_refresh',_dbxRefresh);
+        localStorage.setItem('alydoc_dbx_expires',_dbxExpires.toString());
+      }catch{}
+      // Clean URL
+      window.history.replaceState({},'',window.location.pathname);
+      setState('app');
+      return;
+    }
+    // Check message from auth popup
+    const onMsg=(e)=>{
+      try{
+        const msg=typeof e.data==='string'?JSON.parse(e.data):e.data;
+        if(msg&&msg.type==='auth_success'&&msg.token){
+          window.removeEventListener('message',onMsg);
+          _dbxToken=msg.token;
+          _dbxRefresh=msg.refresh||null;
+          _dbxExpires=Date.now()+(parseInt(msg.expires_in||14400))*1000;
+          try{
+            localStorage.setItem('alydoc_dbx_token',_dbxToken);
+            if(_dbxRefresh)localStorage.setItem('alydoc_dbx_refresh',_dbxRefresh);
+            localStorage.setItem('alydoc_dbx_expires',_dbxExpires.toString());
+          }catch{}
+          setState('app');
+        }
+      }catch{}
+    };
+    window.addEventListener('message',onMsg);
+    // If token already in localStorage (set in global script block), go to app
+    if(_dbxToken){setState('app');}
+    else{setState('login');}
+    return()=>window.removeEventListener('message',onMsg);
+  },[]);
+
+  const signIn=()=>{
+    const baseUrl=window.location.href.replace(/\/[^/]*(\?.*)?$/,'/');
+    const authUrl=baseUrl+'auth.html';
+    const popup=window.open(authUrl,'alydoc_auth','width=480,height=650');
+    if(!popup){toast('Popup wurde blockiert. Bitte Popup-Blocker deaktivieren.','e');}
+  };
+
+  const signOut=()=>{
+    _dbxToken=null;_dbxRefresh=null;_dbxExpires=0;_dbxRootNs=null;
+    try{
+      localStorage.removeItem('alydoc_dbx_token');
+      localStorage.removeItem('alydoc_dbx_refresh');
+      localStorage.removeItem('alydoc_dbx_expires');
+      localStorage.removeItem('alydoc_dbx_user');
+      localStorage.removeItem('alydoc_dbx_root_ns');
+    }catch{}
+    setState('login');
+  };
+
   if(state==='init')return(<div className="setup-bg"><div style={{textAlign:'center',color:'#fff'}}><AlyseeLogo size={80} radius={14}/><div style={{marginTop:20}}><div className="spin" style={{margin:'0 auto',borderTopColor:'#fff',borderColor:'rgba(255,255,255,.3)'}}/></div><p style={{marginTop:16,fontSize:14,opacity:.7}}>Lade alyDoc…</p></div></div>);
-  if(state==='login')return <Login onIn={signIn} onDemo={()=>{setIsDemo(true);setState('app');}} gapiOk={gapiOk} gisOk={gisOk}/>;
+  if(state==='login')return <Login onIn={signIn} onDemo={()=>{setIsDemo(true);setState('app');}}/>;
   return <Main onOut={signOut} isDemo={isDemo}/>;
 }
 ReactDOM.createRoot(document.getElementById('root')).render(<ToastProv><App/></ToastProv>);
