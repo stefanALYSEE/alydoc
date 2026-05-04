@@ -1038,6 +1038,8 @@ function Main({onOut,isDemo}){
   const [big,setBig]=useState(false);
   const [prevW,setPrevW]=useState(()=>window.innerWidth>1200?480:window.innerWidth>1024?340:260);
   const [resizing,setResizing]=useState(false);
+  const [treeW,setTreeW]=useState(()=>window.innerWidth>1200?260:window.innerWidth>1024?220:200);
+  const [treeResizing,setTreeResizing]=useState(false);
   const [moveFile,setMoveFile]=useState(null);
   const [allFolders,setAllFolders]=useState([]);
   const [treeCache,setTreeCache]=useState({});  // {parentId: [folder, ...]} – lazy loaded
@@ -1194,6 +1196,18 @@ function Main({onOut,isDemo}){
     document.addEventListener(isTouch?'touchend':'mouseup',mu);
   },[prevW]);
 
+  const startResizeTree=useCallback(e=>{
+    e.preventDefault();setTreeResizing(true);
+    const isTouch=e.type==='touchstart';
+    const x0=isTouch?e.touches[0].clientX:e.clientX;
+    const w0=treeW;
+    const clamp=x=>{const cx=isTouch?x.touches[0].clientX:x.clientX;setTreeW(Math.max(120,Math.min(window.innerWidth*0.4,w0+(cx-x0))));};
+    const mm=ev=>{if(isTouch)ev.preventDefault();clamp(ev);};
+    const mu=()=>{setTreeResizing(false);document.removeEventListener(isTouch?'touchmove':'mousemove',mm);document.removeEventListener(isTouch?'touchend':'mouseup',mu);};
+    document.addEventListener(isTouch?'touchmove':'mousemove',mm,isTouch?{passive:false}:undefined);
+    document.addEventListener(isTouch?'touchend':'mouseup',mu);
+  },[treeW]);
+
   const disp=res!==null?res:files;
   const pend=tasks.filter(t=>!t.done).length;
   const NI=[{id:'archive',ic:'fa-archive',l:'Archiv'},{id:'workflow',ic:'fa-tasks',l:'Aufgaben',b:pend||null},{id:'inbox',ic:'fa-inbox',l:'E-Mails'},{id:'settings',ic:'fa-gear',l:'Einstellungen'}];
@@ -1289,7 +1303,7 @@ function Main({onOut,isDemo}){
       </div>)
       :(<>
         {/* STRUKTURBAUM */}
-        <div className="folder-tree">
+        <div className="folder-tree" style={{width:treeW}}>
           <div className="tree-head"><i className="fas fa-sitemap" style={{marginRight:6}}/>Strukturbaum</div>
           <div className="tree-body">
             {folders4tree.map(nd=>{
@@ -1336,6 +1350,7 @@ function Main({onOut,isDemo}){
           </div>
         </div>
 
+        <div className={`resizer ${treeResizing?'drag':''}`} onMouseDown={startResizeTree} onTouchStart={startResizeTree}/>
         {/* DATEILISTE */}
         <div className="doc-panel">
           <div className="breadcrumb">
