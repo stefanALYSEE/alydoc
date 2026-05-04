@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>alyDoc – Microsoft Anmeldung</title>
+  <style>
+    body{font-family:'Segoe UI',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#F5F7FA;margin:0}
+    .card{background:#fff;border-radius:10px;padding:32px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.1);max-width:360px;width:90%}
+    .card h2{color:#003D7A;font-size:16px;margin-bottom:8px}
+    .card p{color:#7F8C8D;font-size:13px;margin-bottom:20px;line-height:1.5}
+    .status{margin-top:16px;font-size:12px;color:#7F8C8D}
+    .spin{animation:sp .8s linear infinite;display:inline-block}
+    @keyframes sp{to{transform:rotate(360deg)}}
+    .success{color:#00A651;font-size:36px;margin-bottom:12px}
+    .err{color:#CC0000;font-size:36px;margin-bottom:12px}
+  </style>
+</head>
+<body>
+<div class="card" id="card">
+  <h2>Microsoft-Konto verbinden</h2>
+  <p>Du wirst automatisch zu Microsoft weitergeleitet…</p>
+  <div class="status" id="status"><span class="spin">⏳</span> Weiterleitung…</div>
+</div>
+
+<script>
+// ── MICROSOFT OAUTH 2 + PKCE (Public Client) ─────────────────────────────
+const MS_TENANT='a90aaebb-0744-4f82-b5fd-512e457d8c76';
+const MS_CLIENT='8a52a75f-667c-4829-ab0e-4a314852505d';
+
+// ── PKCE Helpers ─────────────────────────────────────────────────────────
+function b64url(buf){
+  return btoa(String.fromCharCode(...new Uint8Array(buf)))
+    .replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+}
+function randStr(len){
+  const bytes=new Uint8Array(len);
+  crypto.getRandomValues(bytes);
+  return b64url(bytes).substring(0,len);
+}
+async function sha256b64url(s){
+  const buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+  return b64url(buf);
+}
+
+function getRedirectUri(){
+  return window.location.origin+window.location.pathname;
+}
+
+const urlParams=new URLSearchParams(window.location.search);
+const tokenFromUrl=urlParams.get('token');
+const codeFromUrl=urlParams.get('code');
+const errorFromUrl=urlParams.get('error');
+
+// ══════════════════════════════════════════════════════════════════════════
+// PHASE 2 (?token=...): Token an opener senden, Fenster schließen
+// ══════════════════════════════════════════════════════════════════════════
+if(tokenFromUrl){
+  document.getElementById('card').innerHTML='<div class="success">✓</div><h2>Verbunden!</h2><p style="color:#7F8C8D;font-size:13px">Microsoft-Anmeldung erfolgreich.<br>Dieses Fenster schliesst sich automatisch.</p>';
+  const token=tokenFromUrl;
+  const refresh=urlParams.get('refresh')||'';
+  const expires_in=parseInt(urlParams.get('expires_in')||'3600');
+  if(window.opener){
+    try{
+      window.opener.postMessage({type:'ms_auth_success',token,refresh,expires_in},'*');
+    }catch(e){console.error('postMessage failed:',e);}
+  }
+  setTimeout(()=>window.close(),1500);
+}
+// ══════════════════════════════════════════════════════════════════════════
+// PHASE 1 (?code=...): Code → Token tauschen, dann Reload als Phase 2
+// ══════════════════════════════════════════════════════════════════════════
+else if(codeFromUrl){
+  (async()=>{
+    try{
+      document.getElementById('status').innerHTML='<span class="spin">⏳</span> Token wird abgerufen…';
+      const code=codeFromUrl;
+      const verifier=sessionStorage.getItem('ms_pkce_verifier')||'';
+      if(!verifier)throw new Error('PKCE-Verifier verloren – bitte neu anmelden');
+
+      const body=new URLSearchParams();
+      body.set('grant_type','authorization_code');
+      body.set('code',code);
+      body.set('client_id',MS_CLIENT);
+      body.set('redirect_uri',getRedirectUri());
+      body.set('code_verifier',verifier);
+      body.set('scope','Mail.Send User.Read offline_access');
+
+      const resp=await fetch(
+        'https://login.microsoftonline.com/'+MS_TENANT+'/oauth2/v2.0/token',
+        {method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body.toString()}
+      );
+      const data=await resp.json();
+      if(!resp.ok||!data.access_token){
+        throw new Error('Token-Tausch fehlgeschlagen: '+(data.error_description||data.error||resp.status));
+      }
+      sessionStorage.removeItem('ms_pkce_verifier');
+
+      // Reload mit Token → Phase 2
+      const newUrl=getRedirectUri()
+        +'?token='+encodeURIComponent(data.access_token)
+        +(data.refresh_token?'&refresh='+encodeURIComponent(data.refresh_token):'')
+        +'&expires_in='+encodeURIComponent(data.expires_in||3600);
+      window.location.replace(newUrl);
+    }catch(e){
+      document.getElementById('card').innerHTML='<div class="err">✕</div><h2>Anmeldung fehlgeschlagen</h2><p style="color:#CC0000;font-size:13px">'+e.message+'</p>';
+    }
+  })();
+}
+// ══════════════════════════════════════════════════════════════════════════
+// Fehler von Microsoft
+// ══════════════════════════════════════════════════════════════════════════
+else if(errorFromUrl){
+  document.getElementById('card').innerHTML='<div class="err">✕</div><h2>Anmeldung abgebrochen</h2><p style="color:#CC0000;font-size:13px">'+(urlParams.get('error_description')||errorFromUrl)+'</p>';
+  setTimeout(()=>window.close(),3000);
+}
+// ══════════════════════════════════════════════════════════════════════════
+// PHASE 0 (Erstaufruf): PKCE generieren + Redirect zu Microsoft
+// ══════════════════════════════════════════════════════════════════════════
+else{
+  (async()=>{
+    try{
+      const verifier=randStr(64);
+      sessionStorage.setItem('ms_pkce_verifier',verifier);
+      const challenge=await sha256b64url(verifier);
+
+      const authUrl='https://login.microsoftonline.com/'+MS_TENANT+'/oauth2/v2.0/authorize'
+        +'?client_id='+encodeURIComponent(MS_CLIENT)
+        +'&redirect_uri='+encodeURIComponent(getRedirectUri())
+        +'&response_type=code'
+        +'&scope='+encodeURIComponent('Mail.Send User.Read offline_access')
+        +'&code_challenge='+encodeURIComponent(challenge)
+        +'&code_challenge_method=S256';
+
+      window.location.href=authUrl;
+    }catch(e){
+      document.getElementById('card').innerHTML='<div class="err">✕</div><h2>Fehler</h2><p style="color:#CC0000;font-size:13px">'+e.message+'</p>';
+    }
+  })();
+}
+</script>
+</body>
+</html>
