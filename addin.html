@@ -600,24 +600,26 @@ async function dbxUpload(path,bytesOrString,mode){
   const arg={path:path,mode:mode||'add',autorename:true,mute:false,strict_conflict:false};
   let body=bytesOrString;
   if(typeof body==='string')body=new TextEncoder().encode(body);
-  const r=await fetch(CONTENT_BASE+'/files/upload',{
-    method:'POST',
-    headers:{
-      'Authorization':'Bearer '+accessToken,
-      'Dropbox-API-Arg':JSON.stringify(arg),
-      'Content-Type':'application/octet-stream',
-      ...pathRootHeader()
-    },
-    body:body
+  // XHR statt fetch – fetch schlägt in WKWebView bei Binary-Upload fehl ("Load failed")
+  return new Promise((resolve,reject)=>{
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',CONTENT_BASE+'/files/upload');
+    xhr.setRequestHeader('Authorization','Bearer '+accessToken);
+    xhr.setRequestHeader('Dropbox-API-Arg',JSON.stringify(arg));
+    xhr.setRequestHeader('Content-Type','application/octet-stream');
+    const prh=pathRootHeader();
+    if(prh['Dropbox-API-Path-Root'])xhr.setRequestHeader('Dropbox-API-Path-Root',prh['Dropbox-API-Path-Root']);
+    xhr.timeout=120000;
+    xhr.onload=()=>{
+      if(xhr.status===401){reject(new Error('Nicht authentifiziert (401)'));return;}
+      let data;try{data=xhr.responseText?JSON.parse(xhr.responseText):{};}catch{data={raw:xhr.responseText};}
+      if(xhr.status<200||xhr.status>=300){reject(new Error('Upload '+xhr.status+': '+(data.error_summary||xhr.responseText)));return;}
+      resolve(data);
+    };
+    xhr.onerror=()=>reject(new Error('Netzwerkfehler beim Upload'));
+    xhr.ontimeout=()=>reject(new Error('Upload Timeout (>120s)'));
+    xhr.send(body);
   });
-  if(r.status===401){
-    if(await tryRefreshToken())return dbxUpload(path,bytesOrString,mode);
-    throw new Error('Nicht authentifiziert (401)');
-  }
-  const text=await r.text();
-  let data; try{data=text?JSON.parse(text):{};}catch{data={raw:text};}
-  if(!r.ok)throw new Error('Upload '+r.status+': '+(data.error_summary||text));
-  return data;
 }
 
 // ── FOLDER LOADING (Lazy) ────────────────────────────────────────────────────
