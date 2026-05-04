@@ -861,9 +861,9 @@ async function getEmlContent(){
   const boundary='__alyDoc_'+Date.now()+'__';
   const mixedBoundary='__alyDoc_mixed_'+Date.now()+'__';
 
-  const htmlBody=await new Promise((resolve,reject)=>{
+  const htmlBody=await new Promise((resolve)=>{
     mailItem.body.getAsync(Office.CoercionType.Html,result=>{
-      if(result.status===Office.AsyncResultStatus.Failed){reject(new Error(result.error.message));return;}
+      if(result.status===Office.AsyncResultStatus.Failed){console.warn('HTML body load failed:',result.error.message);resolve('');return;}
       resolve(result.value||'');
     });
   });
