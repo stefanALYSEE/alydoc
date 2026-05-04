@@ -802,14 +802,18 @@ async function ablegen(){
   document.getElementById('progress-wrap').style.display='block';
   showStatus('Mail wird abgelegt…','info');
 
+  let _step='init';
   try{
-    setProgress(10,'Mail-Inhalt und Anhänge werden gelesen…');
+    _step='Mailinhalt lesen';
+    setProgress(10,_step+'…');
     const emlContent=await getEmlContent();
 
-    setProgress(40,'Token wird geprüft…');
+    _step='Token prüfen';
+    setProgress(40,_step+'…');
     if(!accessToken)throw new Error('Kein Dropbox-Token! Bitte Panel schließen und neu öffnen.');
     await ensureToken();
 
+    _step='Upload vorbereiten';
     setProgress(50,'Wird in Dropbox gespeichert…');
     const subject=mailItem.subject||'Mail';
     const created=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
@@ -818,6 +822,7 @@ async function ablegen(){
     const fileName=dateStr+'_'+safeSubject+'.eml';
     const targetPath=(selectedFolderPath||'')+'/'+fileName;
 
+    _step='Dropbox Upload';
     const uploadResult=await dbxUpload(targetPath,emlContent);
     setProgress(70,'EML gespeichert: '+(uploadResult.path_display||targetPath));
 
@@ -845,8 +850,8 @@ async function ablegen(){
     refreshMailInfo();
 
   }catch(e){
-    console.error(e);
-    showStatus('Fehler: '+e.message,'error');
+    console.error('[alyDoc] Fehler bei "'+_step+'":', e);
+    showStatus('Fehler ['+_step+']: '+e.message,'error');
     document.getElementById('btn-ablegen').disabled=false;
     document.getElementById('progress-wrap').style.display='none';
   }
