@@ -83,7 +83,7 @@ else if(codeFromUrl){
       body.set('client_id',MS_CLIENT);
       body.set('redirect_uri',getRedirectUri());
       body.set('code_verifier',verifier);
-      body.set('scope','Mail.Send User.Read offline_access');
+      body.set('scope','Mail.Send Mail.Read User.Read offline_access');
 
       const resp=await fetch(
         'https://login.microsoftonline.com/'+MS_TENANT+'/oauth2/v2.0/token',
@@ -127,7 +127,7 @@ else{
         +'?client_id='+encodeURIComponent(MS_CLIENT)
         +'&redirect_uri='+encodeURIComponent(getRedirectUri())
         +'&response_type=code'
-        +'&scope='+encodeURIComponent('Mail.Send User.Read offline_access')
+        +'&scope='+encodeURIComponent('Mail.Send Mail.Read User.Read offline_access')
         +'&code_challenge='+encodeURIComponent(challenge)
         +'&code_challenge_method=S256';
 

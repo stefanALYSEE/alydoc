@@ -225,7 +225,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version">v4.1</div>
+    <div class="nav-version">v4.3</div>
   </div>
 </nav>
 
@@ -333,6 +333,85 @@
 // HTTP-Header darf nur ASCII enthalten – JSON-Werte mit Umlauten müssen \uXXXX-escaped werden
 function jsonHeaderSafe(obj){
   return JSON.stringify(obj).replace(/[^\x20-\x7E]/g,c=>'\\u'+c.charCodeAt(0).toString(16).padStart(4,'0'));
+}
+
+// ── MICROSOFT GRAPH (shared localStorage mit index.html) ────────────────────
+const MS_CLIENT_ID='8a52a75f-667c-4829-ab0e-4a314852505d';
+const MS_TENANT_ID='a90aaebb-0744-4f82-b5fd-512e457d8c76';
+
+async function getValidMsToken(){
+  const token=localStorage.getItem('alydoc_ms_token');
+  const expires=parseInt(localStorage.getItem('alydoc_ms_expires')||'0');
+  if(token&&expires>Date.now()+60000)return token;
+  return await refreshMsToken();
+}
+
+async function refreshMsToken(){
+  const rt=localStorage.getItem('alydoc_ms_refresh');
+  if(!rt)return null;
+  try{
+    const body=new URLSearchParams({
+      grant_type:'refresh_token',refresh_token:rt,client_id:MS_CLIENT_ID,
+      scope:'Mail.Send Mail.Read User.Read offline_access'
+    });
+    const r=await fetch('https://login.microsoftonline.com/'+MS_TENANT_ID+'/oauth2/v2.0/token',{
+      method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body.toString()
+    });
+    if(!r.ok)return null;
+    const data=await r.json();
+    if(!data.access_token)return null;
+    localStorage.setItem('alydoc_ms_token',data.access_token);
+    localStorage.setItem('alydoc_ms_expires',(Date.now()+(data.expires_in||3600)*1000).toString());
+    if(data.refresh_token)localStorage.setItem('alydoc_ms_refresh',data.refresh_token);
+    return data.access_token;
+  }catch{return null;}
+}
+
+function arrayBufferToBase64(buf){
+  const bytes=new Uint8Array(buf);
+  const chunkSize=8192;
+  let binary='';
+  for(let i=0;i<bytes.length;i+=chunkSize)binary+=String.fromCharCode.apply(null,bytes.subarray(i,i+chunkSize));
+  return btoa(binary);
+}
+
+let _graphAttCache=null;
+async function getAttachmentBase64ViaGraph(att,msToken){
+  const ewsId=mailItem.itemId;
+  const restId=Office.context.mailbox.convertToRestId(ewsId,Office.MailboxEnums.RestVersion.v2_0);
+  if(!_graphAttCache||_graphAttCache.restId!==restId){
+    const r=await fetch('https://graph.microsoft.com/v1.0/me/messages/'+encodeURIComponent(restId)+'/attachments?$select=id,name,size',{
+      headers:{'Authorization':'Bearer '+msToken}
+    });
+    if(!r.ok)throw new Error('Graph attachments: '+r.status);
+    const data=await r.json();
+    _graphAttCache={restId,atts:data.value||[]};
+  }
+  const graphAtt=_graphAttCache.atts.find(a=>a.name===att.name);
+  if(!graphAtt)throw new Error('Anhang nicht in Graph gefunden: '+att.name);
+  const r2=await fetch('https://graph.microsoft.com/v1.0/me/messages/'+encodeURIComponent(restId)+'/attachments/'+graphAtt.id+'/$value',{
+    headers:{'Authorization':'Bearer '+msToken}
+  });
+  if(!r2.ok)throw new Error('Graph Anhang-Download: '+r2.status);
+  const buf=await r2.arrayBuffer();
+  return arrayBufferToBase64(buf);
+}
+
+// Anhang-Inhalt als Base64 – Graph API bevorzugt (kein Größenlimit), Office.js als Fallback (~4 MB)
+async function getAttachmentBase64(att){
+  const msToken=await getValidMsToken();
+  if(msToken){
+    try{return await getAttachmentBase64ViaGraph(att,msToken);}
+    catch(e){console.warn('Graph Anhang Fallback zu Office.js:',e);}
+  }
+  const content=await new Promise((resolve,reject)=>{
+    mailItem.getAttachmentContentAsync(att.id,r=>{
+      if(r.status===Office.AsyncResultStatus.Failed){reject(new Error(r.error.message));return;}
+      resolve(r.value);
+    });
+  });
+  if(content.format===Office.AttachmentContentFormat.Base64)return content.content;
+  return btoa(unescape(encodeURIComponent(content.content)));
 }
 
 // ── CONFIG (Dropbox OAuth 2 + PKCE) ─────────────────────────────────────────
@@ -889,18 +968,7 @@ async function getEmlContent(){
   const atts=mailItem.attachments||[];
   for(const att of atts){
     try{
-      const content=await new Promise((resolve,reject)=>{
-        mailItem.getAttachmentContentAsync(att.id,r=>{
-          if(r.status===Office.AsyncResultStatus.Failed){reject(new Error(r.error.message));return;}
-          resolve(r.value);
-        });
-      });
-      let base64Data='';
-      if(content.format===Office.AttachmentContentFormat.Base64){
-        base64Data=content.content;
-      } else {
-        base64Data=btoa(unescape(encodeURIComponent(content.content)));
-      }
+      const base64Data=await getAttachmentBase64(att);
       attachments.push({name:att.name,mimeType:att.contentType||'application/octet-stream',base64:base64Data});
     }catch(e){console.warn('Anhang konnte nicht geladen werden:',att.name,e);}
   }
@@ -953,23 +1021,12 @@ async function getEmlContent(){
 }
 
 async function saveAttachment(att,folderPath){
-  return new Promise((resolve)=>{
-    mailItem.getAttachmentContentAsync(att.id,async result=>{
-      if(result.status===Office.AsyncResultStatus.Failed){resolve();return;}
-      try{
-        const content=result.value;
-        let data;
-        if(content.format===Office.AttachmentContentFormat.Base64){
-          data=Uint8Array.from(atob(content.content),c=>c.charCodeAt(0));
-        } else {
-          data=new TextEncoder().encode(content.content);
-        }
-        const safeName=att.name.replace(/[/\\:*?"<>|]/g,'_');
-        await dbxUpload((folderPath||'')+'/'+safeName,data);
-        resolve();
-      }catch(e){console.warn('Anhang Fehler:',e);resolve();}
-    });
-  });
+  try{
+    const base64Data=await getAttachmentBase64(att);
+    const data=Uint8Array.from(atob(base64Data),c=>c.charCodeAt(0));
+    const safeName=att.name.replace(/[/\\:*?"<>|]/g,'_');
+    await dbxUpload((folderPath||'')+'/'+safeName,data);
+  }catch(e){console.warn('Anhang Fehler:',e);}
 }
 
 // ── HELPERS ───────────────────────────────────────────────────────────────────
