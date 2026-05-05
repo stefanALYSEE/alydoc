@@ -600,34 +600,28 @@ async function dbxRpc(path,arg){
 }
 
 async function dbxUpload(path,bytesOrString,mode){
-  console.log('[alyDoc v4.1] dbxUpload XHR →',path);
   await ensureToken();
   const arg={path:path,mode:mode||'add',autorename:true,mute:false,strict_conflict:false};
-  let body=bytesOrString;
-  if(typeof body==='string')body=new TextEncoder().encode(body);
-  console.log('[alyDoc v4.1] body size:',body.byteLength||body.length,'bytes');
+  // Kein TextEncoder – String direkt als Blob senden (TextEncoder fehlt in Outlook WKWebView)
+  const sendData=new Blob([bytesOrString],{type:'application/octet-stream'});
   return new Promise((resolve,reject)=>{
-    try{
-      const xhr=new XMLHttpRequest();
-      try{xhr.open('POST',CONTENT_BASE+'/files/upload');}catch(e){reject(new Error('open: '+e.message));return;}
-      try{xhr.setRequestHeader('Authorization','Bearer '+accessToken);}catch(e){reject(new Error('hdr-auth: '+e.message));return;}
-      try{xhr.setRequestHeader('Dropbox-API-Arg',jsonHeaderSafe(arg));}catch(e){reject(new Error('hdr-arg: '+e.message));return;}
-      try{xhr.setRequestHeader('Content-Type','application/octet-stream');}catch(e){reject(new Error('hdr-ct: '+e.message));return;}
-      try{
-        const prh=pathRootHeader();
-        if(prh['Dropbox-API-Path-Root'])xhr.setRequestHeader('Dropbox-API-Path-Root',prh['Dropbox-API-Path-Root']);
-      }catch(e){reject(new Error('hdr-root: '+e.message));return;}
-      xhr.timeout=120000;
-      xhr.onload=()=>{
-        if(xhr.status===401){reject(new Error('Nicht authentifiziert (401)'));return;}
-        let data;try{data=xhr.responseText?JSON.parse(xhr.responseText):{};}catch{data={raw:xhr.responseText};}
-        if(xhr.status<200||xhr.status>=300){reject(new Error('Upload '+xhr.status+': '+(data.error_summary||xhr.responseText)));return;}
-        resolve(data);
-      };
-      xhr.onerror=()=>reject(new Error('XHR Netzwerkfehler'));
-      xhr.ontimeout=()=>reject(new Error('Upload Timeout'));
-      try{xhr.send(new Blob([body],{type:'application/octet-stream'}));}catch(e){reject(new Error('send: '+e.message));return;}
-    }catch(e){reject(new Error('XHR-setup: '+e.message));}
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST',CONTENT_BASE+'/files/upload');
+    xhr.setRequestHeader('Authorization','Bearer '+accessToken);
+    xhr.setRequestHeader('Dropbox-API-Arg',jsonHeaderSafe(arg));
+    xhr.setRequestHeader('Content-Type','application/octet-stream');
+    const prh=pathRootHeader();
+    if(prh['Dropbox-API-Path-Root'])xhr.setRequestHeader('Dropbox-API-Path-Root',prh['Dropbox-API-Path-Root']);
+    xhr.timeout=120000;
+    xhr.onload=()=>{
+      if(xhr.status===401){reject(new Error('Nicht authentifiziert (401)'));return;}
+      let data;try{data=xhr.responseText?JSON.parse(xhr.responseText):{};}catch{data={raw:xhr.responseText};}
+      if(xhr.status<200||xhr.status>=300){reject(new Error('Upload '+xhr.status+': '+(data.error_summary||xhr.responseText)));return;}
+      resolve(data);
+    };
+    xhr.onerror=()=>reject(new Error('XHR Netzwerkfehler'));
+    xhr.ontimeout=()=>reject(new Error('Upload Timeout'));
+    xhr.send(sendData);
   });
 }
 
