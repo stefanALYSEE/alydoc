@@ -330,6 +330,11 @@
 </div>
 
 <script>
+// HTTP-Header darf nur ASCII enthalten – JSON-Werte mit Umlauten müssen \uXXXX-escaped werden
+function jsonHeaderSafe(obj){
+  return JSON.stringify(obj).replace(/[^\x20-\x7E]/g,c=>'\\u'+c.charCodeAt(0).toString(16).padStart(4,'0'));
+}
+
 // ── CONFIG (Dropbox OAuth 2 + PKCE) ─────────────────────────────────────────
 const DROPBOX_APP_KEY='2gz5l15uzq63ppy';
 const API_BASE='https://api.dropboxapi.com/2';
@@ -568,8 +573,7 @@ async function onTokenReceived(token,refresh,expiresIn){
 
 // ── DROPBOX API HELPERS ──────────────────────────────────────────────────────
 function pathRootHeader(){
-  // Bei Team-Accounts: Header zwingt API auf Team-Root statt Member-Folder
-  return rootNsId ? {'Dropbox-API-Path-Root':JSON.stringify({'.tag':'namespace_id','namespace_id':rootNsId})} : {};
+  return rootNsId ? {'Dropbox-API-Path-Root':jsonHeaderSafe({'.tag':'namespace_id','namespace_id':rootNsId})} : {};
 }
 
 async function dbxRpc(path,arg){
@@ -607,7 +611,7 @@ async function dbxUpload(path,bytesOrString,mode){
     const xhr=new XMLHttpRequest();
     xhr.open('POST',CONTENT_BASE+'/files/upload');
     xhr.setRequestHeader('Authorization','Bearer '+accessToken);
-    xhr.setRequestHeader('Dropbox-API-Arg',JSON.stringify(arg));
+    xhr.setRequestHeader('Dropbox-API-Arg',jsonHeaderSafe(arg));
     xhr.setRequestHeader('Content-Type','application/octet-stream');
     const prh=pathRootHeader();
     if(prh['Dropbox-API-Path-Root'])xhr.setRequestHeader('Dropbox-API-Path-Root',prh['Dropbox-API-Path-Root']);
