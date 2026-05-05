@@ -1,5 +1,5 @@
 // alysee DMS Service Worker
-const CACHE = 'alydoc-v5';
+const CACHE = 'alydoc-v6';
 const OFFLINE_URL = 'index.html';
 
 // Assets die beim Install gecacht werden
@@ -35,6 +35,11 @@ self.addEventListener('fetch', event => {
 
   // Externe APIs → kein Cache-Intercept
   if (
+    url.hostname.includes('dropboxapi.com') ||
+    url.hostname.includes('dropbox.com') ||
+    url.hostname.includes('dropboxusercontent.com') ||
+    url.hostname.includes('microsoft.com') ||
+    url.hostname.includes('microsoftonline.com') ||
     url.hostname.includes('googleapis.com') ||
     url.hostname.includes('google.com') ||
     url.hostname.includes('anthropic.com') ||
