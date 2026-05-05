@@ -624,7 +624,7 @@ async function dbxUpload(path,bytesOrString,mode){
       reject(new Error('XHR Netzwerkfehler: '+xhr.statusText));
     };
     xhr.ontimeout=()=>reject(new Error('Upload Timeout (>120s)'));
-    xhr.send(body);
+    xhr.send(new Blob([body],{type:'application/octet-stream'}));
   });
 }
 
