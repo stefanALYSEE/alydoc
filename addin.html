@@ -225,7 +225,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version">v4.0</div>
+    <div class="nav-version">v4.1</div>
   </div>
 </nav>
 
@@ -596,11 +596,13 @@ async function dbxRpc(path,arg){
 }
 
 async function dbxUpload(path,bytesOrString,mode){
+  console.log('[alyDoc v4.1] dbxUpload XHR →',path);
   await ensureToken();
   const arg={path:path,mode:mode||'add',autorename:true,mute:false,strict_conflict:false};
   let body=bytesOrString;
   if(typeof body==='string')body=new TextEncoder().encode(body);
-  // XHR statt fetch – fetch schlägt in WKWebView bei Binary-Upload fehl ("Load failed")
+  console.log('[alyDoc v4.1] body size:',body.byteLength||body.length,'bytes');
+  // XHR statt fetch – fetch schlägt in WKWebView bei Binary-Upload fehl
   return new Promise((resolve,reject)=>{
     const xhr=new XMLHttpRequest();
     xhr.open('POST',CONTENT_BASE+'/files/upload');
@@ -611,12 +613,16 @@ async function dbxUpload(path,bytesOrString,mode){
     if(prh['Dropbox-API-Path-Root'])xhr.setRequestHeader('Dropbox-API-Path-Root',prh['Dropbox-API-Path-Root']);
     xhr.timeout=120000;
     xhr.onload=()=>{
+      console.log('[alyDoc v4.1] XHR onload status:',xhr.status);
       if(xhr.status===401){reject(new Error('Nicht authentifiziert (401)'));return;}
       let data;try{data=xhr.responseText?JSON.parse(xhr.responseText):{};}catch{data={raw:xhr.responseText};}
       if(xhr.status<200||xhr.status>=300){reject(new Error('Upload '+xhr.status+': '+(data.error_summary||xhr.responseText)));return;}
       resolve(data);
     };
-    xhr.onerror=()=>reject(new Error('Netzwerkfehler beim Upload'));
+    xhr.onerror=(e)=>{
+      console.error('[alyDoc v4.1] XHR onerror:',e,xhr.status,xhr.statusText);
+      reject(new Error('XHR Netzwerkfehler: '+xhr.statusText));
+    };
     xhr.ontimeout=()=>reject(new Error('Upload Timeout (>120s)'));
     xhr.send(body);
   });
