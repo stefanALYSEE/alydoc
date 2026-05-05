@@ -1,0 +1,1145 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>alysee DMS – Dokumentenmanagement</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' fill='%23F9A800'/><text x='7' y='91' font-family='Arial' font-size='27' font-weight='300' fill='white'>alysee</text></svg>">
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <script>
+    // BUG FIX 1: Robuste gapi/gis Initialisierung mit Promise-basiertem Warten
+    let _gapiReady = false;
+    let _gisReady = false;
+    let _gapiResolvers = [];
+    let _gisResolvers = [];
+
+    function gapiLoaded() {
+      gapi.load('client', () => {
+        _gapiReady = true;
+        _gapiResolvers.forEach(r => r());
+        _gapiResolvers = [];
+        window.dispatchEvent(new Event('gapiOk'));
+      });
+    }
+    function gisLoaded() {
+      _gisReady = true;
+      _gisResolvers.forEach(r => r());
+      _gisResolvers = [];
+      window.dispatchEvent(new Event('gisOk'));
+    }
+    function waitGapi() {
+      if (_gapiReady) return Promise.resolve();
+      return new Promise(r => _gapiResolvers.push(r));
+    }
+    function waitGis() {
+      if (_gisReady) return Promise.resolve();
+      return new Promise(r => _gisResolvers.push(r));
+    }
+  </script>
+  <script src="https://apis.google.com/js/api.js" onload="gapiLoaded()" async defer></script>
+  <script src="https://accounts.google.com/gsi/client" onload="gisLoaded()" async defer></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    html,body,#root{height:100%;overflow:hidden}
+    body{font-family:'Segoe UI',system-ui,Arial,sans-serif;background:#EDF2F7}
+    #root{display:flex;flex-direction:column}
+    ::-webkit-scrollbar{width:6px;height:6px}
+    ::-webkit-scrollbar-track{background:#f0f0f0}
+    ::-webkit-scrollbar-thumb{background:#C5CDD9;border-radius:3px}
+    :root{
+      --pri:#003D7A;--blue:#0072CE;
+      --grn:#00A651;--org:#F7941D;--red:#CC0000;
+      --nav:#1B2B47;--navh:#253C5E;
+      --bdr:#D0D9E4;--bg:#F5F7FA;
+      --txt:#2C3E50;--mut:#7F8C8D
+    }
+    .top-bar{height:48px;background:var(--pri);color:#fff;display:flex;align-items:center;gap:14px;padding:0 14px;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+    .toolbar{background:#EEF3FA;border-bottom:1px solid var(--bdr);padding:4px 8px;display:flex;align-items:center;gap:2px;flex-shrink:0}
+    .main-area{flex:1;display:flex;overflow:hidden;min-height:0}
+    .status-bar{background:var(--nav);color:#7A8FA8;padding:3px 14px;font-size:11px;display:flex;align-items:center;gap:18px;flex-shrink:0}
+    .app-nav{width:54px;background:var(--nav);display:flex;flex-direction:column;align-items:center;padding:8px 0;flex-shrink:0}
+    .nav-item{width:46px;height:46px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#8A9BB5;cursor:pointer;border-radius:8px;margin:2px 0;font-size:17px;transition:all .15s;position:relative;gap:2px;user-select:none}
+    .nav-item span{font-size:9px}
+    .nav-item:hover{background:var(--navh);color:#fff}
+    .nav-item.active{background:var(--blue);color:#fff}
+    .nav-badge{position:absolute;top:4px;right:4px;background:var(--red);color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;font-weight:700}
+    .folder-tree{width:220px;background:#fff;border-right:1px solid var(--bdr);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden}
+    .tree-head{background:var(--nav);color:#9AAEC5;padding:10px 12px;font-size:11px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;flex-shrink:0}
+    .tree-body{flex:1;overflow-y:auto}
+    .tree-item{padding:7px 12px;cursor:pointer;display:flex;align-items:center;gap:7px;font-size:13px;color:var(--txt);border-left:2px solid transparent;transition:background .1s;user-select:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tree-item:hover{background:#EEF4FF}
+    .tree-item.active{background:#E0EDFF;color:var(--blue);border-left-color:var(--blue);font-weight:500}
+    .tree-item i{width:16px;text-align:center;font-size:13px;flex-shrink:0}
+    .doc-panel{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+    .breadcrumb{display:flex;align-items:center;gap:4px;padding:6px 14px;background:#F4F7FB;border-bottom:1px solid var(--bdr);font-size:12px;color:var(--mut);flex-shrink:0;flex-wrap:wrap}
+    .bc{cursor:pointer;color:var(--blue)}.bc:hover{text-decoration:underline}
+    .bc.cur{color:var(--txt);cursor:default}.bc.cur:hover{text-decoration:none}
+    .doc-list-head{background:#F4F7FB;border-bottom:2px solid var(--bdr);flex-shrink:0}
+    .doc-hrow{display:grid;grid-template-columns:36px 1fr 120px 90px 78px;padding:7px 12px;font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;align-items:center}
+    .doc-list{flex:1;overflow-y:auto}
+    .doc-row{display:grid;grid-template-columns:36px 1fr 120px 90px 78px;padding:8px 12px;align-items:center;border-bottom:1px solid #F0F4F8;cursor:pointer;font-size:13px;transition:background .1s;user-select:none}
+    .doc-row:hover{background:#EEF4FF}
+    .doc-row.active{background:#E0EDFF;border-left:3px solid var(--blue);padding-left:9px}
+    .prev-panel{background:#fff;border-left:1px solid var(--bdr);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;min-height:0}
+    .resizer{width:5px;background:var(--bdr);cursor:col-resize;flex-shrink:0;transition:background .15s;user-select:none;position:relative}
+    .resizer:hover,.resizer.drag{background:var(--blue)}
+    .resizer::after{content:'···';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(90deg);color:var(--mut);font-size:11px;pointer-events:none;opacity:0;transition:opacity .15s}
+    .resizer:hover::after,.resizer.drag::after{opacity:1}
+    .prev-head{background:#F4F7FB;border-bottom:1px solid var(--bdr);padding:9px 12px;font-size:11px;font-weight:700;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .prev-tabs{display:flex;gap:3px}
+    .prev-tab{background:none;border:none;padding:3px 9px;border-radius:4px;cursor:pointer;font-size:11px;color:var(--mut);font-weight:600}
+    .prev-tab.active{background:#E0EDFF;color:var(--blue)}
+    .prev-body{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+    .srch{flex:1;max-width:380px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.25);border-radius:6px;display:flex;align-items:center;padding:0 10px;gap:6px}
+    .srch input{background:none;border:none;outline:none;color:#fff;font-size:13px;padding:7px 0;width:100%}
+    .srch input::placeholder{color:rgba(255,255,255,.5)}
+    .tbtn{padding:5px 10px;border:none;background:none;border-radius:5px;cursor:pointer;font-size:11px;color:var(--txt);display:flex;flex-direction:column;align-items:center;gap:2px;transition:background .1s;min-width:52px}
+    .tbtn:hover{background:#D4E4F5}.tbtn:disabled{opacity:.4;cursor:default}
+    .tbtn i{font-size:16px;color:var(--blue)}.tbtn.red i{color:var(--red)}
+    .tsep{width:1px;height:34px;background:var(--bdr);margin:0 3px}
+    .badge{display:inline-flex;align-items:center;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:700;white-space:nowrap}
+    .b-blue{background:#E0EDFF;color:var(--blue)}.b-grn{background:#E5F7ED;color:var(--grn)}
+    .b-org{background:#FEF3E8;color:var(--org)}.b-red{background:#FDEAEA;color:var(--red)}.b-gray{background:#F0F4F8;color:var(--mut)}
+    .ov{position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:2000;backdrop-filter:blur(2px)}
+    .modal{background:#fff;border-radius:10px;padding:28px;width:500px;max-width:94vw;box-shadow:0 24px 64px rgba(0,0,0,.3);animation:fin .2s ease}
+    .modal-xl{width:82vw;max-width:1100px;height:82vh;display:flex;flex-direction:column}
+    @keyframes fin{from{opacity:0;transform:translateY(-14px)}to{opacity:1;transform:translateY(0)}}
+    .modal h2{font-size:17px;margin-bottom:18px;color:var(--pri);display:flex;align-items:center;gap:8px}
+    .fg{margin-bottom:14px}.fg label{display:block;font-size:12px;font-weight:600;margin-bottom:5px;color:var(--txt)}
+    .fc{width:100%;padding:8px 12px;border:1px solid var(--bdr);border-radius:5px;font-size:13px;outline:none;transition:border-color .2s;font-family:inherit}
+    .fc:focus{border-color:var(--blue);box-shadow:0 0 0 3px rgba(0,114,206,.1)}
+    select.fc{cursor:pointer}textarea.fc{resize:vertical}
+    .btn{padding:8px 20px;border:none;border-radius:5px;cursor:pointer;font-size:13px;font-weight:500;transition:all .2s;display:inline-flex;align-items:center;gap:7px;font-family:inherit}
+    .btn:disabled{opacity:.5;cursor:default}
+    .bp{background:var(--blue);color:#fff}.bp:hover:not(:disabled){background:var(--pri)}
+    .bs{background:#EEF3FA;color:var(--txt);border:1px solid var(--bdr)}.bs:hover:not(:disabled){background:#D4E4F5}
+    .bd{background:var(--red);color:#fff}.bd:hover:not(:disabled){background:#a00}
+    .ctr{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px;color:var(--mut);flex:1;min-height:0}
+    .spin{width:34px;height:34px;border:3px solid var(--bdr);border-top-color:var(--blue);border-radius:50%;animation:sp .7s linear infinite}
+    @keyframes sp{to{transform:rotate(360deg)}}
+    .toast-c{position:fixed;bottom:22px;right:22px;z-index:9999;display:flex;flex-direction:column;gap:7px;pointer-events:none}
+    .toast{background:#2C3E50;color:#fff;padding:10px 16px;border-radius:7px;font-size:13px;box-shadow:0 4px 14px rgba(0,0,0,.25);animation:sli .25s ease;display:flex;align-items:center;gap:8px;max-width:320px}
+    .toast.s{background:var(--grn)}.toast.e{background:var(--red)}.toast.i{background:var(--blue)}
+    @keyframes sli{from{transform:translateX(110%);opacity:0}to{transform:translateX(0);opacity:1}}
+    .drop-zone{border:2px dashed var(--bdr);border-radius:8px;padding:28px;text-align:center;cursor:pointer;color:var(--mut);transition:all .2s}
+    .drop-zone:hover,.drop-zone.dov{border-color:var(--blue);background:#EEF4FF;color:var(--blue)}
+    .ctx{position:fixed;background:#fff;border:1px solid var(--bdr);border-radius:7px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:5px 0;z-index:3000;min-width:170px;animation:fin .12s ease}
+    .cxi{padding:8px 16px;cursor:pointer;font-size:13px;color:var(--txt);display:flex;align-items:center;gap:9px}
+    .cxi:hover{background:#EEF4FF}.cxi i{width:16px;color:var(--mut);text-align:center}
+    .cxi.danger{color:var(--red)}.cxi.danger i{color:var(--red)}
+    .cxs{height:1px;background:var(--bdr);margin:4px 0}
+    .task-card{border:1px solid var(--bdr);border-radius:8px;padding:13px;margin-bottom:8px;background:#fff;transition:box-shadow .2s}
+    .task-card:hover{box-shadow:0 2px 10px rgba(0,0,0,.08)}.task-card.done{opacity:.55}
+    .email-hd{padding:14px 16px;border-bottom:1px solid var(--bdr);background:#F4F7FB;flex-shrink:0}
+    .email-f{margin-bottom:6px;font-size:13px;display:flex;gap:6px}
+    .email-f strong{color:var(--mut);min-width:55px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;padding-top:2px}
+    .email-body{padding:16px;font-size:13px;line-height:1.8;flex:1;overflow-y:auto;white-space:pre-wrap}
+    .setup-bg{height:100vh;background:linear-gradient(135deg,#003D7A,#0072CE);display:flex;align-items:center;justify-content:center}
+    .setup-card{background:#fff;border-radius:14px;padding:40px;width:540px;max-width:94vw;box-shadow:0 24px 64px rgba(0,0,0,.35)}
+    .info-box{background:#FFF8E1;border:1px solid #FFE082;border-radius:7px;padding:14px;margin-bottom:20px;font-size:13px;line-height:1.6;color:#6D4C41}
+    .info-box a{color:var(--blue)}
+    ol.steps{font-size:13px;color:var(--mut);padding-left:20px;margin-bottom:20px;line-height:2.1}
+    ol.steps code{background:#F0F4F8;padding:1px 6px;border-radius:3px;font-size:12px}
+    /* Login card */
+    .login-btn-google{width:100%;padding:13px;font-size:14px;justify-content:center;margin-bottom:10px;background:#4285F4;color:#fff;border:none;border-radius:5px;cursor:pointer;font-weight:500;display:flex;align-items:center;gap:10px;transition:background .2s}
+    .login-btn-google:hover{background:#357AE8}
+    .login-btn-google:disabled{opacity:.5;cursor:not-allowed}
+    @media(max-width:1000px){.prev-panel{display:none}}
+    @media(max-width:700px){.folder-tree{display:none}.doc-hrow,.doc-row{grid-template-columns:32px 1fr 80px}.doc-hrow>*:nth-child(4),.doc-hrow>*:nth-child(5),.doc-row>*:nth-child(4),.doc-row>*:nth-child(5){display:none}}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
+const TC=createContext(()=>{});
+
+const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
+const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
+const fs=b=>{if(!b)return'–';b=+b;if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB';};
+function mi(mt='',nm=''){
+  if(mt==='application/vnd.google-apps.folder')return{i:'fa-folder',c:'#F7941D',l:'Ordner'};
+  if(mt.includes('pdf'))return{i:'fa-file-pdf',c:'#CC0000',l:'PDF'};
+  if(mt.includes('word')||mt.includes('wordprocessing'))return{i:'fa-file-word',c:'#2B579A',l:'Word'};
+  if(mt.includes('sheet')||mt.includes('excel'))return{i:'fa-file-excel',c:'#217346',l:'Excel'};
+  if(mt.includes('presentation')||mt.includes('powerpoint'))return{i:'fa-file-powerpoint',c:'#D24726',l:'PPT'};
+  if(mt.includes('image'))return{i:'fa-file-image',c:'#8E44AD',l:'Bild'};
+  if(mt.includes('video'))return{i:'fa-file-video',c:'#E74C3C',l:'Video'};
+  if(mt.includes('zip')||mt.includes('archive'))return{i:'fa-file-zipper',c:'#F39C12',l:'Archiv'};
+  if(mt.includes('email')||nm.endsWith('.eml')||nm.endsWith('.msg'))return{i:'fa-envelope',c:'#3498DB',l:'E-Mail'};
+  const n2=nm.toLowerCase();
+  if(['.stl','.3mf','.fbx','.obj','.glb','.gltf'].some(e=>n2.endsWith(e)))return{i:'fa-cube',c:'#7C3AED',l:'3D-Modell'};
+  if(['.step','.stp','.3dm','.iges','.igs'].some(e=>n2.endsWith(e)))return{i:'fa-cube',c:'#059669',l:'CAD-3D'};
+  if(['.dxf','.dwg'].some(e=>n2.endsWith(e)))return{i:'fa-drafting-compass',c:'#0EA5E9',l:'CAD-Zeichnung'};
+  if(mt.startsWith('application/vnd.google-apps'))return{i:'fa-file-circle-check',c:'#4285F4',l:'Google'};
+  return{i:'fa-file',c:'#7F8C8D',l:'Datei'};
+}
+
+const AlyseeLogo=({size=40,radius=6})=>(
+  <svg width={size} height={size} viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg" style={{borderRadius:radius,flexShrink:0,display:'block'}}>
+    <rect width="100" height="100" fill="#F9A800"/>
+    <text x="7" y="91" fontFamily="'Arial','Helvetica',sans-serif" fontSize="27" fontWeight="300" letterSpacing="-0.5" fill="white">alysee</text>
+  </svg>
+);
+
+const DR={
+  async init(cid,key){
+    await gapi.client.init({
+      apiKey:key,
+      discoveryDocs:['https://www.googleapis.com/discovery/v1/apis/drive/v3/rest']
+    });
+  },
+  mkT(cid,cb){
+    return google.accounts.oauth2.initTokenClient({
+      client_id:cid,
+      scope:'https://www.googleapis.com/auth/drive https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email',
+      callback:cb
+    });
+  },
+  async ls(fid='root'){
+    const r=await gapi.client.drive.files.list({
+      q:`'${fid}' in parents and trashed=false`,
+      fields:'files(id,name,mimeType,modifiedTime,size,webViewLink)',
+      orderBy:'folder,name',
+      pageSize:300
+    });
+    return r.result.files||[];
+  },
+  async find(q){
+    const e=q.replace(/'/g,"\\'");
+    const r=await gapi.client.drive.files.list({
+      q:`(name contains '${e}' or fullText contains '${e}') and trashed=false`,
+      fields:'files(id,name,mimeType,modifiedTime,size,webViewLink,parents)',
+      pageSize:100
+    });
+    return r.result.files||[];
+  },
+  async mkdir(name,par='root'){
+    const r=await gapi.client.drive.files.create({
+      resource:{name,mimeType:'application/vnd.google-apps.folder',parents:[par]},
+      fields:'id,name,mimeType'
+    });
+    return r.result;
+  },
+  async up(file,par,onP){
+    const tok=gapi.client.getToken().access_token,fm=new FormData();
+    fm.append('metadata',new Blob([JSON.stringify({name:file.name,parents:[par]})],{type:'application/json'}));
+    fm.append('file',file);
+    return new Promise((res,rej)=>{
+      const x=new XMLHttpRequest();
+      x.open('POST','https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,size');
+      x.setRequestHeader('Authorization','Bearer '+tok);
+      x.upload.onprogress=e=>e.lengthComputable&&onP&&onP(Math.round(e.loaded/e.total*100));
+      x.onload=()=>x.status===200?res(JSON.parse(x.responseText)):rej(new Error(x.statusText));
+      x.onerror=()=>rej(new Error('Fehler'));
+      x.send(fm);
+    });
+  },
+  async del(id){await gapi.client.drive.files.delete({fileId:id})},
+  async ren(id,name){
+    const r=await gapi.client.drive.files.update({fileId:id,resource:{name},fields:'id,name'});
+    return r.result;
+  },
+  prev:id=>`https://drive.google.com/file/d/${id}/preview`,
+  async me(){
+    try{
+      const r=await gapi.client.request({path:'https://www.googleapis.com/oauth2/v3/userinfo'});
+      return r.result;
+    }catch{return null;}
+  },
+  WF:'.alysee_wf.json',
+  async loadWF(){
+    try{
+      const r=await gapi.client.drive.files.list({q:`name='${DR.WF}' and trashed=false`,fields:'files(id)',pageSize:1});
+      if(r.result.files?.length){
+        const c=await gapi.client.drive.files.get({fileId:r.result.files[0].id,alt:'media'});
+        return typeof c.result==='string'?JSON.parse(c.result):c.result;
+      }
+    }catch{}
+    return{tasks:[]};
+  },
+  async saveWF(data){
+    const j=JSON.stringify(data),tok=gapi.client.getToken()?.access_token;
+    if(!tok)return;
+    try{
+      const r=await gapi.client.drive.files.list({q:`name='${DR.WF}' and trashed=false`,fields:'files(id)',pageSize:1});
+      const s=(url,m)=>{
+        const x=new XMLHttpRequest();
+        x.open(m,url);
+        x.setRequestHeader('Authorization','Bearer '+tok);
+        x.setRequestHeader('Content-Type','application/json');
+        x.send(j);
+      };
+      if(r.result.files?.length)
+        s(`https://www.googleapis.com/upload/drive/v3/files/${r.result.files[0].id}?uploadType=media`,'PATCH');
+      else{
+        const f=new FormData();
+        f.append('metadata',new Blob([JSON.stringify({name:DR.WF})],{type:'application/json'}));
+        f.append('file',new Blob([j],{type:'application/json'}));
+        const x=new XMLHttpRequest();
+        x.open('POST','https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart');
+        x.setRequestHeader('Authorization','Bearer '+tok);
+        x.send(f);
+      }
+    }catch(e){console.warn(e);}
+  }
+};
+
+/* Demo data */
+const DF=[
+  {id:'f1',name:'Angebote',mimeType:'application/vnd.google-apps.folder',modifiedTime:'2025-02-10T09:00:00'},
+  {id:'f2',name:'Rechnungen',mimeType:'application/vnd.google-apps.folder',modifiedTime:'2025-02-08T14:30:00'},
+  {id:'f3',name:'Projekte',mimeType:'application/vnd.google-apps.folder',modifiedTime:'2025-02-05T11:00:00'},
+  {id:'f4',name:'Lieferanten & Verträge',mimeType:'application/vnd.google-apps.folder',modifiedTime:'2025-01-20T10:00:00'},
+  {id:'f5',name:'E-Mails & Korrespondenz',mimeType:'application/vnd.google-apps.folder',modifiedTime:'2025-02-12T08:00:00'},
+  {id:'d1',name:'Angebot_Hotel_Drei_Tannen_2025.pdf',mimeType:'application/pdf',modifiedTime:'2025-02-14T16:30:00',size:'245760'},
+  {id:'d2',name:'Raumkonzept_Büro_München.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',modifiedTime:'2025-02-13T13:00:00',size:'184320'},
+  {id:'d3',name:'Kalkulation_Q1_2025.xlsx',mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',modifiedTime:'2025-02-12T10:00:00',size:'98304'},
+  {id:'d4',name:'Produktkatalog_Objektmöbel_2025.pdf',mimeType:'application/pdf',modifiedTime:'2025-02-10T11:00:00',size:'5242880'},
+  {id:'d5',name:'Meeting_Notizen_Architektenbuero_Schmidt.docx',mimeType:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',modifiedTime:'2025-02-08T09:30:00',size:'45056'},
+  {id:'d6',name:'RE_ Anfrage Konferenzmöbel Hotel Stern.eml',mimeType:'message/rfc822',modifiedTime:'2025-02-07T08:00:00',size:'12288'},
+  {id:'d7',name:'Messestand_Präsentation_Orgatec.pptx',mimeType:'application/vnd.openxmlformats-officedocument.presentationml.presentation',modifiedTime:'2025-02-06T15:00:00',size:'3145728'},
+  {id:'d8',name:'Fotos_Showroom_Düsseldorf.zip',mimeType:'application/zip',modifiedTime:'2025-02-01T12:00:00',size:'52428800'},
+  {id:'d9',name:'Lieferantenvertrag_Müller_Holz_GmbH.pdf',mimeType:'application/pdf',modifiedTime:'2025-01-28T10:00:00',size:'345678'},
+  {id:'d10',name:'AW_ Behördenanfrage Stadtbücherei Bonn.eml',mimeType:'message/rfc822',modifiedTime:'2025-01-25T14:00:00',size:'8192'},
+  {id:'img1',name:'Showroom_Ausstellung_Saarbrücken.jpg',mimeType:'image/jpeg',modifiedTime:'2025-02-09T10:00:00',size:'3450000'},
+  {id:'img2',name:'Produktfoto_Konferenztisch_Executive.jpg',mimeType:'image/jpeg',modifiedTime:'2025-02-05T14:00:00',size:'2180000'},
+  {id:'img3',name:'Referenz_Hotel_Stern_Konferenzraum.png',mimeType:'image/png',modifiedTime:'2025-01-30T11:30:00',size:'4820000'},
+  {id:'img4',name:'Musteraufbau_Stadtbuecherei_Bonn.jpg',mimeType:'image/jpeg',modifiedTime:'2025-01-22T09:00:00',size:'1920000'},
+  {id:'cad1',name:'Konferenzstuhl_Executive.stl',mimeType:'model/stl',modifiedTime:'2025-02-11T10:00:00',size:'245760'},
+  {id:'cad2',name:'Konferenztisch_200x100.3mf',mimeType:'model/3mf',modifiedTime:'2025-02-08T14:00:00',size:'512000'},
+  {id:'cad3',name:'Lounge_Sofa_A300.3dm',mimeType:'model/3dm',modifiedTime:'2025-01-30T11:00:00',size:'892928'},
+  {id:'cad4',name:'Sideboard_Konstruktion.step',mimeType:'application/step',modifiedTime:'2025-01-25T15:00:00',size:'189440'},
+  {id:'cad5',name:'Raumplanung_Buero_Muenchen.fbx',mimeType:'application/octet-stream',modifiedTime:'2025-01-20T09:30:00',size:'3145728'},
+];
+const DT=[
+  {id:'t1',title:'Angebot Hotel Drei Tannen überarbeiten',priority:'high',dueDate:'2025-03-15',done:false,note:'Neue Preisliste 2025 berücksichtigen.'},
+  {id:'t2',title:'Produktkatalog an Architekturbüro Schmidt',priority:'normal',dueDate:'2025-03-18',done:false,note:'Frau Schmidt: Lounge-Möbel Serie A300'},
+  {id:'t3',title:'Lieferantenvertrag Müller Holz GmbH',priority:'urgent',dueDate:'2025-03-10',done:false,note:'Vertrag läuft 28.03. aus!'},
+  {id:'t4',title:'Musterbestellung Stadtbücherei Bonn',priority:'low',dueDate:'',done:true,note:''},
+  {id:'t5',title:'Rechnungen Q4 2024 archivieren',priority:'normal',dueDate:'2025-03-28',done:false,note:''},
+];
+const DTREE=[
+  {id:'root',name:'Mein Drive',icon:'fa-hdd',color:'#F7941D',ch:[
+    {id:'f1',name:'Angebote',icon:'fa-file-invoice',color:'#F7941D'},
+    {id:'f2',name:'Rechnungen',icon:'fa-receipt',color:'#F7941D'},
+    {id:'f3',name:'Projekte',icon:'fa-diagram-project',color:'#F7941D'},
+    {id:'f4',name:'Lieferanten & Verträge',icon:'fa-handshake',color:'#F7941D'},
+    {id:'f5',name:'E-Mails & Korrespondenz',icon:'fa-envelope-open-text',color:'#F7941D'},
+  ]},
+  {id:'shared',name:'Geteilte Ablagen',icon:'fa-users',color:'#7F8C8D',ch:[]},
+];
+const EMAILS={
+  'd6':{from:'Thomas Müller <t.mueller@hotel-stern.de>',to:'Stefan Hoffmann <info@alysee.de>',subject:'RE: Anfrage Konferenzmöbel Hotel Stern',date:'07. Feb 2025, 08:23 Uhr',body:`Sehr geehrter Herr Hoffmann,
+
+vielen Dank für Ihre Rückmeldung und die übersandten Unterlagen.
+
+Wir sind sehr an Ihrem Angebot interessiert. Besonders die Serie "Executive Line" entspricht unseren Vorstellungen für die Neugestaltung unserer Konferenzräume im Hotel Stern Saarbrücken.
+
+Könnten Sie uns bitte bis Freitag ein konkretes Angebot für folgende Konfiguration zusenden:
+
+  • 3 × Konferenztisch 200×100 cm, Nussbaum-Furnier
+  • 18 × Konferenzstuhl mit Armlehnen, Bezug anthrazit
+  • 1 × Sideboard Catering-Bereich, 180 cm
+
+Bitte kalkulieren Sie auch den Aufbauservice.
+
+Mit freundlichen Grüßen
+Thomas Müller · Hotel Stern GmbH`},
+  'd10':{from:'Stadtbücherei Bonn – Beschaffung <kulturamt@bonn.de>',to:'Stefan Hoffmann <info@alysee.de>',subject:'AW: Behördenanfrage – Stadtbücherei Bonn',date:'25. Jan 2025, 14:10 Uhr',body:`Sehr geehrter Herr Hoffmann,
+
+hiermit bestätigen wir Ihren Präsentationstermin am 12. Februar 2025 um 10:00 Uhr (Stadthaus Bonn, Zimmer 214).
+
+Bitte bringen Sie Muster für folgende Kategorien mit:
+  - Leseplatzmöbel (Tische, Stühle)
+  - Regalanlagen (modular, für Medienausleihe)
+  - Loungebereich (Sofa-Kombinationen)
+
+Bei Rückfragen: +49 228 77-12345.
+
+Mit freundlichen Grüßen
+Sabine Knauer · Stadtbücherei Bonn`},
+};
+
+const DDOC={
+  'd1':{type:'pdf',title:'Angebot Nr. 2025-0142',content:(
+    <div style={{fontFamily:"'Segoe UI',Arial,sans-serif",color:'#222'}}>
+      <div style={{display:'flex',justifyContent:'space-between',marginBottom:24,paddingBottom:16,borderBottom:'2px solid #003D7A'}}>
+        <div style={{fontSize:22,fontWeight:800,color:'#003D7A'}}>alysee GmbH</div>
+        <div style={{textAlign:'right',fontSize:12,color:'#555',lineHeight:1.8}}>Musterstraße 1 · 66111 Saarbrücken<br/>Tel: +49 681 123456<br/>info@alysee.de</div>
+      </div>
+      <div style={{marginBottom:20,fontSize:12,color:'#555',lineHeight:1.8}}>Hotel Drei Tannen GmbH<br/>z.Hd. Herrn Thomas Müller<br/>Hotelstraße 12 · 66111 Saarbrücken</div>
+      <div style={{display:'flex',justifyContent:'space-between',marginBottom:20}}><div><strong style={{fontSize:16,color:'#003D7A'}}>Angebot Nr. 2025-0142</strong></div><div style={{fontSize:12,color:'#555'}}>Datum: 14.02.2025<br/>Gültig bis: 14.03.2025</div></div>
+      <p style={{fontSize:12,marginBottom:16}}>Sehr geehrter Herr Müller,<br/>vielen Dank für Ihre Anfrage. Wir unterbreiten Ihnen folgendes Angebot für die Konferenzraumausstattung:</p>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,marginBottom:20}}>
+        <thead><tr style={{background:'#003D7A',color:'#fff'}}><th style={{padding:'7px 10px',textAlign:'left'}}>Pos.</th><th style={{padding:'7px 10px',textAlign:'left'}}>Bezeichnung</th><th style={{padding:'7px 10px',textAlign:'right'}}>Menge</th><th style={{padding:'7px 10px',textAlign:'right'}}>EP (€)</th><th style={{padding:'7px 10px',textAlign:'right'}}>GP (€)</th></tr></thead>
+        <tbody>
+          {[['1','Konferenztisch 200×100 cm Nussbaum',3,890,'2.670,00'],['2','Konferenzstuhl mit Armlehnen anthrazit',18,285,'5.130,00'],['3','Sideboard Catering 180 cm',1,1240,'1.240,00'],['4','Aufbauservice pauschal',1,450,'450,00']].map(([p,b,m,e,g],i)=>(
+            <tr key={p} style={{background:i%2===0?'#f8fafc':'#fff',borderBottom:'1px solid #e0e0e0'}}>
+              <td style={{padding:'7px 10px'}}>{p}</td><td style={{padding:'7px 10px'}}>{b}</td><td style={{padding:'7px 10px',textAlign:'right'}}>{m}</td><td style={{padding:'7px 10px',textAlign:'right'}}>{e}</td><td style={{padding:'7px 10px',textAlign:'right',fontWeight:600}}>{g}</td>
+            </tr>
+          ))}
+          <tr style={{background:'#EEF3FA',fontWeight:700}}><td colSpan="4" style={{padding:'9px 10px',textAlign:'right'}}>Nettobetrag:</td><td style={{padding:'9px 10px',textAlign:'right'}}>9.490,00 €</td></tr>
+          <tr style={{background:'#EEF3FA'}}><td colSpan="4" style={{padding:'5px 10px',textAlign:'right'}}>MwSt. 19%:</td><td style={{padding:'5px 10px',textAlign:'right'}}>1.803,10 €</td></tr>
+          <tr style={{background:'#003D7A',color:'#fff',fontWeight:800}}><td colSpan="4" style={{padding:'9px 10px',textAlign:'right'}}>Gesamtbetrag:</td><td style={{padding:'9px 10px',textAlign:'right'}}>11.293,10 €</td></tr>
+        </tbody>
+      </table>
+      <p style={{fontSize:11,color:'#666',lineHeight:1.7}}>Lieferzeit: 6–8 Wochen nach Auftragseingang. Zahlungsbedingungen: 30 Tage netto.<br/>Mit freundlichen Grüßen · Stefan Hoffmann · alysee GmbH</p>
+    </div>
+  )},
+  'd2':{type:'word',title:'Raumkonzept Büro München',content:(
+    <div style={{fontFamily:"'Segoe UI',Arial,sans-serif",color:'#222'}}>
+      <h1 style={{fontSize:20,color:'#2B579A',borderBottom:'3px solid #2B579A',paddingBottom:8,marginBottom:20}}>Raumkonzept Büro München</h1>
+      <p style={{fontSize:11,color:'#888',marginBottom:20}}>Erstellt: 13.02.2025 · alysee GmbH · Projektnummer: MUC-2025-04</p>
+      <h2 style={{fontSize:14,color:'#2B579A',marginBottom:8}}>1. Projektübersicht</h2>
+      <p style={{fontSize:13,lineHeight:1.8,marginBottom:16}}>Das vorliegende Raumkonzept beschreibt die geplante Neueinrichtung der Büroflächen in der Maximilianstraße 42, München. Die Gesamtfläche beträgt ca. 420 m², verteilt auf 3 Etagen mit insgesamt 18 Arbeitsplätzen, 2 Konferenzräumen und einem Empfangsbereich.</p>
+      <h2 style={{fontSize:14,color:'#2B579A',marginBottom:8}}>2. Zonierung</h2>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10,marginBottom:16}}>
+        {[['Empfang & Wartebereich','60 m² · Lounge-Bestuhlung, Rezeptionstresen'],['Open Space','180 m² · 12 Arbeitsplätze, höhenverstellbare Schreibtische'],['Konferenz A','40 m² · 10 Personen, Medientechnik'],['Konferenz B','25 m² · 6 Personen, informell']].map(([t,d])=>(
+          <div key={t} style={{background:'#EEF3FA',borderRadius:6,padding:'10px 14px',borderLeft:'3px solid #2B579A'}}>
+            <div style={{fontWeight:700,fontSize:12,marginBottom:4}}>{t}</div>
+            <div style={{fontSize:11,color:'#555'}}>{d}</div>
+          </div>
+        ))}
+      </div>
+      <h2 style={{fontSize:14,color:'#2B579A',marginBottom:8}}>3. Materialkonzept</h2>
+      <p style={{fontSize:13,lineHeight:1.8,marginBottom:16}}>Hauptmaterial: Eiche natur / Weiß. Akzentfarbe: Anthrazit RAL 7016. Bodenbelag: Vinyl Holzoptik. Textilien: Hellgrau meliert (Bürostuhlbezüge), Dunkelblau (Vorhänge Konferenzräume).</p>
+      <h2 style={{fontSize:14,color:'#2B579A',marginBottom:8}}>4. Budgetrahmen</h2>
+      <p style={{fontSize:13,lineHeight:1.8}}>Geschätztes Gesamtbudget: <strong>68.000 – 82.000 € netto</strong> inkl. Lieferung und Montage. Detaillierte Kalkulation siehe separates Angebot.</p>
+    </div>
+  )},
+  'd4':{type:'pdf',title:'Produktkatalog Objektmöbel 2025',content:(
+    <div style={{fontFamily:"'Segoe UI',Arial,sans-serif",color:'#222'}}>
+      <div style={{background:'#003D7A',color:'#fff',padding:'24px',borderRadius:6,marginBottom:24,textAlign:'center'}}>
+        <div style={{fontSize:24,fontWeight:800,marginBottom:6}}>alysee Objektmöbel</div>
+        <div style={{fontSize:14,opacity:.8}}>Produktkatalog 2025 – Projekteinrichtung</div>
+      </div>
+      {[{cat:'Konferenz & Besprechung',items:[{n:'Executive Table 200',p:'ab 690 €',d:'Ausziehbar, Nussbaum/Eiche'},{n:'Connect Chair Pro',p:'ab 245 €',d:'Ergonomisch, 10-Jahres-Garantie'}]},{cat:'Büro & Arbeitsplatz',items:[{n:'Height Desk 160',p:'ab 890 €',d:'Elektrisch höhenverstellbar'},{n:'Office Chair Flex',p:'ab 385 €',d:'Netz-Rücken, BIFMA-zertifiziert'}]},{cat:'Lounge & Empfang',items:[{n:'Lounge Sofa A300',p:'ab 1.240 €',d:'3-Sitzer, verschiedene Bezüge'},{n:'Reception Desk RD60',p:'ab 2.100 €',d:'Mit integriertem Sichtschutz'}]}].map(({cat,items})=>(
+        <div key={cat} style={{marginBottom:20}}>
+          <div style={{fontWeight:700,fontSize:13,color:'#003D7A',borderBottom:'1px solid #bcd',paddingBottom:6,marginBottom:10}}>{cat}</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            {items.map(it=>(
+              <div key={it.n} style={{border:'1px solid var(--bdr)',borderRadius:6,padding:'10px 14px',background:'#f8fafc'}}>
+                <div style={{fontWeight:600,fontSize:12,marginBottom:3}}>{it.n}</div>
+                <div style={{fontSize:11,color:'#555',marginBottom:5}}>{it.d}</div>
+                <div style={{fontSize:12,fontWeight:700,color:'#003D7A'}}>{it.p}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  )},
+  'd5':{type:'word',title:'Meeting-Notizen Architekturbüro Schmidt',content:(
+    <div style={{fontFamily:"'Segoe UI',Arial,sans-serif",color:'#222'}}>
+      <h1 style={{fontSize:18,color:'#2B579A',borderBottom:'2px solid #2B579A',paddingBottom:8,marginBottom:16}}>Meeting-Protokoll</h1>
+      {[['Datum','08. Februar 2025, 14:00 Uhr'],['Ort','Architekturbüro Schmidt, Saarbrücken'],['Teilnehmer','Stefan Hoffmann (alysee), Frau Schmidt, Herr Bauer (Büro Schmidt)'],['Thema','Projektbesprechung Lounge-Möbel Serie A300']].map(([k,v])=>(
+        <div key={k} style={{display:'flex',gap:12,marginBottom:8,fontSize:13}}>
+          <span style={{fontWeight:700,minWidth:100,color:'#555'}}>{k}:</span><span>{v}</span>
+        </div>
+      ))}
+      <h2 style={{fontSize:14,color:'#2B579A',margin:'20px 0 8px'}}>Besprochene Punkte</h2>
+      {['Frau Schmidt bevorzugt Bezugsstoff in Dunkelblau (ähnlich RAL 5011) für die Lounge-Sofas.','Tischchen sollen in Eiche natur, Platte rund Ø 60 cm, H 45 cm (Beistelltisch).','Liefertermin: bis spätestens KW 18 (30.04.2025) – Eröffnung Büro geplant.','Aufmaß wird von alysee bis 15.02. durchgeführt.','Budget genehmigt: 12.500 € netto für Loungebereich.'].map((p,i)=>(
+        <div key={i} style={{display:'flex',gap:10,marginBottom:8,fontSize:13,lineHeight:1.6}}>
+          <span style={{color:'#2B579A',fontWeight:700,marginTop:2}}>✓</span><span>{p}</span>
+        </div>
+      ))}
+      <h2 style={{fontSize:14,color:'#2B579A',margin:'20px 0 8px'}}>Nächste Schritte</h2>
+      <p style={{fontSize:13,lineHeight:1.8}}>Aufmaß 15.02. · Entwurf bis 22.02. · Auftragsbestätigung bis 28.02. · Lieferung KW 16–18</p>
+    </div>
+  )},
+  'd3':{type:'excel',title:'Kalkulation Q1 2025',content:(
+    <div style={{fontFamily:"'Segoe UI',Arial,sans-serif",color:'#222'}}>
+      <h2 style={{fontSize:16,color:'#217346',borderBottom:'2px solid #217346',paddingBottom:8,marginBottom:16}}>Kalkulation Q1 2025</h2>
+      <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+        <thead><tr style={{background:'#217346',color:'#fff'}}><th style={{padding:'7px 10px',textAlign:'left'}}>Projekt</th><th style={{padding:'7px 10px',textAlign:'right'}}>Angebot €</th><th style={{padding:'7px 10px',textAlign:'right'}}>Auftr. €</th><th style={{padding:'7px 10px',textAlign:'center'}}>Status</th></tr></thead>
+        <tbody>
+          {[['Hotel Drei Tannen','11.293','–','Angebot'],['Büro München','76.500','76.500','Beauftragt'],['Stadtbücherei Bonn','34.800','–','In Klärung'],['Architekturbüro Schmidt','12.500','12.500','Beauftragt'],['Klinikum Homburg','89.000','–','Anfrage']].map(([p,a,b,s],i)=>(
+            <tr key={p} style={{background:i%2===0?'#f0fff6':'#fff',borderBottom:'1px solid #d0e8d8'}}>
+              <td style={{padding:'7px 10px',fontWeight:500}}>{p}</td>
+              <td style={{padding:'7px 10px',textAlign:'right'}}>{a}</td>
+              <td style={{padding:'7px 10px',textAlign:'right',fontWeight:b!=='–'?700:400,color:b!=='–'?'#217346':'#999'}}>{b}</td>
+              <td style={{padding:'7px 10px',textAlign:'center'}}><span style={{background:s==='Beauftragt'?'#e5f7ed':s==='Angebot'?'#FEF3E8':'#EEF3FA',color:s==='Beauftragt'?'#217346':s==='Angebot'?'#F7941D':'#0072CE',padding:'2px 8px',borderRadius:10,fontSize:10,fontWeight:700}}>{s}</span></td>
+            </tr>
+          ))}
+          <tr style={{background:'#217346',color:'#fff',fontWeight:700}}><td style={{padding:'8px 10px'}}>GESAMT Q1</td><td style={{padding:'8px 10px',textAlign:'right'}}>224.093</td><td style={{padding:'8px 10px',textAlign:'right'}}>89.000</td><td/></tr>
+        </tbody>
+      </table>
+    </div>
+  )},
+};
+
+/* Toast */
+function ToastProv({children}){
+  const [ts,setTs]=useState([]);
+  const add=useCallback((msg,t='i')=>{const id=Date.now();setTs(p=>[...p,{id,msg,t}]);setTimeout(()=>setTs(p=>p.filter(x=>x.id!==id)),3200);},[]);
+  return <TC.Provider value={add}>{children}<div className="toast-c">{ts.map(x=><div key={x.id} className={`toast ${x.t}`}><i className={`fas ${x.t==='s'?'fa-check-circle':x.t==='e'?'fa-times-circle':'fa-info-circle'}`}/>{x.msg}</div>)}</div></TC.Provider>;
+}
+
+/* 3D Canvas Viewer */
+function ThreeDPrev({file}){
+  const cvRef=useRef(null);
+  const [ready,setReady]=useState(false);
+  useEffect(()=>{
+    let animId,cancelled=false,dragging=false,lastX=0,lastY=0,yRot=0.5,xRot=0.38,zoom=1.0,autoRot=true;
+    const cv=cvRef.current;
+    if(!cv)return;
+    const ctx=cv.getContext('2d');
+    const nm=file.name.toLowerCase();
+    const polys=[];
+    const addBox=(cx,cy,cz,sw,sh,sd,col)=>{
+      const hw=sw/2,hh=sh/2,hd=sd/2;
+      const v=[[cx-hw,cy-hh,cz-hd],[cx+hw,cy-hh,cz-hd],[cx+hw,cy+hh,cz-hd],[cx-hw,cy+hh,cz-hd],
+                [cx-hw,cy-hh,cz+hd],[cx+hw,cy-hh,cz+hd],[cx+hw,cy+hh,cz+hd],[cx-hw,cy+hh,cz+hd]];
+      [[v[0],v[1],v[2],v[3],[0,0,-1]],[v[7],v[6],v[5],v[4],[0,0,1]],
+       [v[0],v[4],v[7],v[3],[-1,0,0]],[v[1],v[2],v[6],v[5],[1,0,0]],
+       [v[3],v[2],v[6],v[7],[0,1,0]],[v[0],v[1],v[5],v[4],[0,-1,0]]
+      ].forEach(([a,b,c,d,n])=>polys.push({vs:[a,b,c,d],n,col}));
+    };
+    if(nm.includes('stuhl')||nm.includes('chair')||nm.endsWith('.stl')){
+      addBox(0,0.50,0,0.58,0.09,0.58,'#3A4A5A');addBox(0,0.87,-0.27,0.54,0.70,0.09,'#3A4A5A');
+      addBox(-0.32,0.68,-0.05,0.08,0.38,0.36,'#6A7A8A');addBox(0.32,0.68,-0.05,0.08,0.38,0.36,'#6A7A8A');
+      addBox(0,0.22,0,0.07,0.44,0.07,'#9A9A9A');
+      [[0.29,0,0],[-0.29,0,0],[0,0,0.29],[0.18,0,0.22],[-0.18,0,0.22]].forEach(([bx,by,bz])=>addBox(bx,0.05,bz,0.58,0.04,0.04,'#9A9A9A'));
+    }else if(nm.includes('tisch')||nm.includes('table')||nm.endsWith('.3mf')){
+      addBox(0,0.77,0,2.0,0.06,0.92,'#8B7355');addBox(0,0.73,0,2.02,0.025,0.94,'#5C4A2A');
+      [[-0.78,0],[0.78,0]].forEach(([ax])=>{addBox(ax,0.38,0,0.09,0.76,0.09,'#9A9A9A');addBox(ax,0.04,0,0.52,0.09,0.52,'#888');});
+      addBox(0,0.38,0,1.58,0.045,0.045,'#888');
+    }else if(nm.includes('sofa')||nm.includes('lounge')||nm.endsWith('.3dm')){
+      addBox(0,0.37,0.02,1.8,0.24,0.72,'#2D3B4E');addBox(0,0.74,-0.27,1.8,0.62,0.20,'#2D3B4E');
+      addBox(-0.93,0.54,0.02,0.18,0.44,0.72,'#2D3B4E');addBox(0.93,0.54,0.02,0.18,0.44,0.72,'#2D3B4E');
+      [-0.57,0,0.57].forEach(x=>addBox(x,0.54,0.06,0.54,0.18,0.58,'#4A5E72'));
+      [[-0.81,-0.30],[0.81,-0.30],[-0.81,0.30],[0.81,0.30]].forEach(([ax,az])=>addBox(ax,0.07,az,0.07,0.14,0.07,'#9A9A9A'));
+    }else if(nm.endsWith('.fbx')||nm.includes('raum')||nm.includes('plan')){
+      addBox(0,0.02,0,3.0,0.04,2.4,'#C8CDD8');addBox(-1.46,0.50,0,0.08,1.0,2.4,'#E0E4EC');addBox(1.46,0.50,0,0.08,1.0,2.4,'#E0E4EC');
+      addBox(0,0.50,-1.16,3.0,1.0,0.08,'#E0E4EC');addBox(0,0.50,1.16,3.0,1.0,0.08,'#E0E4EC');
+      addBox(-0.7,0.42,0.3,0.58,0.10,0.58,'#3A4A5A');addBox(0.4,0.77,0.3,2.0,0.06,0.92,'#8B7355');
+    }else{
+      addBox(0,0.42,0,1.82,0.82,0.46,'#8B7355');addBox(-0.46,0.42,0.23,0.84,0.76,0.01,'#5C4A2A');
+      addBox(0.46,0.42,0.23,0.84,0.76,0.01,'#5C4A2A');addBox(0,0.42,0.23,0.05,0.76,0.01,'#5C4A2A');
+      addBox(0,0.815,0,1.84,0.012,0.48,'#4A3820');
+      [[-0.22,0.42],[0.22,0.42]].forEach(([px])=>addBox(px,0.42,0.235,0.04,0.04,0.015,'#AAAAAA'));
+      [[-0.82,-0.17],[0.82,-0.17],[-0.82,0.17],[0.82,0.17]].forEach(([ax,az])=>addBox(ax,0.045,az,0.055,0.09,0.055,'#9A9A9A'));
+    }
+    const ld=[0.577,0.577,-0.577];
+    const proj=(vx,vy,vz,yr,xr,zm,w,h)=>{
+      const cy=Math.cos(yr),sy=Math.sin(yr);
+      const rx=vx*cy+vz*sy,rz0=-vx*sy+vz*cy;
+      const cx=Math.cos(xr),sx=Math.sin(xr);
+      const ry=vy*cx-rz0*sx,rz=vy*sx+rz0*cx;
+      const sc=Math.min(w,h)*0.38*zm/(rz+4.5);
+      return{x:rx*sc+w/2,y:-ry*sc+h*0.52,z:rz};
+    };
+    const lit=(n,yr,xr,base)=>{
+      const cy=Math.cos(yr),sy=Math.sin(yr);
+      const nx0=n[0]*cy+n[2]*sy,nz0=-n[0]*sy+n[2]*cy;
+      const cx=Math.cos(xr),sx=Math.sin(xr);
+      const ny=n[1]*cx-nz0*sx,nz=n[1]*sx+nz0*cx;
+      const dot=nx0*ld[0]+ny*ld[1]+nz*ld[2];
+      const f=Math.max(0.15,dot)*0.85+0.35;
+      const r=parseInt(base.slice(1,3),16),g=parseInt(base.slice(3,5),16),b=parseInt(base.slice(5,7),16);
+      return`rgb(${Math.min(255,Math.round(r*f))},${Math.min(255,Math.round(g*f))},${Math.min(255,Math.round(b*f))})`;
+    };
+    const draw=()=>{
+      if(cancelled)return;
+      if(cv.width!==cv.offsetWidth||cv.height!==cv.offsetHeight){cv.width=cv.offsetWidth||400;cv.height=cv.offsetHeight||300;}
+      const w=cv.width,h=cv.height;
+      ctx.fillStyle='#F0F2F6';ctx.fillRect(0,0,w,h);
+      ctx.strokeStyle='rgba(180,185,210,0.5)';ctx.lineWidth=0.6;
+      for(let i=-5;i<=5;i++){
+        const a=proj(i*0.4,0,-2,yRot,xRot,zoom,w,h),b2=proj(i*0.4,0,2,yRot,xRot,zoom,w,h);
+        const c2=proj(-2,0,i*0.4,yRot,xRot,zoom,w,h),d=proj(2,0,i*0.4,yRot,xRot,zoom,w,h);
+        ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b2.x,b2.y);ctx.stroke();
+        ctx.beginPath();ctx.moveTo(c2.x,c2.y);ctx.lineTo(d.x,d.y);ctx.stroke();
+      }
+      const faces=polys.map(p=>{
+        const cy2=Math.cos(yRot),sy2=Math.sin(yRot);
+        const nx0=p.n[0]*cy2+p.n[2]*sy2,nz0=-p.n[0]*sy2+p.n[2]*cy2;
+        const cx2=Math.cos(xRot),sx2=Math.sin(xRot);
+        const ny2=p.n[1]*cx2-nz0*sx2,nz2=p.n[1]*sx2+nz0*cx2;
+        const dot=nx0*ld[0]+ny2*ld[1]+nz2*ld[2];
+        if(dot<-0.05)return null;
+        const pv=p.vs.map(v=>proj(v[0],v[1],v[2],yRot,xRot,zoom,w,h));
+        const avgZ=pv.reduce((s,v)=>s+v.z,0)/pv.length;
+        return{pv,avgZ,col:lit(p.n,yRot,xRot,p.col)};
+      }).filter(Boolean);
+      faces.sort((a,b)=>b.avgZ-a.avgZ);
+      faces.forEach(({pv,col})=>{
+        ctx.beginPath();ctx.moveTo(pv[0].x,pv[0].y);
+        pv.slice(1).forEach(v=>ctx.lineTo(v.x,v.y));
+        ctx.closePath();ctx.fillStyle=col;ctx.fill();
+        ctx.strokeStyle='rgba(0,0,0,0.10)';ctx.lineWidth=0.6;ctx.stroke();
+      });
+      if(autoRot)yRot+=0.007;
+      animId=requestAnimationFrame(draw);
+    };
+    const onMD=e=>{dragging=true;autoRot=false;lastX=e.clientX;lastY=e.clientY;};
+    const onMU=()=>{dragging=false;};
+    const onMM=e=>{if(!dragging)return;yRot+=(e.clientX-lastX)*0.012;xRot=Math.max(-1.3,Math.min(1.3,xRot+(e.clientY-lastY)*0.012));lastX=e.clientX;lastY=e.clientY;};
+    const onWh=e=>{e.preventDefault();zoom=Math.max(0.25,Math.min(5.0,zoom*(e.deltaY>0?0.92:1.09)));};
+    const onDbl=()=>{yRot=0.5;xRot=0.38;zoom=1.0;autoRot=true;};
+    cv.addEventListener('mousedown',onMD);
+    window.addEventListener('mouseup',onMU);
+    window.addEventListener('mousemove',onMM);
+    cv.addEventListener('wheel',onWh,{passive:false});
+    cv.addEventListener('dblclick',onDbl);
+    const syncSize=()=>{cv.width=cv.offsetWidth||400;cv.height=cv.offsetHeight||300;};
+    syncSize();
+    const ro=new ResizeObserver(syncSize);ro.observe(cv);
+    draw();setReady(true);
+    return()=>{cancelled=true;cancelAnimationFrame(animId);cv.removeEventListener('mousedown',onMD);window.removeEventListener('mouseup',onMU);window.removeEventListener('mousemove',onMM);cv.removeEventListener('wheel',onWh);cv.removeEventListener('dblclick',onDbl);ro.disconnect();};
+  },[file.id]);
+  const ext=file.name.split('.').pop().toUpperCase();
+  return(
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minHeight:0}}>
+      <div style={{flex:1,position:'relative',minHeight:0,overflow:'hidden',background:'#F0F2F6'}}>
+        <canvas ref={cvRef} style={{display:'block',width:'100%',height:'100%'}}/>
+        {!ready&&<div style={{position:'absolute',inset:0,display:'flex',alignItems:'center',justifyContent:'center',gap:10,color:'#888',pointerEvents:'none'}}><div className="spin"/><span style={{fontSize:12}}>3D-Viewer…</span></div>}
+      </div>
+      <div style={{padding:'6px 14px',background:'rgba(20,20,32,.9)',color:'#ccc',fontSize:11,display:'flex',alignItems:'center',gap:8,flexShrink:0}}>
+        <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span>
+        <span style={{background:'rgba(120,80,220,.35)',color:'#c0a0ff',padding:'1px 8px',borderRadius:8,fontWeight:700,fontSize:10,flexShrink:0}}>{ext}</span>
+        <span style={{color:'#666',flexShrink:0}}>{fs(file.size)}</span>
+      </div>
+      <div style={{padding:'3px 14px',background:'rgba(0,0,0,.45)',color:'rgba(255,255,255,.3)',fontSize:10,textAlign:'center',flexShrink:0,letterSpacing:'.3px'}}>
+        Ziehen = drehen · Scrollen = zoomen · Doppelklick = Reset
+      </div>
+    </div>
+  );
+}
+
+function DemoPrev({file}){
+  const {i,c,l}=mi(file.mimeType,file.name);
+  const isEml=file.mimeType==='message/rfc822'||file.name?.endsWith('.eml');
+  const ed=EMAILS[file.id];
+  if(isEml&&ed) return(
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minHeight:0}}>
+      <div className="email-hd">
+        {[['Von',ed.from],['An',ed.to],['Datum',ed.date]].map(([k,v])=><div key={k} className="email-f"><strong>{k}:</strong><span>{v}</span></div>)}
+        <div style={{marginTop:8,fontWeight:600,fontSize:13,color:'var(--txt)'}}>{ed.subject}</div>
+      </div>
+      <div className="email-body">{ed.body}</div>
+    </div>
+  );
+  if(isEml) return(
+    <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minHeight:0}}>
+      <div className="email-hd"><div style={{fontWeight:600}}>{file.name}</div></div>
+      <div className="email-body" style={{color:'var(--mut)',fontStyle:'italic'}}>E-Mail-Inhalt – Google Drive verbinden für echte Vorschau.</div>
+    </div>
+  );
+  const ext3d=['stl','3mf','fbx','obj','glb','gltf','step','stp','3dm','iges','igs','dxf','dwg'];
+  if(ext3d.includes(file.name.split('.').pop().toLowerCase()))return <ThreeDPrev file={file}/>;
+  if(file.mimeType.startsWith('image/')){
+    const imgSrc=`https://picsum.photos/seed/${file.id}/900/700`;
+    return(
+      <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minHeight:0,background:'#111'}}>
+        <div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',position:'relative'}}>
+          <img src={imgSrc} alt={file.name} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',display:'block'}}
+            onError={e=>{e.target.style.display='none';e.target.nextSibling.style.display='flex';}}/>
+          <div style={{display:'none',flexDirection:'column',alignItems:'center',gap:12,color:'#888',position:'absolute'}}>
+            <i className={`fas ${i}`} style={{fontSize:52,color:c}}/><span style={{fontSize:13}}>{file.name}</span>
+          </div>
+        </div>
+        <div style={{padding:'8px 14px',background:'rgba(0,0,0,.75)',color:'#ccc',fontSize:11,display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0,gap:8}}>
+          <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{file.name}</span>
+          <span style={{flexShrink:0,color:'#888'}}>{fs(file.size)} · {fd(file.modifiedTime)}</span>
+        </div>
+      </div>
+    );
+  }
+  const dd=DDOC[file.id];
+  if(dd){
+    const bgMap={pdf:'#e8ecf0',word:'#e8ecf8',excel:'#e8f4ec'};
+    const bg=bgMap[dd.type]||'#e8ecf0';
+    return(
+      <div style={{flex:1,overflow:'auto',padding:16,background:bg,minHeight:0,display:'flex',flexDirection:'column'}}>
+        <div style={{background:'#fff',maxWidth:680,margin:'0 auto',padding:32,boxShadow:'0 3px 16px rgba(0,0,0,.15)',minHeight:300,width:'100%',borderRadius:2}}>
+          {dd.content}
+        </div>
+      </div>
+    );
+  }
+  const themes={
+    'application/pdf':{bg:'#fff5f5',ac:'#CC0000',hint:'PDF öffnet sich in der Google Drive Vorschau automatisch.'},
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document':{bg:'#f0f4ff',ac:'#2B579A',hint:'Word-Dokument wird in Google Drive Viewer angezeigt.'},
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':{bg:'#f0fff6',ac:'#217346',hint:'Excel-Tabelle mit allen Formeln in Google Sheets Vorschau.'},
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation':{bg:'#fff3f0',ac:'#D24726',hint:'Präsentation als Folienvorschau in Google Drive.'},
+    'application/zip':{bg:'#fffbf0',ac:'#F39C12',hint:'ZIP-Archiv – Inhaltsübersicht via Google Drive.'},
+  };
+  const th=themes[file.mimeType]||{bg:'#f8fafb',ac:'var(--blue)',hint:'Verbinde mit Google Drive für Dokumentvorschau.'};
+  return(
+    <div style={{flex:1,overflow:'auto',padding:14,background:th.bg,minHeight:0}}>
+      <div style={{background:'#fff',borderRadius:10,border:'1px solid var(--bdr)',padding:24,textAlign:'center',boxShadow:'0 2px 8px rgba(0,0,0,.06)'}}>
+        <i className={`fas ${i}`} style={{fontSize:60,color:c,display:'block',marginBottom:14}}/>
+        <p style={{fontWeight:600,fontSize:14,color:'var(--txt)',marginBottom:6,wordBreak:'break-word'}}>{file.name}</p>
+        <p style={{fontSize:12,color:'var(--mut)',marginBottom:16}}>{l} · {fs(file.size)} · {fd(file.modifiedTime)}</p>
+        <div style={{background:th.bg,border:`1px solid ${th.ac}33`,borderRadius:7,padding:'10px 14px',fontSize:12,color:th.ac,textAlign:'left',marginBottom:12}}>
+          <i className="fas fa-info-circle" style={{marginRight:6}}/>{th.hint}
+        </div>
+        <div style={{padding:12,background:'#F4F7FB',borderRadius:7,fontSize:12,color:'var(--mut)',textAlign:'left',lineHeight:1.8}}>
+          <strong style={{display:'block',marginBottom:4,color:'var(--txt)'}}>Dateiinformationen</strong>
+          Typ: {l} · Größe: {fs(file.size)}<br/>Geändert: {fdt(file.modifiedTime)}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PrevPanel({file,isDemo,onExpand,width}){
+  const [tab,setTab]=useState('prev');
+  useEffect(()=>setTab('prev'),[file?.id]);
+  const ps={width:width||310,minWidth:200,maxWidth:700};
+  if(!file) return(
+    <div className="prev-panel" style={ps}>
+      <div className="prev-head"><span>Vorschau</span></div>
+      <div className="ctr"><i className="fas fa-file-alt" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13,textAlign:'center'}}>Datei anklicken<br/>für Vorschau</p></div>
+    </div>
+  );
+  const {i,c}=mi(file.mimeType,file.name);
+  const isDir=file.mimeType==='application/vnd.google-apps.folder';
+  const pUrl=!isDemo&&!isDir?DR.prev(file.id):null;
+  return(
+    <div className="prev-panel" style={ps}>
+      <div className="prev-head">
+        <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1,marginRight:6,fontSize:10}}>{file.name}</span>
+        <div style={{display:'flex',gap:3,flexShrink:0}}>
+          <div className="prev-tabs">
+            <button className={`prev-tab ${tab==='prev'?'active':''}`} onClick={()=>setTab('prev')}>Vorschau</button>
+            <button className={`prev-tab ${tab==='meta'?'active':''}`} onClick={()=>setTab('meta')}>Details</button>
+          </div>
+          <button onClick={onExpand} style={{background:'none',border:'none',cursor:'pointer',color:'var(--mut)',padding:'2px 6px',borderRadius:4,fontSize:12}} title="Groß öffnen"><i className="fas fa-expand-alt"/></button>
+        </div>
+      </div>
+      <div className="prev-body">
+        {tab==='prev'
+          ?isDir
+            ?<div className="ctr"><i className="fas fa-folder" style={{fontSize:64,color:'var(--org)'}}/><p style={{fontSize:13}}>Ordner – Doppelklick zum Öffnen</p></div>
+            :pUrl
+              ?<iframe src={pUrl} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Vorschau"/>
+              :<DemoPrev file={file}/>
+          :<div style={{flex:1,overflow:'auto',padding:14,minHeight:0}}>
+            {[['Dateiname',file.name],['Dateityp',mi(file.mimeType,file.name).l],['Größe',fs(file.size)],['Geändert',fdt(file.modifiedTime)]].map(([l,v])=>(
+              <div key={l} style={{marginBottom:12}}><div style={{fontSize:10,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.6px',fontWeight:600,marginBottom:3}}>{l}</div><div style={{fontSize:13,fontWeight:500,wordBreak:'break-word',color:'var(--txt)'}}>{v||'–'}</div></div>
+            ))}
+            {!isDemo&&<div style={{marginBottom:12}}><div style={{fontSize:10,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.6px',fontWeight:600,marginBottom:3}}>Drive-ID</div><div style={{fontSize:11,color:'var(--mut)',wordBreak:'break-all'}}>{file.id}</div></div>}
+            {file.webViewLink&&file.webViewLink!=='#'&&<a href={file.webViewLink} target="_blank" rel="noopener" className="btn bp" style={{display:'flex',textDecoration:'none',marginTop:8}}><i className="fas fa-external-link-alt"/>In Drive öffnen</a>}
+          </div>
+        }
+      </div>
+    </div>
+  );
+}
+
+function ExpandMod({file,isDemo,onClose}){
+  const {i,c}=mi(file.mimeType,file.name);
+  const isDir=file.mimeType==='application/vnd.google-apps.folder';
+  const pUrl=!isDemo&&!isDir?DR.prev(file.id):null;
+  return(
+    <div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal modal-xl">
+        <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}>
+          <i className={`fas ${i}`} style={{color:c,fontSize:20}}/>
+          <span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span>
+          <button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schließen</button>
+        </div>
+        <div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>
+          {pUrl?<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>:<DemoPrev file={file}/>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function UpMod({fid,onClose,onDone,isDemo}){
+  const [files,setFiles]=useState([]);const [busy,setBusy]=useState(false);const [prog,setProg]=useState({});const [drag,setDrag]=useState(false);
+  const ref=useRef();const toast=useContext(TC);
+  const go=async()=>{setBusy(true);let ok=0;if(isDemo){await new Promise(r=>setTimeout(r,900));ok=files.length;}else for(const f of files){try{await DR.up(f,fid,p=>setProg(v=>({...v,[f.name]:p})));ok++;}catch{toast('Upload-Fehler: '+f.name,'e');}}setBusy(false);toast(`${ok} Datei(en) hochgeladen`,'s');onDone();onClose();};
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal">
+      <h2><i className="fas fa-upload" style={{color:'var(--blue)'}}/>Dokument hochladen</h2>
+      <div className={`drop-zone ${drag?'dov':''}`} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);setFiles(Array.from(e.dataTransfer.files))}} onClick={()=>ref.current?.click()}>
+        <i className="fas fa-cloud-upload-alt" style={{fontSize:36,display:'block',marginBottom:10}}/><p style={{fontWeight:500}}>Dateien ablegen oder klicken</p><p style={{fontSize:12,marginTop:4}}>PDF, Word, Excel, E-Mails, Bilder …</p>
+      </div>
+      <input ref={ref} type="file" multiple style={{display:'none'}} onChange={e=>setFiles(Array.from(e.target.files))}/>
+      {files.length>0&&<div style={{marginTop:12}}>{files.map(f=>{const {i,c}=mi(f.type,f.name);return(<div key={f.name} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:'1px solid #f0f0f0',fontSize:13}}><i className={`fas ${i}`} style={{color:c,width:18,textAlign:'center'}}/><span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span><span style={{color:'var(--mut)',flexShrink:0}}>{fs(f.size)}</span>{prog[f.name]!=null&&<span style={{color:'var(--blue)',fontSize:11}}>{prog[f.name]}%</span>}</div>);})}</div>}
+      <div style={{display:'flex',gap:8,marginTop:20,justifyContent:'flex-end'}}>
+        <button className="btn bs" onClick={onClose} disabled={busy}>Abbrechen</button>
+        <button className="btn bp" onClick={go} disabled={busy||!files.length}>{busy?<><i className="fas fa-spinner fa-spin"/>Lädt…</>:<><i className="fas fa-upload"/>Hochladen</>}</button>
+      </div>
+    </div>
+  </div>);
+}
+
+function MkMod({par,onClose,onDone,isDemo}){
+  const [n,setN]=useState('');const [b,setB]=useState(false);const t=useContext(TC);
+  const go=async()=>{if(!n.trim())return;setB(true);try{if(!isDemo)await DR.mkdir(n,par);t('Ordner erstellt: '+n,'s');onDone();}catch{t('Fehler','e');}setB(false);onClose();};
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{width:400}}><h2><i className="fas fa-folder-plus" style={{color:'var(--org)'}}/>Neuer Ordner</h2><div className="fg"><label>Name</label><input className="fc" autoFocus value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} placeholder="z.B. Rechnungen 2025"/></div><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose}>Abbrechen</button><button className="btn bp" onClick={go} disabled={b||!n.trim()}>{b?'…':'Erstellen'}</button></div></div></div>);
+}
+function RenMod({file,onClose,onDone,isDemo}){
+  const [n,setN]=useState(file.name);const [b,setB]=useState(false);const t=useContext(TC);
+  const go=async()=>{if(!n.trim()||n===file.name)return;setB(true);try{if(!isDemo)await DR.ren(file.id,n);t('Umbenannt: '+n,'s');onDone();}catch{t('Fehler','e');}setB(false);onClose();};
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{width:400}}><h2><i className="fas fa-pencil" style={{color:'var(--blue)'}}/>Umbenennen</h2><div className="fg"><label>Neuer Name</label><input className="fc" autoFocus value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()}/></div><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose}>Abbrechen</button><button className="btn bp" onClick={go} disabled={b||!n.trim()||n===file.name}>{b?'…':'Speichern'}</button></div></div></div>);
+}
+
+const PRI={low:{l:'Niedrig',b:'b-blue'},normal:{l:'Normal',b:'b-grn'},high:{l:'Hoch',b:'b-org'},urgent:{l:'Dringend',b:'b-red'}};
+function WF({tasks,onAdd,onTog,onDel}){
+  const [sn,setSn]=useState(false);
+  const [fm,setFm]=useState({title:'',priority:'normal',dueDate:'',note:''});
+  return(<div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',background:'#F5F7FA',minHeight:0}}>
+    <div style={{padding:'11px 16px',borderBottom:'1px solid var(--bdr)',background:'#fff',display:'flex',justifyContent:'space-between',alignItems:'center',flexShrink:0}}>
+      <span style={{fontWeight:700,color:'var(--pri)',fontSize:14}}><i className="fas fa-tasks" style={{marginRight:8,color:'var(--blue)'}}/>Aufgaben & Workflow</span>
+      <div style={{display:'flex',gap:8,alignItems:'center'}}><span style={{fontSize:12,color:'var(--mut)'}}>{tasks.filter(t=>!t.done).length} offen</span><button className="btn bp" style={{padding:'5px 12px',fontSize:12}} onClick={()=>setSn(s=>!s)}><i className="fas fa-plus"/>Neu</button></div>
+    </div>
+    {sn&&<div style={{padding:16,background:'#fff',borderBottom:'1px solid var(--bdr)',flexShrink:0}}>
+      <div className="fg"><label>Titel</label><input type="text" className="fc" value={fm.title} onChange={e=>setFm(p=>({...p,title:e.target.value}))} placeholder="Aufgabe…" autoFocus/></div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+        <div className="fg"><label>Priorität</label><select className="fc" value={fm.priority} onChange={e=>setFm(p=>({...p,priority:e.target.value}))}>{Object.entries(PRI).map(([k,v])=><option key={k} value={k}>{v.l}</option>)}</select></div>
+        <div className="fg"><label>Fällig am</label><input type="date" className="fc" value={fm.dueDate} onChange={e=>setFm(p=>({...p,dueDate:e.target.value}))}/></div>
+      </div>
+      <div className="fg"><label>Notiz</label><textarea className="fc" rows="2" value={fm.note} onChange={e=>setFm(p=>({...p,note:e.target.value}))} placeholder="Weitere Infos…"/></div>
+      <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button className="btn bs" onClick={()=>setSn(false)}>Abbrechen</button><button className="btn bp" disabled={!fm.title} onClick={()=>{onAdd(fm);setSn(false);setFm({title:'',priority:'normal',dueDate:'',note:''});}}>Hinzufügen</button></div>
+    </div>}
+    <div style={{flex:1,overflow:'auto',padding:12,minHeight:0}}>
+      {tasks.length===0&&<div className="ctr"><i className="fas fa-check-circle" style={{fontSize:48,color:'#D0D9E4'}}/><p style={{fontSize:13}}>Keine Aufgaben</p></div>}
+      {[...tasks].sort((a,b)=>(a.done?1:-1)-(b.done?1:-1)||({urgent:0,high:1,normal:2,low:3}[a.priority]||2)-({urgent:0,high:1,normal:2,low:3}[b.priority]||2)).map(t=>{
+        const ov=t.dueDate&&new Date(t.dueDate)<new Date()&&!t.done;
+        return(<div key={t.id} className={`task-card ${t.done?'done':''}`}>
+          <div style={{display:'flex',alignItems:'flex-start',gap:10}}>
+            <input type="checkbox" checked={t.done} onChange={()=>onTog(t.id)} style={{marginTop:3,cursor:'pointer',width:15,height:15,accentColor:'var(--blue)'}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:4,flexWrap:'wrap'}}><span style={{fontWeight:500,fontSize:13,textDecoration:t.done?'line-through':'none',color:'var(--txt)'}}>{t.title}</span><span className={`badge ${PRI[t.priority]?.b||'b-gray'}`}>{PRI[t.priority]?.l}</span></div>
+              {t.note&&<p style={{fontSize:12,color:'var(--mut)',margin:'2px 0'}}>{t.note}</p>}
+              {t.dueDate&&<p style={{fontSize:12,color:ov?'var(--red)':'var(--mut)',marginTop:4}}><i className="fas fa-calendar-alt" style={{marginRight:4}}/>{new Date(t.dueDate).toLocaleDateString('de-DE')}{ov&&' – Überfällig!'}</p>}
+            </div>
+            <button style={{background:'none',border:'none',cursor:'pointer',color:'var(--mut)',fontSize:14,padding:2,flexShrink:0}} onClick={()=>onDel(t.id)}><i className="fas fa-trash"/></button>
+          </div>
+        </div>);
+      })}
+    </div>
+  </div>);
+}
+
+/* BUG FIX 2: Login screen – button immer aktiv, kein file://-Check mehr nötig
+   da die App nur über localhost:8080 geöffnet werden soll */
+function Login({onIn,onDemo,gapiOk,gisOk}){
+  const ready=gapiOk&&gisOk;
+  return(
+    <div className="setup-bg">
+      <div className="setup-card" style={{textAlign:'center',padding:'44px',maxWidth:440}}>
+        <div style={{display:'inline-block',marginBottom:18}}><AlyseeLogo size={80} radius={14}/></div>
+        <div style={{fontWeight:700,fontSize:26,color:'var(--pri)',marginBottom:4}}>alysee DMS</div>
+        <div style={{color:'var(--mut)',marginBottom:32,fontSize:14}}>Dokumentenmanagement · alysee GmbH</div>
+
+        {/* BUG FIX 3: Zeige Ladestatus wenn APIs noch nicht bereit */}
+        {!ready?(
+          <div style={{marginBottom:20,padding:'16px',background:'#EEF3FA',borderRadius:8}}>
+            <div className="spin" style={{margin:'0 auto 10px'}}/>
+            <p style={{fontSize:13,color:'var(--mut)'}}>Google APIs werden geladen…</p>
+          </div>
+        ):(
+          <button
+            className="login-btn-google"
+            onClick={onIn}
+          >
+            <svg width="20" height="20" viewBox="0 0 48 48" style={{flexShrink:0}}>
+              <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
+              <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/>
+              <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/>
+              <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
+            </svg>
+            Mit Google-Konto anmelden
+          </button>
+        )}
+
+        <p style={{fontSize:11,color:'var(--mut)',marginBottom:16}}>Google Drive Zugriff · Deine Dateien bleiben privat</p>
+        <hr style={{border:'none',borderTop:'1px solid var(--bdr)',margin:'12px 0'}}/>
+        <button className="btn bs" style={{width:'100%',justifyContent:'center',fontSize:12}} onClick={onDemo}>
+          <i className="fas fa-eye"/>Demo-Modus (ohne Google-Verbindung)
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* Main App */
+function Main({creds,onOut,isDemo}){
+  const [nav,setNav]=useState('archive');
+  const [cur,setCur]=useState({id:'root',name:'Mein Drive'});
+  const [path,setPath]=useState([{id:'root',name:'Mein Drive'}]);
+  const [files,setFiles]=useState([]);
+  const [sel,setSel]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [q,setQ]=useState('');
+  const [res,setRes]=useState(null);
+  const [src,setSrc]=useState(false);
+  const [tasks,setTasks]=useState([]);
+  const [modal,setModal]=useState(null);
+  const [ctx,setCtx]=useState(null);
+  const [user,setUser]=useState(null);
+  const [exp,setExp]=useState({'root':true});
+  const [big,setBig]=useState(false);
+  const [prevW,setPrevW]=useState(340);
+  const [resizing,setResizing]=useState(false);
+  const toast=useContext(TC);
+
+  const startResize=useCallback(e=>{
+    e.preventDefault();
+    const startX=e.clientX,startW=prevW;
+    setResizing(true);
+    const mm=ev=>setPrevW(Math.max(200,Math.min(700,startW-(ev.clientX-startX))));
+    const mu=()=>{setResizing(false);window.removeEventListener('mousemove',mm);window.removeEventListener('mouseup',mu);};
+    window.addEventListener('mousemove',mm);
+    window.addEventListener('mouseup',mu);
+  },[prevW]);
+
+  useEffect(()=>{
+    if(isDemo){setFiles(DF);setTasks(DT);}
+    else{load('root');DR.loadWF().then(d=>setTasks(d.tasks||[]));DR.me().then(u=>{if(u)setUser(u);});}
+    const h=e=>{if(!e.target.closest('.ctx'))setCtx(null);};
+    document.addEventListener('click',h);
+    return()=>document.removeEventListener('click',h);
+  },[]);
+
+  const load=async fid=>{setLoading(true);setSel(null);try{setFiles(await DR.ls(fid));}catch(e){console.error(e);toast('Ladefehler','e');}setLoading(false);};
+  const go=f=>{const idx=path.findIndex(x=>x.id===f.id);setPath(idx>=0?path.slice(0,idx+1):[...path,{id:f.id,name:f.name}]);setCur(f);setRes(null);setQ('');if(!isDemo)load(f.id);else setFiles(DF);};
+  const click=f=>{if(f.mimeType==='application/vnd.google-apps.folder')go(f);else setSel(f);};
+  const dbl=f=>{if(f.mimeType==='application/vnd.google-apps.folder')go(f);else{setSel(f);setBig(true);}};
+  const search=async qry=>{if(!qry.trim()){setRes(null);return;}setSrc(true);try{if(isDemo)setRes(DF.filter(f=>f.name.toLowerCase().includes(qry.toLowerCase())));else setRes(await DR.find(qry));}catch{toast('Suche fehlgeschlagen','e');}setSrc(false);};
+  const swf=t=>{setTasks(t);if(!isDemo)DR.saveWF({tasks:t});};
+  const rf=()=>isDemo?setFiles(DF):load(cur.id);
+  const disp=res!==null?res:files;
+  const pend=tasks.filter(t=>!t.done).length;
+  const NI=[{id:'archive',ic:'fa-archive',l:'Archiv'},{id:'workflow',ic:'fa-tasks',l:'Aufgaben',b:pend||null},{id:'inbox',ic:'fa-inbox',l:'E-Mails'},{id:'settings',ic:'fa-gear',l:'Einstellungen'}];
+
+  return(<div style={{height:'100%',display:'flex',flexDirection:'column'}}>
+    <div className="top-bar">
+      <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+        <AlyseeLogo size={36} radius={6}/>
+        <div><div style={{fontWeight:700,fontSize:15,lineHeight:1}}>alysee DMS</div><div style={{fontSize:9,color:'rgba(255,255,255,.5)',letterSpacing:'.5px'}}>DOKUMENTENMANAGEMENT</div></div>
+      </div>
+      <div className="srch">
+        <i className="fas fa-search" style={{color:'rgba(255,255,255,.5)',fontSize:13}}/>
+        <input type="text" placeholder="Suchen… (Name, Inhalt)" value={q} onChange={e=>{setQ(e.target.value);if(e.target.value.length>2)search(e.target.value);else if(!e.target.value)setRes(null);}} onKeyDown={e=>e.key==='Enter'&&search(q)}/>
+        {src&&<i className="fas fa-spinner fa-spin" style={{color:'rgba(255,255,255,.5)'}}/>}
+        {q&&!src&&<i className="fas fa-times" style={{color:'rgba(255,255,255,.5)',cursor:'pointer'}} onClick={()=>{setQ('');setRes(null);}}/>}
+      </div>
+      <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
+        {isDemo&&<span style={{background:'var(--org)',color:'#fff',padding:'3px 10px',borderRadius:12,fontSize:11,fontWeight:700}}>DEMO</span>}
+        <div style={{display:'flex',alignItems:'center',gap:8}}>
+          <div style={{width:32,height:32,borderRadius:'50%',background:'var(--blue)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700}}>{(user?.name||'S').charAt(0)}</div>
+          <span style={{fontSize:13}}>{user?.name||'Stefan Hoffmann'}</span>
+        </div>
+        {!isDemo&&<button onClick={onOut} style={{background:'rgba(255,255,255,.14)',border:'1px solid rgba(255,255,255,.25)',color:'#fff',padding:'5px 10px',borderRadius:5,cursor:'pointer',fontSize:12}}><i className="fas fa-right-from-bracket"/></button>}
+      </div>
+    </div>
+
+    <div className="toolbar">
+      <button className="tbtn" onClick={()=>setModal('up')}><i className="fas fa-upload"/><span>Hochladen</span></button>
+      <button className="tbtn" onClick={()=>setModal('mk')}><i className="fas fa-folder-plus"/><span>Neuer Ordner</span></button>
+      <div className="tsep"/>
+      <button className="tbtn" onClick={rf}><i className="fas fa-rotate-right"/><span>Aktualisieren</span></button>
+      {sel&&<><div className="tsep"/>
+        <button className="tbtn" onClick={()=>setBig(true)}><i className="fas fa-expand-alt"/><span>Groß</span></button>
+        <button className="tbtn" onClick={()=>setModal('ren')}><i className="fas fa-pencil"/><span>Umbenennen</span></button>
+        {!isDemo&&<button className="tbtn red" onClick={async()=>{if(window.confirm(`"${sel.name}" löschen?`)){try{await DR.del(sel.id);toast('Gelöscht','i');rf();setSel(null);}catch{toast('Fehler','e');}}}}>
+          <i className="fas fa-trash"/><span>Löschen</span>
+        </button>}
+      </>}
+      <div style={{marginLeft:'auto',fontSize:12,color:'var(--mut)',paddingRight:8}}>
+        {disp.length} Element{disp.length!==1?'e':''}{res!==null&&` – Suche: „${q}"`}
+      </div>
+    </div>
+
+    <div className="main-area">
+      <div className="app-nav">
+        {NI.map(n=><div key={n.id} className={`nav-item ${nav===n.id?'active':''}`} onClick={()=>setNav(n.id)} title={n.l}><i className={`fas ${n.ic}`}/><span>{n.l}</span>{n.b?<div className="nav-badge">{n.b}</div>:null}</div>)}
+        <div style={{flex:1}}/>
+        <div className="nav-item" style={{fontSize:15,marginBottom:4}} title="Info"><i className="fas fa-circle-info"/><span>Info</span></div>
+      </div>
+
+      {nav==='workflow'?<WF tasks={tasks} onAdd={t=>{const n={...t,id:Date.now()+'',done:false};swf([...tasks,n]);toast('Hinzugefügt','s');}} onTog={id=>swf(tasks.map(t=>t.id===id?{...t,done:!t.done}:t))} onDel={id=>{swf(tasks.filter(t=>t.id!==id));toast('Gelöscht','i');}}/>
+      :nav==='settings'?(<div style={{flex:1,padding:32,background:'var(--bg)',overflow:'auto'}}>
+        <h2 style={{fontSize:20,color:'var(--pri)',marginBottom:22}}><i className="fas fa-gear" style={{marginRight:8}}/>Einstellungen</h2>
+        <div style={{background:'#fff',borderRadius:10,padding:24,maxWidth:500,border:'1px solid var(--bdr)'}}>
+          <h3 style={{marginBottom:14,fontSize:14,fontWeight:700}}>Verbindung</h3>
+          {[['Status',<span style={{color:isDemo?'var(--org)':'var(--grn)'}}><i className="fas fa-circle" style={{fontSize:9,marginRight:5}}/>{isDemo?'Demo-Modus':'Verbunden'}</span>],['Benutzer',user?.name||'Stefan Hoffmann'],['E-Mail',user?.email||'hoffmannstefan1962@googlemail.com']].map(([l,v])=>(
+            <div key={l} style={{marginBottom:10}}><div style={{fontSize:10,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.6px',fontWeight:600,marginBottom:3}}>{l}</div><div style={{fontSize:13,fontWeight:500}}>{v}</div></div>
+          ))}
+          <div style={{display:'flex',gap:8,marginTop:14}}>
+            {!isDemo&&<button className="btn bd" onClick={onOut}><i className="fas fa-right-from-bracket"/>Abmelden</button>}
+            <button className="btn bs" onClick={()=>{localStorage.clear();window.location.reload();}}><i className="fas fa-rotate-right"/>Neu konfigurieren</button>
+          </div>
+        </div>
+        <div style={{background:'#fff',borderRadius:10,padding:24,maxWidth:500,border:'1px solid var(--bdr)',marginTop:14}}>
+          <h3 style={{marginBottom:12,fontSize:14,fontWeight:700}}>Über alysee DMS</h3>
+          <p style={{fontSize:13,color:'var(--mut)',lineHeight:1.7}}>Dokumentenmanagement der <strong>alysee GmbH</strong> für Objekteinrichter, Architekten und Innenarchitekten.<br/>Backend: Google Drive · Version 1.1</p>
+        </div>
+      </div>)
+      :nav==='inbox'?(<div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minHeight:0}}>
+        <div style={{padding:'11px 16px',borderBottom:'1px solid var(--bdr)',background:'#fff',fontWeight:700,color:'var(--pri)',fontSize:14,flexShrink:0}}><i className="fas fa-inbox" style={{marginRight:8,color:'var(--blue)'}}/>E-Mail Posteingang</div>
+        <div style={{flex:1,overflow:'auto',background:'var(--bg)'}}>
+          {DF.filter(f=>f.mimeType==='message/rfc822').map(m=>{const ed=EMAILS[m.id];return(<div key={m.id} style={{background:'#fff',margin:'8px 12px',borderRadius:8,border:'1px solid var(--bdr)',padding:'14px 16px',cursor:'pointer'}} onClick={()=>{setSel(m);setNav('archive');}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{fontWeight:600,fontSize:13}}>{ed?ed.subject:m.name}</span><span style={{fontSize:12,color:'var(--mut)',flexShrink:0,marginLeft:8}}>{fd(m.modifiedTime)}</span></div>
+            {ed&&<p style={{fontSize:12,color:'var(--mut)',marginBottom:6}}>{ed.from}</p>}
+            <span className={`badge ${m.name.startsWith('RE_')||m.name.startsWith('AW_')?'b-grn':'b-org'}`}>{m.name.startsWith('RE_')||m.name.startsWith('AW_')?'Beantwortet':'Eingehend'}</span>
+          </div>);})}
+        </div>
+      </div>)
+      :(<>
+        <div className="folder-tree">
+          <div className="tree-head"><i className="fas fa-sitemap" style={{marginRight:6}}/>Strukturbaum</div>
+          <div className="tree-body">
+            {(isDemo?DTREE:[{id:'root',name:'Mein Drive',icon:'fa-hdd',color:'#F7941D',ch:files.filter(f=>f.mimeType==='application/vnd.google-apps.folder').map(f=>({...f,icon:'fa-folder',color:'#F7941D'}))}]).map(nd=>(
+              <div key={nd.id}>
+                <div className={`tree-item ${cur.id===nd.id?'active':''}`} onClick={()=>{go(nd);setExp(e=>({...e,[nd.id]:!e[nd.id]}));}}>
+                  {nd.ch?.length?<i className={`fas fa-chevron-${exp[nd.id]?'down':'right'}`} style={{fontSize:10,color:'var(--mut)',width:10}}/>:<span style={{width:10,display:'inline-block'}}/>}
+                  <i className={`fas ${nd.icon}`} style={{color:nd.color||'var(--org)'}}/>{nd.name}
+                </div>
+                {exp[nd.id]&&nd.ch?.map(c=><div key={c.id} className={`tree-item ${cur.id===c.id?'active':''}`} style={{paddingLeft:26}} onClick={()=>go(c)}><i className={`fas ${c.icon||'fa-folder'}`} style={{color:c.color||'var(--org)'}}/>{c.name}</div>)}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="doc-panel">
+          <div className="breadcrumb">
+            {res!==null?<><i className="fas fa-search" style={{marginRight:4}}/><strong>Suche:</strong>&nbsp;„{q}"&nbsp;<span style={{color:'var(--mut)'}}>({res.length} Treffer)</span></>:(
+              path.map((f,i)=><React.Fragment key={f.id}>{i>0&&<i className="fas fa-chevron-right" style={{fontSize:9,color:'var(--mut)'}}/>}<span className={`bc ${i===path.length-1?'cur':''}`} onClick={()=>i<path.length-1&&go(f)}>{f.name}</span></React.Fragment>)
+            )}
+          </div>
+          <div className="doc-list-head"><div className="doc-hrow"><span/><span>Name</span><span>Geändert am</span><span>Typ</span><span style={{textAlign:'right'}}>Größe</span></div></div>
+          <div className="doc-list">
+            {loading?<div className="ctr"><div className="spin"/><p>Lade…</p></div>
+            :disp.length===0?<div className="ctr"><i className="fas fa-folder-open" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13}}>{res!==null?'Keine Treffer':'Ordner leer'}</p></div>
+            :disp.map(f=>{
+              const {i,c,l}=mi(f.mimeType,f.name),isFd=f.mimeType==='application/vnd.google-apps.folder';
+              return(<div key={f.id} className={`doc-row ${sel?.id===f.id?'active':''}`} onClick={()=>click(f)} onDoubleClick={()=>dbl(f)} onContextMenu={e=>{e.preventDefault();e.stopPropagation();setSel(f);setCtx({x:Math.min(e.clientX,window.innerWidth-180),y:Math.min(e.clientY,window.innerHeight-160),f});}}>
+                <i className={`fas ${i}`} style={{color:c,fontSize:18,textAlign:'center'}}/>
+                <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:isFd?600:400}}>{f.name}</span>
+                <span style={{color:'var(--mut)',fontSize:12}}>{fd(f.modifiedTime)}</span>
+                <span><span className={`badge ${isFd?'b-org':'b-blue'}`}>{l}</span></span>
+                <span style={{textAlign:'right',color:'var(--mut)',fontSize:12}}>{isFd?'–':fs(f.size)}</span>
+              </div>);
+            })}
+          </div>
+        </div>
+
+        <div className={`resizer ${resizing?'drag':''}`} onMouseDown={startResize} title="Vorschau-Breite anpassen"/>
+        <PrevPanel file={sel} isDemo={isDemo} onExpand={()=>sel&&setBig(true)} width={prevW}/>
+      </>)}
+    </div>
+
+    <div className="status-bar">
+      <span><i className="fas fa-circle" style={{color:isDemo?'var(--org)':'var(--grn)',fontSize:8,marginRight:5}}/>{isDemo?'Demo-Modus':'Google Drive verbunden'}</span>
+      <span>{disp.length} Elemente</span>
+      {sel&&<span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',maxWidth:260}}>Ausgewählt: {sel.name}</span>}
+      <span style={{marginLeft:'auto'}}>alysee DMS v1.1 · alysee GmbH · {new Date().getFullYear()}</span>
+    </div>
+
+    {ctx&&<div className="ctx" style={{top:ctx.y,left:ctx.x}} onClick={e=>e.stopPropagation()}>
+      <div className="cxi" onClick={()=>{setSel(ctx.f);setCtx(null);}}><i className="fas fa-eye"/>Vorschau</div>
+      <div className="cxi" onClick={()=>{setSel(ctx.f);setBig(true);setCtx(null);}}><i className="fas fa-expand-alt"/>Groß öffnen</div>
+      {ctx.f.mimeType==='application/vnd.google-apps.folder'&&<div className="cxi" onClick={()=>{go(ctx.f);setCtx(null);}}><i className="fas fa-folder-open"/>Ordner öffnen</div>}
+      {ctx.f.webViewLink&&ctx.f.webViewLink!=='#'&&<div className="cxi" onClick={()=>{window.open(ctx.f.webViewLink,'_blank');setCtx(null);}}><i className="fas fa-external-link-alt"/>In Drive öffnen</div>}
+      <div className="cxs"/>
+      <div className="cxi" onClick={()=>{setSel(ctx.f);setModal('ren');setCtx(null);}}><i className="fas fa-pencil"/>Umbenennen</div>
+      {!isDemo&&<div className="cxi danger" onClick={async()=>{if(window.confirm(`"${ctx.f.name}" löschen?`)){try{await DR.del(ctx.f.id);toast('Gelöscht','i');rf();if(sel?.id===ctx.f.id)setSel(null);}catch{toast('Fehler','e');}}setCtx(null);}}>
+        <i className="fas fa-trash"/>Löschen
+      </div>}
+    </div>}
+
+    {big&&sel&&<ExpandMod file={sel} isDemo={isDemo} onClose={()=>setBig(false)}/>}
+    {modal==='up'&&<UpMod fid={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
+    {modal==='mk'&&<MkMod par={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
+    {modal==='ren'&&sel&&<RenMod file={sel} onClose={()=>setModal(null)} onDone={()=>{rf();setModal(null);}} isDemo={isDemo}/>}
+  </div>);
+}
+
+/* BUG FIX 4: App Root – robuste Initialisierung, wartet auf beide APIs */
+const DEF_CID='633536117262-28memlfds8btpdk8facskab8aq9msjdq.apps.googleusercontent.com';
+const DEF_KEY='AIzaSyCNXwOka6MinW9ZoCFDuwsSnOD9NGfyIg0';
+
+function App(){
+  const [state,setState]=useState('init'); // init | login | app
+  const [isDemo,setIsDemo]=useState(false);
+  const [gapiOk,setGapiOk]=useState(_gapiReady);
+  const [gisOk,setGisOk]=useState(_gisReady);
+  const tokRef=useRef(null);
+  const toast=useContext(TC);
+
+  // API-Bereitschaft überwachen
+  useEffect(()=>{
+    const a=()=>setGapiOk(true);
+    const b=()=>setGisOk(true);
+    window.addEventListener('gapiOk',a);
+    window.addEventListener('gisOk',b);
+    return()=>{window.removeEventListener('gapiOk',a);window.removeEventListener('gisOk',b);};
+  },[]);
+
+  // Initialisierung sobald beide APIs bereit sind
+  useEffect(()=>{
+    if(!gapiOk||!gisOk)return;
+    // DEMO-Modus Check
+    const stored=localStorage.getItem('alysee_cid');
+    if(stored==='DEMO'){localStorage.removeItem('alysee_cid');}
+
+    DR.init(DEF_CID,DEF_KEY)
+      .then(()=>{
+        tokRef.current=DR.mkT(DEF_CID,r=>{
+          if(r.error){
+            console.error('OAuth error:',r.error);
+            toast('Anmeldung fehlgeschlagen: '+r.error,'e');
+          }else{
+            setState('app');
+          }
+        });
+        setState('login');
+      })
+      .catch(e=>{
+        console.error('gapi init error:',e);
+        setState('login');
+      });
+  },[gapiOk,gisOk]);
+
+  const signIn=()=>{
+    if(!tokRef.current){toast('Google APIs noch nicht bereit, bitte warten…','e');return;}
+    tokRef.current.requestAccessToken({prompt:''});
+  };
+
+  const signOut=()=>{
+    try{
+      if(window.gapi?.client?.getToken()){
+        google.accounts.oauth2.revoke(gapi.client.getToken().access_token,()=>{});
+        gapi.client.setToken('');
+      }
+    }catch(e){console.warn(e);}
+    setState('login');
+  };
+
+  const goDemo=()=>{setIsDemo(true);setState('app');};
+
+  if(state==='init')return(
+    <div className="setup-bg">
+      <div style={{textAlign:'center',color:'#fff'}}>
+        <AlyseeLogo size={80} radius={14}/>
+        <div style={{marginTop:20}}><div className="spin" style={{margin:'0 auto',borderTopColor:'#fff',borderColor:'rgba(255,255,255,.3)'}}/></div>
+        <p style={{marginTop:16,fontSize:14,opacity:.7}}>Lade alysee DMS…</p>
+      </div>
+    </div>
+  );
+
+  if(state==='login')return(
+    <Login onIn={signIn} onDemo={goDemo} gapiOk={gapiOk} gisOk={gisOk}/>
+  );
+
+  return<Main creds={{cid:DEF_CID,key:DEF_KEY}} onOut={signOut} isDemo={isDemo}/>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<ToastProv><App/></ToastProv>);
+</script>
+</body>
+</html>
