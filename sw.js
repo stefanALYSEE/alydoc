@@ -1,85 +1,24 @@
 // alysee DMS Service Worker
-const CACHE = 'alydoc-v6';
-const OFFLINE_URL = 'index.html';
+const CACHE = 'alydoc-v7';
 
-// Assets die beim Install gecacht werden
-const PRECACHE = [
-  'manifest.json',
-  'icon-192.png',
-  'icon-512.png'
-];
-
-// Install: Core-Assets cachen, sofort aktivieren
+// Install: sofort aktivieren
 self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE).then(cache => {
-      return cache.addAll(PRECACHE);
-    }).then(() => self.skipWaiting())
-  );
+  event.waitUntil(self.skipWaiting());
 });
 
-// Activate: Alten Cache aufräumen
+// Activate: alle alten Caches loeschen, Clients uebernehmen
 self.addEventListener('activate', event => {
   event.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(
-        keys.filter(k => k !== CACHE).map(k => caches.delete(k))
-      )
-    ).then(() => self.clients.claim())
+    caches.keys()
+      .then(keys => Promise.all(keys.map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
   );
 });
 
-// Fetch: Network-first fuer HTML, Cache-first fuer statische Assets
+// Fetch: NUR Navigation (HTML-Seitenaufrufe) abfangen, alles andere direkt durchlassen
 self.addEventListener('fetch', event => {
-  const url = new URL(event.request.url);
-
-  // Externe APIs → kein Cache-Intercept
-  if (
-    url.hostname.includes('dropboxapi.com') ||
-    url.hostname.includes('dropbox.com') ||
-    url.hostname.includes('dropboxusercontent.com') ||
-    url.hostname.includes('microsoft.com') ||
-    url.hostname.includes('microsoftonline.com') ||
-    url.hostname.includes('googleapis.com') ||
-    url.hostname.includes('google.com') ||
-    url.hostname.includes('anthropic.com') ||
-    url.hostname.includes('unpkg.com') ||
-    url.hostname.includes('cdnjs.cloudflare.com') ||
-    url.hostname.includes('gstatic.com') ||
-    url.hostname.includes('accounts.google.com')
-  ) {
-    return;
-  }
-
-  // HTML-Dateien → IMMER Network-first (damit Updates sofort ankommen)
-  if (event.request.mode === 'navigate' || url.pathname.endsWith('.html')) {
-    event.respondWith(
-      fetch(event.request).then(response => {
-        // Erfolgreiche Response cachen fuer Offline
-        if (response && response.status === 200) {
-          const clone = response.clone();
-          caches.open(CACHE).then(cache => cache.put(event.request, clone));
-        }
-        return response;
-      }).catch(() => {
-        // Offline-Fallback
-        return caches.match(event.request).then(cached => cached || caches.match(OFFLINE_URL));
-      })
-    );
-    return;
-  }
-
-  // Statische Assets (Icons, Manifest) → Cache-first
+  if (event.request.mode !== 'navigate') return;
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      if (cached) return cached;
-      return fetch(event.request).then(response => {
-        if (response && response.status === 200 && response.type === 'basic') {
-          const clone = response.clone();
-          caches.open(CACHE).then(cache => cache.put(event.request, clone));
-        }
-        return response;
-      });
-    })
+    fetch(event.request).catch(() => caches.match('index.html'))
   );
 });
