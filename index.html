@@ -648,7 +648,7 @@ function Cad3DViewer({url,fileName}){
   const [status,setStatus]=useState('loading');
   const ext=getCadExt(fileName);
   // Formate die Three.js direkt laden kann
-  const threeFormats=['.stl','.obj','.gltf','.glb','.ply','.fbx'];
+  const threeFormats=['.stl','.obj','.gltf','.glb','.ply','.fbx','.3mf','.wrl','.3dm'];
   const canThree=threeFormats.some(e=>ext===e);
 
   useEffect(()=>{
@@ -664,6 +664,8 @@ function Cad3DViewer({url,fileName}){
     (async()=>{
       try{
         await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+        // fflate wird von FBXLoader (binaere FBX) und 3MFLoader (ZIP-Container) zwingend benoetigt
+        if(ext==='.fbx'||ext==='.3mf')await loadScript('https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js');
         if(ext==='.stl')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/STLLoader.js');
         if(ext==='.obj')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/OBJLoader.js');
         if(ext==='.gltf'||ext==='.glb'){
@@ -671,6 +673,12 @@ function Cad3DViewer({url,fileName}){
         }
         if(ext==='.ply')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/PLYLoader.js');
         if(ext==='.fbx')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js');
+        if(ext==='.3mf')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/3MFLoader.js');
+        if(ext==='.wrl')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/VRMLLoader.js');
+        if(ext==='.3dm'){
+          await loadScript('https://cdn.jsdelivr.net/npm/rhino3dm@8.4.0/rhino3dm.min.js');
+          await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/3DMLoader.js');
+        }
         await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js');
         if(disposed)return;
         const T=window.THREE;
@@ -695,6 +703,9 @@ function Cad3DViewer({url,fileName}){
         else if(ext==='.gltf'||ext==='.glb')loader=new T.GLTFLoader();
         else if(ext==='.ply')loader=new T.PLYLoader();
         else if(ext==='.fbx')loader=new T.FBXLoader();
+        else if(ext==='.3mf')loader=new T.ThreeMFLoader();
+        else if(ext==='.wrl')loader=new T.VRMLLoader();
+        else if(ext==='.3dm'){loader=new T.Rhino3dmLoader();loader.setLibraryPath('https://cdn.jsdelivr.net/npm/rhino3dm@8.4.0/');}
         const addToScene=(obj)=>{
           const mesh=obj.scene||obj;
           if(mesh.isBufferGeometry){
