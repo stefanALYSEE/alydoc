@@ -648,7 +648,17 @@ function Cad3DViewer({url,fileName}){
   const ctrlRef=useRef(null);
   const sceneRef=useRef(null); // Helpers fuer Toolbar (setView, zoom)
   const [status,setStatus]=useState('loading');
+  const [mode,setMode]=useState('rotate'); // rotate | pan | zoom — was die linke Maus tut
   const ext=getCadExt(fileName);
+
+  // Mode-Wechsel: linke Maustaste / 1-Finger-Drag bekommt eine andere Aktion zugewiesen
+  useEffect(()=>{
+    const c=ctrlRef.current,T=window.THREE;
+    if(!c||!T||status!=='ok')return;
+    if(mode==='rotate'){c.mouseButtons={LEFT:T.MOUSE.ROTATE,MIDDLE:T.MOUSE.DOLLY,RIGHT:T.MOUSE.PAN};c.enablePan=false;}
+    else if(mode==='pan'){c.mouseButtons={LEFT:T.MOUSE.PAN,MIDDLE:T.MOUSE.DOLLY,RIGHT:T.MOUSE.ROTATE};c.enablePan=true;}
+    else if(mode==='zoom'){c.mouseButtons={LEFT:T.MOUSE.DOLLY,MIDDLE:T.MOUSE.DOLLY,RIGHT:T.MOUSE.PAN};c.enablePan=false;}
+  },[mode,status]);
   // Formate die Three.js direkt laden kann
   const threeFormats=['.stl','.obj','.gltf','.glb','.ply','.fbx','.3mf','.wrl','.3dm'];
   const canThree=threeFormats.some(e=>ext===e);
@@ -797,15 +807,23 @@ function Cad3DViewer({url,fileName}){
   return(<div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
     {status==='loading'&&<div className="ctr" style={{position:'absolute',inset:0,zIndex:2,background:'rgba(255,255,255,.8)'}}><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>3D-Modell wird geladen…</p></div>}
     {status==='error'&&<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:32,color:'var(--org)'}}/><p style={{fontSize:12,color:'var(--red)'}}>3D-Vorschau fehlgeschlagen</p></div>}
-    {status==='ok'&&(()=>{const bs={background:'rgba(255,255,255,.95)',border:'1px solid #d0d0d0',borderRadius:6,padding:0,cursor:'pointer',fontSize:13,color:'var(--blue)',width:32,height:30,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 1px 3px rgba(0,0,0,.08)'};return(
+    {status==='ok'&&(()=>{
+      const bs={background:'rgba(255,255,255,.95)',border:'1px solid #d0d0d0',borderRadius:6,padding:0,cursor:'pointer',fontSize:13,color:'var(--blue)',width:32,height:30,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 1px 3px rgba(0,0,0,.08)'};
+      const ms=m=>mode===m?{...bs,background:'var(--blue)',color:'#fff',borderColor:'var(--blue)'}:bs;
+      return(
       <div style={{position:'absolute',top:8,right:8,zIndex:3,display:'flex',flexDirection:'column',gap:4}}>
-        <button title="Ansicht zentrieren (Reset)" onClick={()=>ctrlRef.current?.reset()} style={bs}><i className="fas fa-house"/></button>
+        <button title="Modus: Drehen (linke Maus)" onClick={()=>setMode('rotate')} style={ms('rotate')}><i className="fas fa-rotate"/></button>
+        <button title="Modus: Verschieben (linke Maus)" onClick={()=>setMode('pan')} style={ms('pan')}><i className="fas fa-arrows-up-down-left-right"/></button>
+        <button title="Modus: Zoomen (linke Maus, hoch/runter ziehen)" onClick={()=>setMode('zoom')} style={ms('zoom')}><i className="fas fa-magnifying-glass"/></button>
+        <div style={{height:6}}/>
+        <button title="Vergroessern" onClick={()=>sceneRef.current?.zoom(0.85)} style={bs}><i className="fas fa-magnifying-glass-plus"/></button>
+        <button title="Verkleinern" onClick={()=>sceneRef.current?.zoom(1.18)} style={bs}><i className="fas fa-magnifying-glass-minus"/></button>
+        <div style={{height:6}}/>
         <button title="Vorderansicht" onClick={()=>sceneRef.current?.setView(0,0,1)} style={bs}><i className="fas fa-square"/></button>
         <button title="Draufsicht" onClick={()=>sceneRef.current?.setView(0,1,0.001)} style={bs}><i className="fas fa-arrow-down"/></button>
         <button title="Seitenansicht" onClick={()=>sceneRef.current?.setView(1,0,0)} style={bs}><i className="fas fa-arrow-right"/></button>
-        <div style={{height:4}}/>
-        <button title="Vergroessern" onClick={()=>sceneRef.current?.zoom(0.85)} style={bs}><i className="fas fa-magnifying-glass-plus"/></button>
-        <button title="Verkleinern" onClick={()=>sceneRef.current?.zoom(1.18)} style={bs}><i className="fas fa-magnifying-glass-minus"/></button>
+        <div style={{height:6}}/>
+        <button title="Ansicht zentrieren (Reset)" onClick={()=>{ctrlRef.current?.reset();setMode('rotate');}} style={bs}><i className="fas fa-house"/></button>
       </div>
     );})()}
     <div ref={cRef} style={{flex:1,minHeight:0}}/>
