@@ -693,8 +693,16 @@ function Cad3DViewer({url,fileName}){
         const dir2=new T.DirectionalLight(0xffffff,0.3);dir2.position.set(-5,-5,-5);scene.add(dir2);
         // Grid
         scene.add(new T.GridHelper(20,20,0xcccccc,0xe0e0e0));
-        // Controls
-        const ctrl=new T.OrbitControls(camera,renderer.domElement);ctrl.enableDamping=true;
+        // Controls — CAD-freundlich getunet
+        const ctrl=new T.OrbitControls(camera,renderer.domElement);
+        ctrl.enableDamping=true;
+        ctrl.dampingFactor=0.08;
+        ctrl.rotateSpeed=0.8;
+        ctrl.panSpeed=1.4;
+        ctrl.zoomSpeed=1.4;
+        ctrl.screenSpacePanning=true; // Pan entlang Screen-Plane (intuitiver), nicht World-XZ
+        ctrl.mouseButtons={LEFT:T.MOUSE.ROTATE,MIDDLE:T.MOUSE.DOLLY,RIGHT:T.MOUSE.PAN};
+        ctrl.touches={ONE:T.TOUCH.ROTATE,TWO:T.TOUCH.DOLLY_PAN};
         // Loader
         let loader;
         if(ext==='.stl')loader=new T.STLLoader();
