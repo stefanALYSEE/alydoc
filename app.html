@@ -309,6 +309,17 @@
     </button>
   </div>
 
+  <button class="btn btn-success" id="btn-ablegen" onclick="ablegen()" disabled>
+    <i class="fas fa-inbox"></i> In alyDoc ablegen
+  </button>
+
+  <div id="progress-wrap" style="display:none">
+    <div class="progress"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
+    <div style="font-size:11px;color:var(--secondary);text-align:center;margin-bottom:10px" id="progress-label"></div>
+  </div>
+
+  <div id="status-box" style="display:none"></div>
+
   <div class="card" style="margin-bottom:16px">
     <div class="opt">
       <input type="checkbox" id="opt-attachments">
@@ -316,16 +327,6 @@
     </div>
   </div>
 
-  <div id="status-box" style="display:none"></div>
-
-  <div id="progress-wrap" style="display:none">
-    <div class="progress"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
-    <div style="font-size:11px;color:var(--secondary);text-align:center;margin-bottom:10px" id="progress-label"></div>
-  </div>
-
-  <button class="btn btn-success" id="btn-ablegen" onclick="ablegen()" disabled>
-    <i class="fas fa-inbox"></i> In alyDoc ablegen
-  </button>
   <button class="btn btn-tonal" onclick="refreshFolders()">
     <i class="fas fa-arrow-rotate-right"></i> Ordner neu laden
   </button>
