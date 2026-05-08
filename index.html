@@ -701,7 +701,7 @@ function Cad3DViewer({url,fileName}){
         ctrl.rotateSpeed=0.8;
         ctrl.zoomSpeed=1.4;
         ctrl.enablePan=false; // Modell bleibt im Zentrum, kein Verschieben
-        ctrl.touches={ONE:T.TOUCH.ROTATE,TWO:T.TOUCH.DOLLY};
+        ctrl.touches={ONE:T.TOUCH.ROTATE,TWO:T.TOUCH.DOLLY_PAN};
         ctrlRef.current=ctrl;
         // Loader
         let loader;
@@ -734,15 +734,19 @@ function Cad3DViewer({url,fileName}){
             });
             scene.add(mesh);
           }
-          // Kamera positionieren
+          // Kamera positionieren — adaptiv an Modellgroesse
           const box=new T.Box3().setFromObject(scene);
-          const center=box.getCenter(new T.Vector3());
-          const size=box.getSize(new T.Vector3()).length();
-          camera.position.copy(center).add(new T.Vector3(size*0.6,size*0.4,size*0.6));
+          const center=box.isEmpty()?new T.Vector3():box.getCenter(new T.Vector3());
+          const rawSize=box.isEmpty()?1:box.getSize(new T.Vector3()).length();
+          const sz=rawSize>0?rawSize:1; // Fallback falls Bounding Box degeneriert
+          // Camera Frustum an Modellgroesse anpassen — verhindert Clipping bei sehr grossen/kleinen CAD-Modellen
+          camera.near=sz*0.001;
+          camera.far=sz*100;
+          camera.position.copy(center).add(new T.Vector3(sz*0.6,sz*0.4,sz*0.6));
+          camera.updateProjectionMatrix();
           ctrl.target.copy(center);
-          // Zoom-Limits relativ zur Modell-Groesse
-          ctrl.minDistance=size*0.1;
-          ctrl.maxDistance=size*5;
+          ctrl.minDistance=sz*0.05;
+          ctrl.maxDistance=sz*10;
           ctrl.update();
           ctrl.saveState(); // Initial-Position als Reset-State
           if(!disposed)setStatus('ok');
