@@ -675,10 +675,9 @@ function Cad3DViewer({url,fileName}){
         if(ext==='.fbx')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/FBXLoader.js');
         if(ext==='.3mf')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/3MFLoader.js');
         if(ext==='.wrl')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/VRMLLoader.js');
-        if(ext==='.3dm'){
-          await loadScript('https://cdn.jsdelivr.net/npm/rhino3dm@8.4.0/rhino3dm.min.js');
-          await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/3DMLoader.js');
-        }
+        // Rhino3dmLoader (r128) laedt rhino3dm selbst per XHR vom libraryPath – KEIN script-tag
+        // rhino3dm@0.16.1 ist die zur r128-Era getestete Version (8.x hat API-Aenderungen → Worker haengt)
+        if(ext==='.3dm')await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/3DMLoader.js');
         await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js');
         if(disposed)return;
         const T=window.THREE;
@@ -705,15 +704,26 @@ function Cad3DViewer({url,fileName}){
         else if(ext==='.fbx')loader=new T.FBXLoader();
         else if(ext==='.3mf')loader=new T.ThreeMFLoader();
         else if(ext==='.wrl')loader=new T.VRMLLoader();
-        else if(ext==='.3dm'){loader=new T.Rhino3dmLoader();loader.setLibraryPath('https://cdn.jsdelivr.net/npm/rhino3dm@8.4.0/');}
+        else if(ext==='.3dm'){loader=new T.Rhino3dmLoader();loader.setLibraryPath('https://cdn.jsdelivr.net/npm/rhino3dm@0.16.1/');}
         const addToScene=(obj)=>{
           const mesh=obj.scene||obj;
           if(mesh.isBufferGeometry){
             mesh.computeVertexNormals();
-            const mat=new T.MeshPhongMaterial({color:0x3B82F6,flatShading:false});
+            const mat=new T.MeshPhongMaterial({color:0x3B82F6,flatShading:false,side:T.DoubleSide});
             scene.add(new T.Mesh(mesh,mat));
           }else{
-            if(!mesh.material){mesh.traverse(c=>{if(c.isMesh&&!c.material)c.material=new T.MeshPhongMaterial({color:0x3B82F6});});}
+            // FBX/3DM/3MF/OBJ/GLTF: Materials oft mit fehlenden Texturen → blau-default forcen
+            // Zusaetzlich Normals berechnen falls nicht vorhanden + Visibility sicherstellen
+            const forceMat=ext==='.fbx'||ext==='.3dm';
+            mesh.traverse(c=>{
+              if(c.isMesh){
+                c.visible=true;
+                if(c.geometry&&!c.geometry.attributes.normal)c.geometry.computeVertexNormals();
+                if(forceMat||!c.material||(Array.isArray(c.material)&&c.material.some(m=>!m||m.transparent&&m.opacity<.05))){
+                  c.material=new T.MeshPhongMaterial({color:0x3B82F6,side:T.DoubleSide});
+                }
+              }
+            });
             scene.add(mesh);
           }
           // Kamera positionieren
