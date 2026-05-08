@@ -645,6 +645,7 @@ function getCadExt(name){if(!name)return'';const n=name.toLowerCase();return CAD
 // Inline 3D-Viewer Komponente (Three.js fuer STL/OBJ/GLTF/GLB)
 function Cad3DViewer({url,fileName}){
   const cRef=useRef(null);
+  const ctrlRef=useRef(null);
   const [status,setStatus]=useState('loading');
   const ext=getCadExt(fileName);
   // Formate die Three.js direkt laden kann
@@ -693,16 +694,15 @@ function Cad3DViewer({url,fileName}){
         const dir2=new T.DirectionalLight(0xffffff,0.3);dir2.position.set(-5,-5,-5);scene.add(dir2);
         // Grid
         scene.add(new T.GridHelper(20,20,0xcccccc,0xe0e0e0));
-        // Controls — CAD-freundlich getunet
+        // Controls — Object-Inspection: Modell bleibt im Zentrum (kein Pan)
         const ctrl=new T.OrbitControls(camera,renderer.domElement);
         ctrl.enableDamping=true;
         ctrl.dampingFactor=0.08;
         ctrl.rotateSpeed=0.8;
-        ctrl.panSpeed=1.4;
         ctrl.zoomSpeed=1.4;
-        ctrl.screenSpacePanning=true; // Pan entlang Screen-Plane (intuitiver), nicht World-XZ
-        ctrl.mouseButtons={LEFT:T.MOUSE.ROTATE,MIDDLE:T.MOUSE.DOLLY,RIGHT:T.MOUSE.PAN};
-        ctrl.touches={ONE:T.TOUCH.ROTATE,TWO:T.TOUCH.DOLLY_PAN};
+        ctrl.enablePan=false; // Modell bleibt im Zentrum, kein Verschieben
+        ctrl.touches={ONE:T.TOUCH.ROTATE,TWO:T.TOUCH.DOLLY};
+        ctrlRef.current=ctrl;
         // Loader
         let loader;
         if(ext==='.stl')loader=new T.STLLoader();
@@ -739,7 +739,12 @@ function Cad3DViewer({url,fileName}){
           const center=box.getCenter(new T.Vector3());
           const size=box.getSize(new T.Vector3()).length();
           camera.position.copy(center).add(new T.Vector3(size*0.6,size*0.4,size*0.6));
-          ctrl.target.copy(center);ctrl.update();
+          ctrl.target.copy(center);
+          // Zoom-Limits relativ zur Modell-Groesse
+          ctrl.minDistance=size*0.1;
+          ctrl.maxDistance=size*5;
+          ctrl.update();
+          ctrl.saveState(); // Initial-Position als Reset-State
           if(!disposed)setStatus('ok');
         };
         loader.load(url,addToScene,undefined,e=>{console.warn('3D load err:',e);if(!disposed)setStatus('error');});
@@ -770,6 +775,7 @@ function Cad3DViewer({url,fileName}){
   return(<div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
     {status==='loading'&&<div className="ctr" style={{position:'absolute',inset:0,zIndex:2,background:'rgba(255,255,255,.8)'}}><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>3D-Modell wird geladen…</p></div>}
     {status==='error'&&<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:32,color:'var(--org)'}}/><p style={{fontSize:12,color:'var(--red)'}}>3D-Vorschau fehlgeschlagen</p></div>}
+    {status==='ok'&&<button onClick={()=>ctrlRef.current?.reset()} title="Ansicht zentrieren" style={{position:'absolute',top:8,right:8,zIndex:3,background:'rgba(255,255,255,.95)',border:'1px solid #d0d0d0',borderRadius:6,padding:'6px 10px',cursor:'pointer',fontSize:13,color:'var(--blue)',boxShadow:'0 1px 3px rgba(0,0,0,.08)'}}><i className="fas fa-house"/></button>}
     <div ref={cRef} style={{flex:1,minHeight:0}}/>
   </div>);
 }
