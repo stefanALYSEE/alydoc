@@ -1276,11 +1276,16 @@ function Main({onOut,isDemo}){
   useEffect(()=>{
     if(isDemo){setFiles(DF);setTasks(DT);}
     else{
-      load('');
-      DR.loadWF().then(d=>setTasks(d.tasks||[]));
-      DR.me().then(u=>{if(u)setUser(u);});
-      // Strukturbaum: nur Root-Ebene sofort laden (Rest lazy)
-      DR.listSubfolders('').then(f=>{setTreeCache(p=>({...p,'':f}));f.forEach(k=>{if(!treeCache[k.id])loadTreeChildren(k.id,false);});}).catch(e=>console.error('tree root FEHLER:',e));
+      // Race-Fix: erst DR.me() (setzt Team-Root-Namespace _dbxRootNs) awaiten,
+      // damit Folder-Calls den korrekten Path-Root-Header bekommen.
+      // Sonst laedt der Tree aus dem privaten Dropbox statt aus dem Team-Root.
+      (async()=>{
+        try{const u=await DR.me();if(u)setUser(u);}catch(e){console.warn('me err:',e);}
+        load('');
+        DR.loadWF().then(d=>setTasks(d.tasks||[]));
+        // Strukturbaum: nur Root-Ebene sofort laden (Rest lazy)
+        DR.listSubfolders('').then(f=>{setTreeCache(p=>({...p,'':f}));f.forEach(k=>loadTreeChildren(k.id,false));}).catch(e=>console.error('tree root FEHLER:',e));
+      })();
     }
     const h=e=>{if(!e.target.closest('.ctx'))setCtx(null);};
     document.addEventListener('click',h);
@@ -1321,7 +1326,16 @@ function Main({onOut,isDemo}){
   const dbl=f=>{if(f.mimeType==='application/vnd.dropbox.folder')go(f);else{setSel(f);setBig(true);}};
   const search=async qry=>{if(!qry.trim()){setRes(null);return;}setSrc(true);try{if(isDemo)setRes(DF.filter(f=>f.name.toLowerCase().includes(qry.toLowerCase())));else setRes(await DR.find(qry));}catch{toast('Suche fehlgeschlagen','e');}setSrc(false);};
   const swf=t=>{setTasks(t);if(!isDemo)DR.saveWF({tasks:t});};
-  const rf=()=>{if(isDemo)setFiles(DF);else load(cur.id);};
+  const rf=()=>{
+    if(isDemo){setFiles(DF);return;}
+    load(cur.id);
+    // Strukturbaum komplett invalidieren + neu laden (sonst zeigt er evtl. alten Namespace)
+    setTreeCache({});setTreeLoading({});
+    DR.listSubfolders('').then(f=>{
+      setTreeCache({'':f});
+      f.forEach(k=>{DR.listSubfolders(k.id).then(kids=>setTreeCache(p=>({...p,[k.id]:kids}))).catch(()=>{});});
+    }).catch(e=>console.error('tree refresh err:',e));
+  };
   const doMove=f=>{setSel(f);setMoveFile(f);if(!isDemo)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));};
   const onMoveDone=()=>{rf();setMoveFile(null);setSel(null);setMultiSel([]);};
 
