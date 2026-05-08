@@ -646,6 +646,7 @@ function getCadExt(name){if(!name)return'';const n=name.toLowerCase();return CAD
 function Cad3DViewer({url,fileName}){
   const cRef=useRef(null);
   const ctrlRef=useRef(null);
+  const sceneRef=useRef(null); // Helpers fuer Toolbar (setView, zoom)
   const [status,setStatus]=useState('loading');
   const ext=getCadExt(fileName);
   // Formate die Three.js direkt laden kann
@@ -749,6 +750,23 @@ function Cad3DViewer({url,fileName}){
           ctrl.maxDistance=sz*10;
           ctrl.update();
           ctrl.saveState(); // Initial-Position als Reset-State
+          // Toolbar-Helper: Standard-Ansichten + Zoom
+          sceneRef.current={
+            setView:(x,y,z)=>{
+              const v=new T.Vector3(x,y,z).normalize().multiplyScalar(sz*1.2);
+              camera.position.copy(center).add(v);
+              ctrl.target.copy(center);
+              ctrl.update();
+            },
+            zoom:(factor)=>{
+              const offset=camera.position.clone().sub(ctrl.target);
+              const newDist=offset.length()*factor;
+              if(newDist<ctrl.minDistance||newDist>ctrl.maxDistance)return;
+              offset.multiplyScalar(factor);
+              camera.position.copy(ctrl.target).add(offset);
+              ctrl.update();
+            }
+          };
           if(!disposed)setStatus('ok');
         };
         loader.load(url,addToScene,undefined,e=>{console.warn('3D load err:',e);if(!disposed)setStatus('error');});
@@ -779,7 +797,17 @@ function Cad3DViewer({url,fileName}){
   return(<div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',position:'relative'}}>
     {status==='loading'&&<div className="ctr" style={{position:'absolute',inset:0,zIndex:2,background:'rgba(255,255,255,.8)'}}><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>3D-Modell wird geladen…</p></div>}
     {status==='error'&&<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:32,color:'var(--org)'}}/><p style={{fontSize:12,color:'var(--red)'}}>3D-Vorschau fehlgeschlagen</p></div>}
-    {status==='ok'&&<button onClick={()=>ctrlRef.current?.reset()} title="Ansicht zentrieren" style={{position:'absolute',top:8,right:8,zIndex:3,background:'rgba(255,255,255,.95)',border:'1px solid #d0d0d0',borderRadius:6,padding:'6px 10px',cursor:'pointer',fontSize:13,color:'var(--blue)',boxShadow:'0 1px 3px rgba(0,0,0,.08)'}}><i className="fas fa-house"/></button>}
+    {status==='ok'&&(()=>{const bs={background:'rgba(255,255,255,.95)',border:'1px solid #d0d0d0',borderRadius:6,padding:0,cursor:'pointer',fontSize:13,color:'var(--blue)',width:32,height:30,display:'flex',alignItems:'center',justifyContent:'center',boxShadow:'0 1px 3px rgba(0,0,0,.08)'};return(
+      <div style={{position:'absolute',top:8,right:8,zIndex:3,display:'flex',flexDirection:'column',gap:4}}>
+        <button title="Ansicht zentrieren (Reset)" onClick={()=>ctrlRef.current?.reset()} style={bs}><i className="fas fa-house"/></button>
+        <button title="Vorderansicht" onClick={()=>sceneRef.current?.setView(0,0,1)} style={bs}><i className="fas fa-square"/></button>
+        <button title="Draufsicht" onClick={()=>sceneRef.current?.setView(0,1,0.001)} style={bs}><i className="fas fa-arrow-down"/></button>
+        <button title="Seitenansicht" onClick={()=>sceneRef.current?.setView(1,0,0)} style={bs}><i className="fas fa-arrow-right"/></button>
+        <div style={{height:4}}/>
+        <button title="Vergroessern" onClick={()=>sceneRef.current?.zoom(0.85)} style={bs}><i className="fas fa-magnifying-glass-plus"/></button>
+        <button title="Verkleinern" onClick={()=>sceneRef.current?.zoom(1.18)} style={bs}><i className="fas fa-magnifying-glass-minus"/></button>
+      </div>
+    );})()}
     <div ref={cRef} style={{flex:1,minHeight:0}}/>
   </div>);
 }
