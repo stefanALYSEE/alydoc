@@ -1156,41 +1156,59 @@ function decodeMimeHeader(s){
   });
   return r;
 }
+// Header/Body eines (Teil-)Blocks an der ersten Leerzeile trennen
+function _splitHeadersBody(block){
+  const m=block.match(/\r?\n\r?\n/);
+  if(!m)return{head:block,body:''};
+  return{head:block.slice(0,m.index),body:block.slice(m.index+m[0].length)};
+}
+// Einzelnen Header aus einem Header-Block lesen (mit Folding), reihenfolge-unabhängig
+function _hdr(head,name){
+  const unf=(head||'').replace(/\r?\n[ \t]+/g,' ');
+  const m=unf.match(new RegExp('^'+name+':\\s*(.+)$','mi'));
+  return m?m[1].trim():'';
+}
+// MIME-Teil dekodieren – CTE wird aus DEM Teil-Header gelesen, egal an welcher Stelle
+function _decodePart(rawBody,head){
+  const cs=_csFromCT(_hdr(head,'Content-Type'));
+  const enc=(_hdr(head,'Content-Transfer-Encoding')||'').toLowerCase();
+  if(enc==='base64')return decodeBase64Bytes(rawBody,cs);
+  if(enc==='quoted-printable')return decodeQPBytes(rawBody,cs);
+  return rawBody; // 7bit/8bit: bereits via UTF-8 dekodiert (useEmlPreview)
+}
 async function buildEmlHtml(text){
-  // Header (mit Folding) extrahieren
-  const headEnd=text.search(/\r?\n\r?\n/);
-  const headRaw=headEnd>=0?text.slice(0,headEnd):text;
-  const unfolded=headRaw.replace(/\r?\n[ \t]+/g,' ');
-  const get=(name)=>{const m=unfolded.match(new RegExp('^'+name+':\\s*(.+)$','mi'));return m?m[1].trim():'';};
-  const subj=decodeMimeHeader(get('Subject'));
-  const from=decodeMimeHeader(get('From'));
-  const to=decodeMimeHeader(get('To'));
-  const cc=decodeMimeHeader(get('Cc'));
-  const date=get('Date');
-  // Body: HTML bevorzugt, sonst Plain
-  let body='';
-  const htmlMatch=text.match(/Content-Type:\s*text\/html([^\r\n]*)(?:\r?\n[ \t][^\r\n]*)*[\r\n]+(?:Content-Transfer-Encoding:\s*(\S+)[\r\n]+)?(?:[A-Za-z-]+:\s*[^\r\n]+[\r\n]+)*[\r\n]+([\s\S]*?)(?=\r?\n--|$)/i);
-  if(htmlMatch){
-    const cs=_csFromCT(htmlMatch[1]);
-    const enc=(htmlMatch[2]||'').toLowerCase();
-    const raw=htmlMatch[3];
-    if(enc==='base64')body=decodeBase64Bytes(raw,cs);
-    else if(enc==='quoted-printable')body=decodeQPBytes(raw,cs);
-    else body=raw;
-  }
-  if(!body){
-    const textMatch=text.match(/Content-Type:\s*text\/plain([^\r\n]*)(?:\r?\n[ \t][^\r\n]*)*[\r\n]+(?:Content-Transfer-Encoding:\s*(\S+)[\r\n]+)?(?:[A-Za-z-]+:\s*[^\r\n]+[\r\n]+)*[\r\n]+([\s\S]*?)(?=\r?\n--|$)/i);
-    if(textMatch){
-      const cs=_csFromCT(textMatch[1]);
-      const enc=(textMatch[2]||'').toLowerCase();
-      let raw=textMatch[3];
-      if(enc==='base64')raw=decodeBase64Bytes(raw,cs);
-      else if(enc==='quoted-printable')raw=decodeQPBytes(raw,cs);
-      body='<pre style="font-family:sans-serif;white-space:pre-wrap;padding:12px;margin:0">'+raw.replace(/</g,'&lt;')+'</pre>';
-    }else{
-      body='<pre style="font-family:sans-serif;white-space:pre-wrap;padding:12px;margin:0">'+text.substring(0,5000).replace(/</g,'&lt;')+'</pre>';
+  const top=_splitHeadersBody(text);
+  const subj=decodeMimeHeader(_hdr(top.head,'Subject'));
+  const from=decodeMimeHeader(_hdr(top.head,'From'));
+  const to=decodeMimeHeader(_hdr(top.head,'To'));
+  const cc=decodeMimeHeader(_hdr(top.head,'Cc'));
+  const date=_hdr(top.head,'Date');
+  // MIME-Baum durchlaufen, HTML- bzw. Plain-Teil einsammeln
+  let htmlBody='',plainBody='';
+  function walk(head,body,depth){
+    if(depth>8)return;
+    const ctRaw=_hdr(head,'Content-Type');
+    const ct=ctRaw.toLowerCase();
+    const bm=ctRaw.match(/boundary\s*=\s*"?([^";\r\n]+)"?/i); // Boundary case-sensitive!
+    if(ct.indexOf('multipart/')===0&&bm){
+      const parts=body.split('--'+bm[1]);
+      for(let p of parts){
+        p=p.replace(/^\r?\n/,'');
+        if(!p||p.indexOf('--')===0)continue; // Praeambel / Abschluss-Boundary
+        const sp=_splitHeadersBody(p);
+        walk(sp.head,sp.body,depth+1);
+      }
+    }else if(ct.indexOf('text/html')===0){
+      if(!htmlBody)htmlBody=_decodePart(body,head);
+    }else if(ct.indexOf('text/plain')===0||(!ct&&body.trim())){
+      if(!plainBody)plainBody=_decodePart(body,head);
     }
   }
+  walk(top.head,top.body,0);
+  let body;
+  if(htmlBody)body=htmlBody;
+  else if(plainBody)body='<pre style="font-family:-apple-system,Segoe UI,sans-serif;white-space:pre-wrap;padding:14px 18px;margin:0;font-size:13px;line-height:1.5">'+plainBody.replace(/</g,'&lt;')+'</pre>';
+  else body='<pre style="font-family:-apple-system,Segoe UI,sans-serif;white-space:pre-wrap;padding:14px 18px;margin:0;font-size:13px">'+(top.body||text).substring(0,8000).replace(/</g,'&lt;')+'</pre>';
   const esc=v=>(v||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const headerHtml='<div style="font-family:-apple-system,Segoe UI,sans-serif;padding:14px 18px;background:#f5f7fa;border-bottom:1px solid #ddd;font-size:13px;line-height:1.5"><div style="font-weight:600;font-size:15px;margin-bottom:6px">'+esc(subj)+'</div>'+(from?'<div style="color:#555"><b>Von:</b> '+esc(from)+'</div>':'')+(to?'<div style="color:#555"><b>An:</b> '+esc(to)+'</div>':'')+(cc?'<div style="color:#555"><b>Cc:</b> '+esc(cc)+'</div>':'')+(date?'<div style="color:#888;font-size:12px;margin-top:4px">'+esc(date)+'</div>':'')+'</div>';
   return'<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;font-family:-apple-system,Segoe UI,sans-serif;color:#222}img{max-width:100%}</style></head><body>'+headerHtml+body+'</body></html>';
@@ -2009,7 +2027,7 @@ function Main({onOut,isDemo}){
         <div style={{maxWidth:560,margin:'0 auto'}}>
           <h3 style={{fontSize:15,fontWeight:700,color:'#1f3a55',marginBottom:14}}><i className="fas fa-gear" style={{marginRight:8,color:'#3f6694'}}/>Einstellungen</h3>
           <div style={{background:'#fff',border:'1px solid var(--bdr)',borderRadius:10,padding:'4px 16px',marginBottom:14}}>
-            {[['Posteingang-Ordner',POSTEINGANG],['Verschlagwortete Dokumente',String(Object.keys(mdMap).length)],['Index-Datei',MD_FILE],['Version','2.0 · ELO-Ausbau']].map(([k,v])=>(
+            {[['Posteingang-Ordner',POSTEINGANG],['Verschlagwortete Dokumente',String(Object.keys(mdMap).length)],['Index-Datei',MD_FILE],['Version','2.0']].map(([k,v])=>(
               <div key={k} style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid #f0f4f8',fontSize:13}}><span style={{color:'var(--mut)'}}>{k}</span><span style={{fontWeight:600,color:'var(--txt)'}}>{v}</span></div>
             ))}
           </div>
@@ -2034,7 +2052,7 @@ function Main({onOut,isDemo}){
           <div className="empty-ctr">
             <i className="fas fa-inbox" style={{fontSize:48,color:'#cdd6e0'}}/>
             <p style={{fontSize:14,fontWeight:600,color:'#1f3a55'}}>Kein Posteingang-Ordner</p>
-            <p style={{fontSize:12,maxWidth:340,lineHeight:1.5}}>Lege einen <code>/Posteingang</code>-Ordner an. Dokumente, die dort landen (Scans, eingehende Mails aus dem Outlook-Add-in), erscheinen hier zum Verschlagworten &amp; Ablegen – wie der ELO-Klärungskorb.</p>
+            <p style={{fontSize:12,maxWidth:340,lineHeight:1.5}}>Lege einen <code>/Posteingang</code>-Ordner an. Dokumente, die dort landen (Scans, eingehende Mails aus dem Outlook-Add-in), erscheinen hier zum Verschlagworten &amp; Ablegen.</p>
             <button className="btn bp" onClick={ensureInboxFolder}><i className="fas fa-folder-plus"/>Posteingang anlegen</button>
           </div>
         ):inboxLoading?(
