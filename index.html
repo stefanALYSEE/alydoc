@@ -1255,7 +1255,7 @@ function useEmlPreview(file,isDemo){
 }
 // ── .msg (Outlook-Binärformat) – via MSGReader (dynamisch vom CDN) ──
 let _msgReaderMod=null;
-function loadMsgReader(){if(!_msgReaderMod)_msgReaderMod=window.__imp('./msgreader.bundle.mjs').then(m=>m.default).catch(e=>{_msgReaderMod=null;throw e;});return _msgReaderMod;}
+function loadMsgReader(){if(!_msgReaderMod)_msgReaderMod=window.__imp('./msgreader.bundle.js').then(m=>m.default).catch(e=>{_msgReaderMod=null;throw e;});return _msgReaderMod;}
 function _bytesToB64(u8){let s='';const C=0x8000;for(let i=0;i<u8.length;i+=C)s+=String.fromCharCode.apply(null,u8.subarray(i,i+C));return btoa(s);}
 function buildMsgHtml(d,reader){
   const esc=v=>(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
