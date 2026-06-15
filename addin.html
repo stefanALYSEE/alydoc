@@ -1016,6 +1016,36 @@ async function ablegen(){
   }
 }
 
+// Alle Anhänge inkl. Inline-Bilder via Graph (liefert isInline + contentId zuverlässig).
+// Fallback auf Office.js (ohne contentId) wenn kein Graph-Token.
+async function getAttachmentsWithMeta(){
+  const msToken=await getValidMsToken();
+  if(msToken){
+    try{
+      const restId=Office.context.mailbox.convertToRestId(mailItem.itemId,Office.MailboxEnums.RestVersion.v2_0);
+      const r=await fetch('https://graph.microsoft.com/v1.0/me/messages/'+encodeURIComponent(restId)+'/attachments?$select=id,name,contentType,size,isInline,contentId&$top=100',{headers:{'Authorization':'Bearer '+msToken}});
+      if(r.ok){
+        const data=await r.json();const out=[];
+        for(const a of (data.value||[])){
+          try{
+            const r2=await fetch('https://graph.microsoft.com/v1.0/me/messages/'+encodeURIComponent(restId)+'/attachments/'+a.id+'/$value',{headers:{'Authorization':'Bearer '+msToken}});
+            if(!r2.ok)continue;
+            const b64=arrayBufferToBase64(await r2.arrayBuffer());
+            out.push({name:a.name,mimeType:a.contentType||'application/octet-stream',base64:b64,isInline:!!a.isInline,contentId:(a.contentId||'').replace(/^<|>$/g,'')});
+          }catch(e){console.warn('Graph Anhang-Download:',a.name,e);}
+        }
+        return out;
+      }
+    }catch(e){console.warn('Graph-Anhangliste Fehler, Fallback Office.js:',e);}
+  }
+  const out=[];
+  for(const att of (mailItem.attachments||[])){
+    try{const b64=await getAttachmentBase64(att);out.push({name:att.name,mimeType:att.contentType||'application/octet-stream',base64:b64,isInline:!!att.isInline,contentId:''});}
+    catch(e){console.warn('Anhang Fehler:',att.name,e);}
+  }
+  return out;
+}
+
 async function getEmlContent(){
   const from=mailItem.from;
   const to=mailItem.to||[];
@@ -1039,20 +1069,37 @@ async function getEmlContent(){
     });
   });
 
-  const attachments=[];
-  const atts=mailItem.attachments||[];
-  for(const att of atts){
-    try{
-      const base64Data=await getAttachmentBase64(att);
-      attachments.push({name:att.name,mimeType:att.contentType||'application/octet-stream',base64:base64Data});
-    }catch(e){console.warn('Anhang konnte nicht geladen werden:',att.name,e);}
-  }
+  // Anhänge inkl. Inline-Bilder (mit contentId) – Graph bevorzugt, sonst Office.js
+  let allAtts=[];
+  try{allAtts=await getAttachmentsWithMeta();}catch(e){console.warn('Anhang-Liste Fehler:',e);allAtts=[];}
+  const isImg=a=>/^image\//i.test(a.mimeType||'');
+  const inlineImgs=allAtts.filter(a=>a.isInline&&a.contentId&&isImg(a));
+  const regular=allAtts.filter(a=>!(a.isInline&&a.contentId&&isImg(a)));
 
   function encodeHeader(str){
     if(/^[\x20-\x7E]*$/.test(str))return str;
     return '=?UTF-8?B?'+btoa(unescape(encodeURIComponent(str)))+'?=';
   }
   function formatAddr(r){return(r.displayName?encodeHeader(r.displayName)+' ':'')+' <'+(r.emailAddress||'')+'>';}
+  function b64lines(s){let o='';for(let i=0;i<s.length;i+=76)o+=s.substring(i,i+76)+'\r\n';return o;}
+  const altB=boundary, relB='__alyDoc_rel_'+Date.now()+'__', mixB=mixedBoundary;
+  function altBlock(){
+    let s='Content-Type: multipart/alternative; boundary="'+altB+'"\r\n\r\n';
+    s+='--'+altB+'\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n'+b64lines(btoa(unescape(encodeURIComponent(textBody))));
+    s+='--'+altB+'\r\nContent-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n'+b64lines(btoa(unescape(encodeURIComponent(htmlBody))));
+    s+='--'+altB+'--\r\n';
+    return s;
+  }
+  function imgBlock(a){
+    let s='Content-Type: '+(a.mimeType||'image/png')+'\r\nContent-Transfer-Encoding: base64\r\n';
+    s+='Content-ID: <'+a.contentId+'>\r\nContent-Disposition: inline; filename="'+encodeHeader(a.name||'image')+'"\r\n\r\n';
+    return s+b64lines(a.base64);
+  }
+  function attBlock(a){
+    let s='Content-Type: '+(a.mimeType||'application/octet-stream')+'; name="'+encodeHeader(a.name||'anhang')+'"\r\n';
+    s+='Content-Disposition: attachment; filename="'+encodeHeader(a.name||'anhang')+'"\r\nContent-Transfer-Encoding: base64\r\n\r\n';
+    return s+b64lines(a.base64);
+  }
 
   let eml='From: '+(from?formatAddr(from):'')+'\r\n';
   eml+='To: '+to.map(formatAddr).join(', ')+'\r\n';
@@ -1061,35 +1108,29 @@ async function getEmlContent(){
   eml+='Date: '+date+'\r\n';
   eml+='MIME-Version: 1.0\r\n';
 
-  if(attachments.length>0){
-    eml+='Content-Type: multipart/mixed; boundary="'+mixedBoundary+'"\r\n\r\n';
-    eml+='--'+mixedBoundary+'\r\n';
-    eml+='Content-Type: multipart/alternative; boundary="'+boundary+'"\r\n\r\n';
-    eml+='--'+boundary+'\r\n';
-    eml+='Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
-    eml+=btoa(unescape(encodeURIComponent(textBody)))+'\r\n';
-    eml+='--'+boundary+'\r\n';
-    eml+='Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
-    eml+=btoa(unescape(encodeURIComponent(htmlBody)))+'\r\n';
-    eml+='--'+boundary+'--\r\n';
-    for(const att of attachments){
-      eml+='\r\n--'+mixedBoundary+'\r\n';
-      eml+='Content-Type: '+att.mimeType+'; name="'+encodeHeader(att.name)+'"\r\n';
-      eml+='Content-Disposition: attachment; filename="'+encodeHeader(att.name)+'"\r\n';
-      eml+='Content-Transfer-Encoding: base64\r\n\r\n';
-      const b64=att.base64;
-      for(let i=0;i<b64.length;i+=76){eml+=b64.substring(i,i+76)+'\r\n';}
-    }
-    eml+='--'+mixedBoundary+'--\r\n';
-  } else {
-    eml+='Content-Type: multipart/alternative; boundary="'+boundary+'"\r\n\r\n';
-    eml+='--'+boundary+'\r\n';
-    eml+='Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
-    eml+=btoa(unescape(encodeURIComponent(textBody)))+'\r\n';
-    eml+='--'+boundary+'\r\n';
-    eml+='Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n';
-    eml+=btoa(unescape(encodeURIComponent(htmlBody)))+'\r\n';
-    eml+='--'+boundary+'--\r\n';
+  if(inlineImgs.length&&regular.length){
+    // multipart/mixed [ multipart/related [ alternative + Inline-Bilder ] + Anhänge ]
+    eml+='Content-Type: multipart/mixed; boundary="'+mixB+'"\r\n\r\n';
+    eml+='--'+mixB+'\r\nContent-Type: multipart/related; boundary="'+relB+'"\r\n\r\n';
+    eml+='--'+relB+'\r\n'+altBlock();
+    for(const a of inlineImgs)eml+='--'+relB+'\r\n'+imgBlock(a);
+    eml+='--'+relB+'--\r\n';
+    for(const a of regular)eml+='--'+mixB+'\r\n'+attBlock(a);
+    eml+='--'+mixB+'--\r\n';
+  }else if(inlineImgs.length){
+    // multipart/related [ alternative + Inline-Bilder ]
+    eml+='Content-Type: multipart/related; boundary="'+relB+'"\r\n\r\n';
+    eml+='--'+relB+'\r\n'+altBlock();
+    for(const a of inlineImgs)eml+='--'+relB+'\r\n'+imgBlock(a);
+    eml+='--'+relB+'--\r\n';
+  }else if(regular.length){
+    // multipart/mixed [ alternative + Anhänge ]
+    eml+='Content-Type: multipart/mixed; boundary="'+mixB+'"\r\n\r\n';
+    eml+='--'+mixB+'\r\n'+altBlock();
+    for(const a of regular)eml+='--'+mixB+'\r\n'+attBlock(a);
+    eml+='--'+mixB+'--\r\n';
+  }else{
+    eml+=altBlock();
   }
 
   return eml;
