@@ -16,6 +16,9 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script>
+    // Nativer dynamischer Import – in PLAIN JS gekapselt, damit Babel-standalone
+    // ihn NICHT zu require() transpiliert (sonst "require is not defined").
+    window.__imp=function(u){return import(u);};
     // Dropbox OAuth config
     const DROPBOX_APP_KEY='2gz5l15uzq63ppy';
     const DBX_API='https://api.dropboxapi.com/2';
@@ -209,6 +212,81 @@
     @supports(padding-top:env(safe-area-inset-top)){
       @media(max-width:600px){.top-bar{padding-top:env(safe-area-inset-top);height:calc(52px + env(safe-area-inset-top))}}
     }
+    /* ═══════════════ ELO-LOOK: BRAND-STRIP + RIBBON ═══════════════ */
+    .elo-brand{height:40px;background:linear-gradient(180deg,#284866 0%,#1f3a55 100%);color:#fff;display:flex;align-items:center;gap:12px;padding:0 12px;flex-shrink:0;border-bottom:1px solid #14283c}
+    .elo-brand .eb-title{font-weight:700;font-size:14px;line-height:1;letter-spacing:.2px}
+    .elo-brand .eb-sub{font-size:8.5px;color:rgba(255,255,255,.55);letter-spacing:1.2px;text-transform:uppercase}
+    .elo-qsrch{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.13);border:1px solid rgba(255,255,255,.16);border-radius:4px;padding:0 9px;height:26px;min-width:240px;max-width:420px;flex:1}
+    .elo-qsrch input{background:none;border:none;outline:none;color:#fff;font-size:13px;width:100%}
+    .elo-qsrch input::placeholder{color:rgba(255,255,255,.55)}
+    .elo-qsrch i{color:rgba(255,255,255,.6);font-size:12px}
+    .eb-userbtn{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.18);color:#fff;width:26px;height:26px;border-radius:4px;cursor:pointer;font-size:12px;display:flex;align-items:center;justify-content:center}
+    .eb-userbtn:hover{background:rgba(255,255,255,.2)}
+    .ribbon{background:#eef1f5;border-bottom:1px solid #c6cfdb;flex-shrink:0}
+    .rib-tabs{display:flex;align-items:flex-end;gap:1px;padding:0 6px;background:#dde4ee;border-bottom:1px solid #c6cfdb;height:28px}
+    .rib-tab{background:none;border:none;border-top:2px solid transparent;padding:0 16px;height:28px;font-size:12px;font-weight:600;color:#3a4a5e;cursor:pointer;letter-spacing:.2px}
+    .rib-tab:hover{background:rgba(255,255,255,.5)}
+    .rib-tab.active{background:#eef1f5;border-top-color:#0061FF;color:#0a2540;margin-bottom:-1px;border-left:1px solid #c6cfdb;border-right:1px solid #c6cfdb;border-radius:3px 3px 0 0}
+    .rib-body{display:flex;align-items:stretch;gap:0;padding:5px 4px 3px;min-height:74px;overflow-x:auto}
+    .rib-group{display:flex;flex-direction:column;align-items:center;padding:2px 8px 0;border-right:1px solid #d4dbe5;flex-shrink:0}
+    .rib-group-inner{display:flex;gap:2px;flex:1;align-items:flex-start}
+    .rib-group-cap{font-size:9.5px;color:#7b8a9c;text-align:center;padding:3px 0 1px;letter-spacing:.2px;white-space:nowrap}
+    .rib-btn{display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:3px;border:1px solid transparent;background:none;cursor:pointer;border-radius:4px;padding:5px 7px 4px;min-width:50px;font-size:10.5px;color:#26323f;line-height:1.15;text-align:center}
+    .rib-btn i{font-size:19px;color:#3f6694}
+    .rib-btn:hover{background:#dbe6f5;border-color:#b9cce4}
+    .rib-btn:disabled{opacity:.4;cursor:default}
+    .rib-btn:disabled:hover{background:none;border-color:transparent}
+    .rib-btn.accent i{color:#1c8c3e}
+    .rib-btn.danger i{color:#c0392b}
+    .rib-col{display:flex;flex-direction:column;gap:1px}
+    .rib-sm{display:flex;align-items:center;gap:7px;border:1px solid transparent;background:none;cursor:pointer;border-radius:4px;padding:3px 8px 3px 6px;font-size:11.5px;color:#26323f;white-space:nowrap;min-width:118px}
+    .rib-sm i{font-size:13px;color:#3f6694;width:15px;text-align:center}
+    .rib-sm:hover{background:#dbe6f5;border-color:#b9cce4}
+    .rib-sm:disabled{opacity:.4;cursor:default}.rib-sm:disabled:hover{background:none;border-color:transparent}
+    .rib-sm.danger i{color:#c0392b}.rib-sm.accent i{color:#1c8c3e}
+    .rib-srch{display:flex;align-items:center;gap:6px;background:#fff;border:1px solid #c6cfdb;border-radius:4px;padding:0 8px;height:26px}
+    .rib-srch input,.rib-srch select{border:none;outline:none;font-size:12px;background:none}
+    .rib-field{display:flex;flex-direction:column;gap:2px}
+    .rib-field label{font-size:9px;color:#7b8a9c;text-transform:uppercase;letter-spacing:.3px;font-weight:600}
+    .rib-field input,.rib-field select{border:1px solid #c6cfdb;border-radius:4px;font-size:12px;padding:3px 6px;outline:none;background:#fff;min-width:130px}
+    /* ── ELO DICHTE LISTE ── */
+    .elo-list .doc-hrow,.elo-list .doc-row{grid-template-columns:26px minmax(160px,1fr) 96px 150px 86px 70px}
+    .elo-list .doc-hrow{padding:4px 10px;background:#e9edf3;border-bottom:1px solid #c6cfdb;font-size:10px}
+    .elo-list .doc-row{padding:3px 10px;font-size:12px;border-bottom:1px solid #eef1f5;min-height:26px}
+    .elo-list .doc-row:nth-child(even){background:#fafbfd}
+    .elo-list .doc-row:hover{background:#eaf2fd}
+    .elo-list .doc-row.active{background:#dcebfb;border-left:2px solid #0061FF;padding-left:8px}
+    .col-typ{display:flex}
+    .dt-pill{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:600;padding:1px 7px;border-radius:3px;white-space:nowrap}
+    .dt-none{color:#aab4c0;font-style:italic;font-size:11px}
+    @media(max-width:1120px){.elo-list .doc-hrow,.elo-list .doc-row{grid-template-columns:26px minmax(140px,1fr) 96px 86px 70px}.elo-list .doc-hrow>*:nth-child(4),.elo-list .doc-row>*:nth-child(4){display:none}}
+    @media(max-width:900px){.elo-list .doc-hrow,.elo-list .doc-row{grid-template-columns:26px minmax(120px,1fr) 86px 70px}.elo-list .doc-hrow>*:nth-child(3),.elo-list .doc-row>*:nth-child(3){display:none}}
+    @media(max-width:768px){.elo-list .doc-hrow,.elo-list .doc-row{grid-template-columns:26px 1fr 70px}.elo-list .doc-hrow>*:nth-child(5),.elo-list .doc-row>*:nth-child(5){display:none}}
+    /* ── VERSCHLAGWORTUNGS-MASKE ── */
+    .dt-picker{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+    .dt-choice{display:flex;flex-direction:column;align-items:center;gap:4px;border:1px solid var(--bdr);border-radius:8px;padding:9px 6px;cursor:pointer;min-width:74px;flex:1;background:#fff;transition:all .12s}
+    .dt-choice i{font-size:18px}
+    .dt-choice span{font-size:11px;font-weight:600;color:var(--txt)}
+    .dt-choice:hover{background:#f4f7fb}
+    .dt-choice.sel{border-color:#0061FF;background:#eaf2fd;box-shadow:0 0 0 2px rgba(0,97,255,.15)}
+    .mask-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 12px}
+    .mask-grid .fg{margin-bottom:0}
+    .mask-grid .fg.full{grid-column:1/-1}
+    .kw-box{display:flex;flex-wrap:wrap;gap:5px;align-items:center;border:.5px solid var(--bdr);border-radius:8px;padding:6px 8px;min-height:38px}
+    .kw-tag{display:inline-flex;align-items:center;gap:5px;background:rgba(0,97,255,.1);color:#0055b8;border-radius:100px;font-size:11px;padding:2px 8px;font-weight:600}
+    .kw-tag i{cursor:pointer;font-size:10px;opacity:.7}.kw-tag i:hover{opacity:1}
+    .kw-box input{border:none;outline:none;font-size:13px;flex:1;min-width:90px;padding:3px 0}
+    /* ── POSTEINGANG ── */
+    .pe-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0;background:#f4f7fa}
+    .pe-head{padding:10px 16px;border-bottom:1px solid var(--bdr);background:#fff;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+    .pe-list{flex:1;overflow:auto;padding:10px 12px}
+    .pe-card{display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--bdr);border-left:3px solid #F9A800;border-radius:8px;padding:11px 14px;margin-bottom:8px}
+    .pe-card .pe-meta{flex:1;min-width:0}
+    .pe-card .pe-name{font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pe-card .pe-sub{font-size:11px;color:var(--mut);margin-top:2px}
+    .empty-ctr{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--mut);padding:30px;text-align:center}
+    @media(max-width:600px){.ribbon{display:none}.elo-brand{padding:0 10px;gap:8px}.elo-brand .eb-sub{display:none}.elo-qsrch{min-width:0}}
+    @supports(padding-top:env(safe-area-inset-top)){@media(max-width:600px){.elo-brand{padding-top:env(safe-area-inset-top);height:calc(40px + env(safe-area-inset-top))}}}
   </style>
 </head>
 <body>
@@ -218,6 +296,8 @@
 <script type="text/babel">
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
+// Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
+const APP_BUILD='v2.1 · 2026-06-15';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -253,6 +333,7 @@ function _dbxToFile(e){
   const isFolder=e['.tag']==='folder';
   return{
     id:e.path_lower,
+    dbxId:e.id||e.path_lower, // stabile Dropbox-ID – ueberlebt Verschieben/Umbenennen (fuer Verschlagwortung)
     name:e.name,
     mimeType:isFolder?'application/vnd.dropbox.folder':(e.media_info?.metadata?.['.tag']==='photo'?'image/jpeg':_mimeFromName(e.name)),
     modifiedTime:e.client_modified||e.server_modified||null,
@@ -356,6 +437,14 @@ const DR={
     if(!r.ok)throw new Error('Download '+r.status);
     return r.blob();
   },
+  // Office-Vorschau: Dropbox liefert eine PDF-Rendition (doc/docx/xls/xlsx/ppt/pptx …) – authentifiziert, kein Drittanbieter
+  async officePdfBlob(path){
+    await _dbxEnsureToken();
+    const r=await fetch(DBX_CONTENT+'/files/get_preview',{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Dropbox-API-Arg':jsonHeaderSafe({path}),..._dbxPathRootHeader()}});
+    if(r.status===401){if(await _dbxTryRefresh())return DR.officePdfBlob(path);throw new Error('401');}
+    if(!r.ok){let t='';try{t=await r.text();}catch{}throw new Error('Vorschau '+r.status+(t?': '+t:''));}
+    return r.blob();
+  },
   async me(){
     try{
       const r=await dbxRpc('/users/get_current_account',null);
@@ -383,7 +472,104 @@ const DR={
     const j=JSON.stringify(data);
     try{await dbxUploadRaw(DR.WF,j,'overwrite');}catch(e){console.warn('saveWF err:',e);}
   },
+  // ── Versionierung (Dropbox-Revisionen) – Basis fuer spaetere Ausbaustufe ──
+  async revisions(path){try{const r=await dbxRpc('/files/list_revisions',{path,mode:'path',limit:50});return r.entries||[];}catch(e){console.warn('rev err:',e);return[];}},
 };
+
+/* ── DOKUMENTTYPEN / VERSCHLAGWORTUNGS-MASKEN (ELO-Stil) ── */
+// Jeder Typ definiert seine Indexfelder + einen Vorschlags-Zielordner fuer die Ablage aus dem Posteingang.
+const DOCTYPES=[
+  {key:'allgemein',label:'Allgemein',icon:'fa-file-lines',color:'#64748B',target:null,fields:[
+    {key:'betreff',label:'Betreff',type:'text'},
+    {key:'datum',label:'Dokumentdatum',type:'date'},
+  ]},
+  {key:'rechnung',label:'Rechnung',icon:'fa-file-invoice-dollar',color:'#C0392B',target:'/Rechnungen',fields:[
+    {key:'korrespondent',label:'Lieferant / Kunde',type:'text'},
+    {key:'belegnr',label:'Rechnungs-Nr.',type:'text'},
+    {key:'datum',label:'Belegdatum',type:'date'},
+    {key:'betrag',label:'Betrag (€)',type:'number'},
+  ]},
+  {key:'angebot',label:'Angebot',icon:'fa-file-contract',color:'#2980B9',target:'/Angebote',fields:[
+    {key:'korrespondent',label:'Kunde',type:'text'},
+    {key:'belegnr',label:'Angebots-Nr.',type:'text'},
+    {key:'datum',label:'Datum',type:'date'},
+    {key:'betrag',label:'Betrag (€)',type:'number'},
+  ]},
+  {key:'projekt',label:'Projekt',icon:'fa-diagram-project',color:'#8E44AD',target:'/Projekte',fields:[
+    {key:'projekt',label:'Projektname',type:'text'},
+    {key:'korrespondent',label:'Kunde',type:'text'},
+    {key:'status',label:'Status',type:'text'},
+    {key:'datum',label:'Datum',type:'date'},
+  ]},
+  {key:'lieferant',label:'Lieferant',icon:'fa-truck',color:'#16A085',target:'/Lieferanten',fields:[
+    {key:'korrespondent',label:'Firma',type:'text'},
+    {key:'kategorie',label:'Kategorie',type:'text'},
+    {key:'ansprech',label:'Ansprechpartner',type:'text'},
+  ]},
+  {key:'vertrag',label:'Vertrag',icon:'fa-file-signature',color:'#D35400',target:'/Verträge',fields:[
+    {key:'korrespondent',label:'Vertragspartner',type:'text'},
+    {key:'datum',label:'Beginn',type:'date'},
+    {key:'ende',label:'Ende',type:'date'},
+  ]},
+  {key:'korrespondenz',label:'Korrespondenz',icon:'fa-envelope-open-text',color:'#3498DB',target:null,fields:[
+    {key:'korrespondent',label:'Von / An',type:'text'},
+    {key:'betreff',label:'Betreff',type:'text'},
+    {key:'datum',label:'Datum',type:'date'},
+  ]},
+];
+const DOCTYPE_MAP=Object.fromEntries(DOCTYPES.map(d=>[d.key,d]));
+const dtOf=k=>DOCTYPE_MAP[k]||DOCTYPES[0];
+// Metadaten-Schluessel pro Datei: stabile Dropbox-ID, Fallback Pfad (Demo)
+const mdKey=f=>f?(f.dbxId||f.id):null;
+
+/* ── METADATEN-INDEX (Verschlagwortung) ── */
+const POSTEINGANG='/Posteingang';
+const MD_FILE='/.alydoc_index.json';
+let _mdCache=null;
+const MD={
+  demo:false,
+  async load(demo){
+    MD.demo=!!demo;
+    if(_mdCache)return _mdCache;
+    if(demo){_mdCache=JSON.parse(JSON.stringify(DEMO_MD));return _mdCache;}
+    try{const blob=await dbxDownloadBlob(MD_FILE);const text=await blob.text();_mdCache=JSON.parse(text);if(!_mdCache.docs)_mdCache.docs={};}
+    catch{_mdCache={version:1,docs:{}};}
+    return _mdCache;
+  },
+  all(){return(_mdCache&&_mdCache.docs)||{};},
+  get(key){return key&&_mdCache&&_mdCache.docs?(_mdCache.docs[key]||null):null;},
+  async set(key,entry){
+    if(!key)return null;
+    if(!_mdCache)_mdCache={version:1,docs:{}};
+    const prev=_mdCache.docs[key]||{};
+    _mdCache.docs[key]={...prev,...entry,updatedAt:new Date().toISOString()};
+    await MD.save();
+    return _mdCache.docs[key];
+  },
+  async remove(key){if(_mdCache&&_mdCache.docs&&_mdCache.docs[key]){delete _mdCache.docs[key];await MD.save();}},
+  async save(){if(MD.demo||!_mdCache)return;try{await dbxUploadRaw(MD_FILE,JSON.stringify(_mdCache),'overwrite');}catch(e){console.warn('MD.save err:',e);}},
+  // Feld-/Volltextsuche ueber den lokalen Index
+  search(q,filters){
+    const docs=MD.all();const out=[];const ql=(q||'').toLowerCase().trim();const ft=filters||{};
+    for(const key in docs){
+      const e=docs[key];
+      if(ft.docType&&e.docType!==ft.docType)continue;
+      if(ft.korrespondent){const k=((e.fields&&e.fields.korrespondent)||'').toLowerCase();if(!k.includes(ft.korrespondent.toLowerCase()))continue;}
+      if(ql){const hay=[e.name,dtOf(e.docType).label,e.notes,...(e.keywords||[]),...Object.values(e.fields||{})].join(' ').toLowerCase();if(!hay.includes(ql))continue;}
+      out.push({key,...e});
+    }
+    return out;
+  },
+};
+const DEMO_MD={version:1,docs:{
+  '/rechnung_2025_001.pdf':{docType:'rechnung',fields:{korrespondent:'Stahlshop24',belegnr:'2025-001',datum:'2025-02-11',betrag:'1234.00'},keywords:['material','q1'],name:'Rechnung_2025_001.pdf',updatedAt:'2025-02-11T16:05:00'},
+  '/angebot_muster_ag.pdf':{docType:'angebot',fields:{korrespondent:'Muster AG',belegnr:'A-2025-014',datum:'2025-02-12',betrag:'8900.00'},keywords:['kueche'],name:'Angebot_Muster_AG.pdf',updatedAt:'2025-02-12T10:35:00'},
+}};
+const DEMO_INBOX=[
+  {id:'/posteingang/scan_2026-06-13_0001.pdf',dbxId:'/posteingang/scan_2026-06-13_0001.pdf',name:'Scan_2026-06-13_0001.pdf',mimeType:'application/pdf',modifiedTime:'2026-06-13T08:12:00',size:151000,path_lower:'/posteingang/scan_2026-06-13_0001.pdf',path_display:'/Posteingang/Scan_2026-06-13_0001.pdf'},
+  {id:'/posteingang/lieferschein_behr.pdf',dbxId:'/posteingang/lieferschein_behr.pdf',name:'Lieferschein_Behr.pdf',mimeType:'application/pdf',modifiedTime:'2026-06-12T16:40:00',size:88000,path_lower:'/posteingang/lieferschein_behr.pdf',path_display:'/Posteingang/Lieferschein_Behr.pdf'},
+  {id:'/posteingang/mail_ionos.eml',dbxId:'/posteingang/mail_ionos.eml',name:'Mail_IONOS.eml',mimeType:'message/rfc822',modifiedTime:'2026-06-11T09:05:00',size:24000,path_lower:'/posteingang/mail_ionos.eml',path_display:'/Posteingang/Mail_IONOS.eml'},
+];
 
 /* ── DEMO DATEN ── */
 const DF=[
@@ -845,6 +1031,21 @@ function useBlobUrl(file,isDemo){
   },[file?.id,isDemo]);
   return{url,loading,err};
 }
+// Office-Dokumente: PDF-Rendition von Dropbox holen und als Object-URL bereitstellen
+function useOfficePreview(file,isDemo){
+  const [url,setUrl]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [err,setErr]=useState(null);
+  useEffect(()=>{
+    let revoke=null;setUrl(null);setErr(null);
+    if(!file||isDemo||!isOfficeFile(file)||file.mimeType==='application/vnd.dropbox.folder')return;
+    setLoading(true);
+    DR.officePdfBlob(file.id).then(blob=>{const u=URL.createObjectURL(blob);revoke=u;setUrl(u);})
+      .catch(e=>setErr(e.message)).finally(()=>setLoading(false));
+    return()=>{if(revoke)URL.revokeObjectURL(revoke);};
+  },[file?.id,isDemo]);
+  return{url,loading,err};
+}
 
 /* ── PDF.js VIEWER ── */
 function PdfViewer({url,blobUrl}){
@@ -924,6 +1125,10 @@ function isEmlFile(f){
   if(!f)return false;
   return(f.mimeType&&f.mimeType.includes('rfc822'))||(f.name&&f.name.toLowerCase().endsWith('.eml'));
 }
+function isMsgFile(f){
+  if(!f)return false;
+  return(f.name&&f.name.toLowerCase().endsWith('.msg'))||f.mimeType==='application/vnd.ms-outlook';
+}
 // ── EML/MIME Decoding Helpers ────────────────────────────────────────────────
 function _binToBytes(bin){const b=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)b[i]=bin.charCodeAt(i);return b;}
 function _safeDecode(bytes,charset){try{return new TextDecoder(charset||'utf-8').decode(bytes);}catch{return new TextDecoder('utf-8').decode(bytes);}}
@@ -960,41 +1165,69 @@ function decodeMimeHeader(s){
   });
   return r;
 }
+// Header/Body eines (Teil-)Blocks an der ersten Leerzeile trennen
+function _splitHeadersBody(block){
+  const m=block.match(/\r?\n\r?\n/);
+  if(!m)return{head:block,body:''};
+  return{head:block.slice(0,m.index),body:block.slice(m.index+m[0].length)};
+}
+// Einzelnen Header aus einem Header-Block lesen (mit Folding), reihenfolge-unabhängig
+function _hdr(head,name){
+  const unf=(head||'').replace(/\r?\n[ \t]+/g,' ');
+  const m=unf.match(new RegExp('^'+name+':\\s*(.+)$','mi'));
+  return m?m[1].trim():'';
+}
+// MIME-Teil dekodieren – CTE wird aus DEM Teil-Header gelesen, egal an welcher Stelle
+function _decodePart(rawBody,head){
+  const cs=_csFromCT(_hdr(head,'Content-Type'));
+  const enc=(_hdr(head,'Content-Transfer-Encoding')||'').toLowerCase();
+  if(enc==='base64')return decodeBase64Bytes(rawBody,cs);
+  if(enc==='quoted-printable')return decodeQPBytes(rawBody,cs);
+  return rawBody; // 7bit/8bit: bereits via UTF-8 dekodiert (useEmlPreview)
+}
 async function buildEmlHtml(text){
-  // Header (mit Folding) extrahieren
-  const headEnd=text.search(/\r?\n\r?\n/);
-  const headRaw=headEnd>=0?text.slice(0,headEnd):text;
-  const unfolded=headRaw.replace(/\r?\n[ \t]+/g,' ');
-  const get=(name)=>{const m=unfolded.match(new RegExp('^'+name+':\\s*(.+)$','mi'));return m?m[1].trim():'';};
-  const subj=decodeMimeHeader(get('Subject'));
-  const from=decodeMimeHeader(get('From'));
-  const to=decodeMimeHeader(get('To'));
-  const cc=decodeMimeHeader(get('Cc'));
-  const date=get('Date');
-  // Body: HTML bevorzugt, sonst Plain
-  let body='';
-  const htmlMatch=text.match(/Content-Type:\s*text\/html([^\r\n]*)(?:\r?\n[ \t][^\r\n]*)*[\r\n]+(?:Content-Transfer-Encoding:\s*(\S+)[\r\n]+)?(?:[A-Za-z-]+:\s*[^\r\n]+[\r\n]+)*[\r\n]+([\s\S]*?)(?=\r?\n--|$)/i);
-  if(htmlMatch){
-    const cs=_csFromCT(htmlMatch[1]);
-    const enc=(htmlMatch[2]||'').toLowerCase();
-    const raw=htmlMatch[3];
-    if(enc==='base64')body=decodeBase64Bytes(raw,cs);
-    else if(enc==='quoted-printable')body=decodeQPBytes(raw,cs);
-    else body=raw;
-  }
-  if(!body){
-    const textMatch=text.match(/Content-Type:\s*text\/plain([^\r\n]*)(?:\r?\n[ \t][^\r\n]*)*[\r\n]+(?:Content-Transfer-Encoding:\s*(\S+)[\r\n]+)?(?:[A-Za-z-]+:\s*[^\r\n]+[\r\n]+)*[\r\n]+([\s\S]*?)(?=\r?\n--|$)/i);
-    if(textMatch){
-      const cs=_csFromCT(textMatch[1]);
-      const enc=(textMatch[2]||'').toLowerCase();
-      let raw=textMatch[3];
-      if(enc==='base64')raw=decodeBase64Bytes(raw,cs);
-      else if(enc==='quoted-printable')raw=decodeQPBytes(raw,cs);
-      body='<pre style="font-family:sans-serif;white-space:pre-wrap;padding:12px;margin:0">'+raw.replace(/</g,'&lt;')+'</pre>';
-    }else{
-      body='<pre style="font-family:sans-serif;white-space:pre-wrap;padding:12px;margin:0">'+text.substring(0,5000).replace(/</g,'&lt;')+'</pre>';
+  const top=_splitHeadersBody(text);
+  const subj=decodeMimeHeader(_hdr(top.head,'Subject'));
+  const from=decodeMimeHeader(_hdr(top.head,'From'));
+  const to=decodeMimeHeader(_hdr(top.head,'To'));
+  const cc=decodeMimeHeader(_hdr(top.head,'Cc'));
+  const date=_hdr(top.head,'Date');
+  // MIME-Baum durchlaufen, HTML-/Plain-Teil + Inline-Bilder (cid) einsammeln
+  let htmlBody='',plainBody='';const cidMap={};
+  function walk(head,body,depth){
+    if(depth>8)return;
+    const ctRaw=_hdr(head,'Content-Type');
+    const ct=ctRaw.toLowerCase();
+    const bm=ctRaw.match(/boundary\s*=\s*"?([^";\r\n]+)"?/i); // Boundary case-sensitive!
+    if(ct.indexOf('multipart/')===0&&bm){
+      const parts=body.split('--'+bm[1]);
+      for(let p of parts){
+        p=p.replace(/^\r?\n/,'');
+        if(!p||p.indexOf('--')===0)continue; // Praeambel / Abschluss-Boundary
+        const sp=_splitHeadersBody(p);
+        walk(sp.head,sp.body,depth+1);
+      }
+    }else if(ct.indexOf('image/')===0){
+      // Inline-Bild mit Content-ID → Data-URL fuer cid:-Aufloesung
+      const cid=_hdr(head,'Content-ID').replace(/[<>]/g,'').trim();
+      const enc=(_hdr(head,'Content-Transfer-Encoding')||'').toLowerCase();
+      if(cid&&enc==='base64')cidMap[cid]='data:'+ct.split(';')[0].trim()+';base64,'+body.replace(/\s/g,'');
+    }else if(ct.indexOf('text/html')===0){
+      if(!htmlBody)htmlBody=_decodePart(body,head);
+    }else if(ct.indexOf('text/plain')===0||(!ct&&body.trim())){
+      if(!plainBody)plainBody=_decodePart(body,head);
     }
   }
+  walk(top.head,top.body,0);
+  let body;
+  if(htmlBody){
+    // cid:-Referenzen auf eingebettete Bilder aufloesen …
+    body=htmlBody.replace(/(<img\b[^>]*?\bsrc\s*=\s*["']?)cid:([^"'>\s]+)(["']?)/gi,(m,pre,id,post)=>{const u=cidMap[id.trim()];return u?pre+u+post:m;});
+    // … verbleibende (nicht enthaltene) Inline-Bilder durch dezenten Platzhalter ersetzen statt Defekt-Icon
+    body=body.replace(/<img\b[^>]*\bsrc\s*=\s*["']?cid:[^>]*?>/gi,'<span style="display:inline-block;padding:1px 7px;margin:1px 2px;background:#eef2f8;border:1px dashed #b9cce4;border-radius:3px;color:#6678a0;font-size:11px">🖼 Bild</span>');
+  }
+  else if(plainBody)body='<pre style="font-family:-apple-system,Segoe UI,sans-serif;white-space:pre-wrap;padding:14px 18px;margin:0;font-size:13px;line-height:1.5">'+plainBody.replace(/</g,'&lt;')+'</pre>';
+  else body='<pre style="font-family:-apple-system,Segoe UI,sans-serif;white-space:pre-wrap;padding:14px 18px;margin:0;font-size:13px">'+(top.body||text).substring(0,8000).replace(/</g,'&lt;')+'</pre>';
   const esc=v=>(v||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   const headerHtml='<div style="font-family:-apple-system,Segoe UI,sans-serif;padding:14px 18px;background:#f5f7fa;border-bottom:1px solid #ddd;font-size:13px;line-height:1.5"><div style="font-weight:600;font-size:15px;margin-bottom:6px">'+esc(subj)+'</div>'+(from?'<div style="color:#555"><b>Von:</b> '+esc(from)+'</div>':'')+(to?'<div style="color:#555"><b>An:</b> '+esc(to)+'</div>':'')+(cc?'<div style="color:#555"><b>Cc:</b> '+esc(cc)+'</div>':'')+(date?'<div style="color:#888;font-size:12px;margin-top:4px">'+esc(date)+'</div>':'')+'</div>';
   return'<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;font-family:-apple-system,Segoe UI,sans-serif;color:#222}img{max-width:100%}</style></head><body>'+headerHtml+body+'</body></html>';
@@ -1022,15 +1255,66 @@ function useEmlPreview(file,isDemo){
   },[file?.id,isDemo]);
   return{html,loading};
 }
-function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
+// ── .msg (Outlook-Binärformat) – via MSGReader (dynamisch vom CDN) ──
+let _msgReaderMod=null;
+function loadMsgReader(){if(!_msgReaderMod)_msgReaderMod=window.__imp('./msgreader.bundle.js').then(m=>m.default).catch(e=>{_msgReaderMod=null;throw e;});return _msgReaderMod;}
+function _bytesToB64(u8){let s='';const C=0x8000;for(let i=0;i<u8.length;i+=C)s+=String.fromCharCode.apply(null,u8.subarray(i,i+C));return btoa(s);}
+function buildMsgHtml(d,reader){
+  const esc=v=>(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const from=esc((d.senderName||'')+(d.senderEmail?' <'+d.senderEmail+'>':''));
+  const to=(d.recipients||[]).map(r=>esc(r.name||r.email||r.smtpAddress||'')).filter(Boolean).join(', ');
+  const date=esc(d.clientSubmitTime||d.messageDeliveryTime||d.creationTime||'');
+  const bh=d.bodyHtml||d.bodyHTML;
+  let body;
+  if(bh&&/<\w+[\s>]/.test(bh))body=bh;
+  else body='<pre style="font-family:-apple-system,Segoe UI,sans-serif;white-space:pre-wrap;padding:14px 18px;margin:0;font-size:13px;line-height:1.5">'+esc(d.body||'(kein Textinhalt)')+'</pre>';
+  let imgs='';const files=[];
+  for(const a of (d.attachments||[])){
+    const nm=(a.fileName||'').toLowerCase();const m=nm.match(/\.(png|jpe?g|gif|bmp|webp)$/);
+    if(m){try{const r=reader.getAttachment(a);const ext=m[1]==='jpg'?'jpeg':m[1];imgs+='<div style="padding:8px 18px"><img src="data:image/'+ext+';base64,'+_bytesToB64(r.content)+'"/></div>';}catch(e){if(a.fileName)files.push(a.fileName);}}
+    else if(a.fileName)files.push(a.fileName);
+  }
+  const fileList=files.length?'<div style="padding:10px 18px;border-top:1px solid #eee;font-size:12px;color:#555"><b>Anhänge:</b> '+files.map(esc).join(', ')+'</div>':'';
+  const header='<div style="font-family:-apple-system,Segoe UI,sans-serif;padding:14px 18px;background:#f5f7fa;border-bottom:1px solid #ddd;font-size:13px;line-height:1.5"><div style="font-weight:600;font-size:15px;margin-bottom:6px">'+esc(d.subject||'(kein Betreff)')+'</div>'+(from?'<div style="color:#555"><b>Von:</b> '+from+'</div>':'')+(to?'<div style="color:#555"><b>An:</b> '+to+'</div>':'')+(date?'<div style="color:#888;font-size:12px;margin-top:4px">'+date+'</div>':'')+'</div>';
+  return'<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;font-family:-apple-system,Segoe UI,sans-serif;color:#222}img{max-width:100%}</style></head><body>'+header+body+imgs+fileList+'</body></html>';
+}
+function useMsgPreview(file,isDemo){
+  const [html,setHtml]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [err,setErr]=useState(null);
+  useEffect(()=>{
+    setHtml(null);setErr(null);
+    if(!file||isDemo||!isMsgFile(file)||file.mimeType==='application/vnd.dropbox.folder')return;
+    setLoading(true);let revokeUrl=null,cancelled=false;
+    (async()=>{
+      try{
+        const MsgReader=await loadMsgReader();
+        const blob=await DR.prevBlob(file.id);
+        const buf=await blob.arrayBuffer();
+        const reader=new MsgReader(new Uint8Array(buf));
+        const full=buildMsgHtml(reader.getFileData(),reader);
+        if(cancelled)return;
+        const b=new Blob([full],{type:'text/html;charset=utf-8'});
+        revokeUrl=URL.createObjectURL(b);setHtml(revokeUrl);
+      }catch(e){console.warn('MSG preview err:',e);if(!cancelled)setErr('Outlook-Nachricht konnte nicht gelesen werden');}
+      finally{if(!cancelled)setLoading(false);}
+    })();
+    return()=>{cancelled=true;if(revokeUrl)URL.revokeObjectURL(revokeUrl);};
+  },[file?.id,isDemo]);
+  return{html,loading,err};
+}
+function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower,onIndex}){
   const [tab,setTab]=useState('prev');
   const isPdf=file&&(file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf')));
   const isImg=file&&file.mimeType&&file.mimeType.startsWith('image/');
   const isOffice=isOfficeFile(file);
   const isEml=isEmlFile(file);
-  // PDFs: Blob + PDF.js | Bilder: Blob + img | EML: Custom parser | Office: blob iframe | Rest: Blob in iframe
-  const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isOffice&&!isEml)?file:null,isDemo);
+  const isMsg=isMsgFile(file);
+  // PDF: pdf.js | Bild: img | EML: MIME-Parser | MSG: MSGReader | Office: get_preview-PDF | Rest: Blob-iframe
+  const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isOffice&&!isEml&&!isMsg)?file:null,isDemo);
   const {html:emlHtml,loading:emlLoading}=useEmlPreview(isEml?file:null,isDemo);
+  const {url:offUrl,loading:offLoading,err:offErr}=useOfficePreview(isOffice?file:null,isDemo);
+  const {html:msgHtml,loading:msgLoading,err:msgErr}=useMsgPreview(isMsg?file:null,isDemo);
   useEffect(()=>setTab('prev'),[file?.id]);
   const ps={width:width||310,minWidth:150};
   const rsBtn={background:'none',border:'1px solid var(--bdr)',cursor:'pointer',color:'var(--mut)',padding:'2px 8px',borderRadius:4,fontSize:13,lineHeight:1,fontWeight:700};
@@ -1065,15 +1349,34 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower}){
             :isEml?(emlLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>E-Mail wird geladen…</p></div>
               :emlHtml?<iframe src={emlHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="E-Mail Vorschau" sandbox="allow-same-origin"/>
               :<div className="ctr"><i className="fas fa-envelope" style={{fontSize:52,color:'#3498DB'}}/><p style={{fontSize:12}}>{file.name}</p></div>)
-            :isOffice?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>
-              :pUrl?<iframe src={pUrl} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Vorschau" allow="autoplay"/>
-              :<div className="ctr"><i className={`fas ${i}`} style={{fontSize:52,color:c}}/><p style={{fontSize:12}}>{file.name}</p></div>)
+            :isMsg?(msgLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Outlook-Nachricht wird gelesen…</p></div>
+              :msgHtml?<iframe src={msgHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Outlook-Nachricht" sandbox="allow-same-origin"/>
+              :<div className="ctr"><i className="fas fa-envelope" style={{fontSize:52,color:'#3498DB'}}/><p style={{fontSize:12,textAlign:'center',padding:'0 12px'}}>{msgErr||file.name}</p></div>)
+            :isOffice?(offLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Office-Vorschau wird erstellt…</p></div>
+              :offUrl?<PdfViewer blobUrl={offUrl}/>
+              :<div className="ctr"><i className={`fas ${i}`} style={{fontSize:52,color:c}}/><p style={{fontSize:12,textAlign:'center',padding:'0 12px',wordBreak:'break-word'}}>{file.name}</p><p style={{fontSize:11,color:offErr?'var(--red)':'var(--mut)',textAlign:'center',padding:'0 12px'}}>{offErr?'Office-Vorschau nicht verfügbar':mi(file.mimeType,file.name).l}</p></div>)
             :loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>
             :err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:32,color:'var(--org)'}}/><p style={{fontSize:12,color:'var(--red)',textAlign:'center',padding:'0 12px'}}>{err}</p></div>
             :pUrl&&isImg?<div style={{flex:1,overflow:'auto',display:'flex',alignItems:'flex-start',justifyContent:'center',padding:8,minHeight:0}}><img src={pUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain',borderRadius:4}} alt={file.name}/></div>
             :pUrl?<iframe src={pUrl} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Vorschau"/>
               :<div className="ctr"><i className={`fas ${i}`} style={{fontSize:52,color:c}}/><p style={{fontSize:12,textAlign:'center',padding:'0 12px',wordBreak:'break-word'}}>{file.name}</p><p style={{fontSize:11,color:'var(--mut)'}}>{mi(file.mimeType,file.name).l} · {fs(file.size)}</p></div>
           :<div style={{flex:1,overflow:'auto',padding:14,minHeight:0}}>
+            {(()=>{const e=MD.get(mdKey(file));const dt=e?dtOf(e.docType):null;if(isDir)return null;
+              return(<div style={{marginBottom:14,paddingBottom:12,borderBottom:'1px solid var(--bdr)'}}>
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}}>
+                  <span style={{fontSize:10,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.6px',fontWeight:700}}>Verschlagwortung</span>
+                  {onIndex&&!isDemo&&<button onClick={()=>onIndex(file)} style={{background:'rgba(0,97,255,.1)',border:'none',color:'#0061FF',fontSize:11,fontWeight:600,padding:'3px 9px',borderRadius:6,cursor:'pointer'}}><i className="fas fa-tags" style={{marginRight:4}}/>{e?'Bearbeiten':'Verschlagworten'}</button>}
+                </div>
+                {e?<>
+                  <div style={{marginBottom:8}}><span className="dt-pill" style={{background:dt.color+'22',color:dt.color}}><i className={`fas ${dt.icon}`}/>{dt.label}</span></div>
+                  {dt.fields.map(fld=>(e.fields&&e.fields[fld.key])?(
+                    <div key={fld.key} style={{marginBottom:8}}><div style={{fontSize:10,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.5px',fontWeight:600,marginBottom:2}}>{fld.label}</div><div style={{fontSize:13,fontWeight:500,wordBreak:'break-word'}}>{fld.type==='date'?fd(e.fields[fld.key]):e.fields[fld.key]}{fld.type==='number'?' €':''}</div></div>
+                  ):null)}
+                  {e.keywords&&e.keywords.length>0&&<div style={{marginBottom:8}}><div style={{fontSize:10,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.5px',fontWeight:600,marginBottom:3}}>Stichworte</div><div style={{display:'flex',flexWrap:'wrap',gap:4}}>{e.keywords.map(k=><span key={k} className="kw-tag">#{k}</span>)}</div></div>}
+                  {e.notes&&<div><div style={{fontSize:10,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.5px',fontWeight:600,marginBottom:2}}>Notiz</div><div style={{fontSize:12,color:'var(--txt)',wordBreak:'break-word'}}>{e.notes}</div></div>}
+                </>:<div style={{fontSize:12,color:'#aab4c0',fontStyle:'italic'}}>Noch nicht verschlagwortet.</div>}
+              </div>);
+            })()}
             {[['Dateiname',file.name],['Dateityp',mi(file.mimeType,file.name).l],['Groesse',fs(file.size)],['Geaendert',fdt(file.modifiedTime)]].map(([l,v])=>(
               <div key={l} style={{marginBottom:12}}><div style={{fontSize:10,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.6px',fontWeight:600,marginBottom:3}}>{l}</div><div style={{fontSize:13,fontWeight:500,wordBreak:'break-word',color:'var(--txt)'}}>{v||'–'}</div></div>
             ))}
@@ -1090,11 +1393,15 @@ function ExpandMod({file,isDemo,onClose}){
   const isPdf=file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf'));
   const isEml=isEmlFile(file);
   const isImg=file&&file.mimeType&&file.mimeType.startsWith('image/');
-  const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isEml)?file:null,isDemo);
+  const isOffice=isOfficeFile(file);
+  const isMsg=isMsgFile(file);
+  const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isEml&&!isOffice&&!isMsg)?file:null,isDemo);
   const {html:emlHtml,loading:emlLoading}=useEmlPreview(isEml?file:null,isDemo);
+  const {url:offUrl,loading:offLoading,err:offErr}=useOfficePreview(isOffice?file:null,isDemo);
+  const {html:msgHtml,loading:msgLoading,err:msgErr}=useMsgPreview(isMsg?file:null,isDemo);
   const is3d=isCad3d(file.name);
   const printPdf=()=>{if(!pUrl)return;const f=document.createElement('iframe');f.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';f.src=pUrl;document.body.appendChild(f);f.onload=()=>{f.contentWindow.focus();f.contentWindow.print();setTimeout(()=>document.body.removeChild(f),60000);};};
-  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span>{isPdf&&pUrl&&<button className="btn bs" style={{padding:'5px 12px'}} onClick={printPdf}><i className="fas fa-print"/>Drucken</button>}<button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{isPdf?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>PDF wird geladen…</p></div>:pUrl?<PdfViewer blobUrl={pUrl}/>:<div className="ctr"><i className="fas fa-file-pdf" style={{fontSize:64,color:'#CC0000'}}/></div>):isEml?(emlLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>E-Mail wird geladen…</p></div>:emlHtml?<iframe src={emlHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="E-Mail Vorschau" sandbox="allow-same-origin"/>:<div className="ctr"><i className="fas fa-envelope" style={{fontSize:64,color:'#3498DB'}}/><p style={{fontSize:14}}>{file.name}</p></div>):loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?(is3d?<Cad3DViewer url={pUrl} fileName={file.name}/>:isImg?<div style={{flex:1,overflow:'auto',display:'flex',alignItems:'center',justifyContent:'center',padding:20,minHeight:0,background:'#f5f5f5'}}><img src={pUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}} alt={file.name}/></div>:<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>):<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span>{isPdf&&pUrl&&<button className="btn bs" style={{padding:'5px 12px'}} onClick={printPdf}><i className="fas fa-print"/>Drucken</button>}<button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{isPdf?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>PDF wird geladen…</p></div>:pUrl?<PdfViewer blobUrl={pUrl}/>:<div className="ctr"><i className="fas fa-file-pdf" style={{fontSize:64,color:'#CC0000'}}/></div>):isEml?(emlLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>E-Mail wird geladen…</p></div>:emlHtml?<iframe src={emlHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="E-Mail Vorschau" sandbox="allow-same-origin"/>:<div className="ctr"><i className="fas fa-envelope" style={{fontSize:64,color:'#3498DB'}}/><p style={{fontSize:14}}>{file.name}</p></div>):isMsg?(msgLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Outlook-Nachricht wird gelesen…</p></div>:msgHtml?<iframe src={msgHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Outlook-Nachricht" sandbox="allow-same-origin"/>:<div className="ctr"><i className="fas fa-envelope" style={{fontSize:64,color:'#3498DB'}}/><p style={{fontSize:14,textAlign:'center',padding:'0 16px'}}>{msgErr||file.name}</p></div>):isOffice?(offLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Office-Vorschau wird erstellt…</p></div>:offUrl?<PdfViewer blobUrl={offUrl}/>:<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p><p style={{fontSize:12,color:offErr?'var(--red)':'var(--mut)'}}>{offErr?'Office-Vorschau nicht verfügbar':''}</p></div>):loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?(is3d?<Cad3DViewer url={pUrl} fileName={file.name}/>:isImg?<div style={{flex:1,overflow:'auto',display:'flex',alignItems:'center',justifyContent:'center',padding:20,minHeight:0,background:'#f5f5f5'}}><img src={pUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}} alt={file.name}/></div>:<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>):<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
 }
 
 function UpMod({fid,onClose,onDone,isDemo}){
@@ -1229,7 +1536,7 @@ function Login({onIn,onDemo}){
       <div className="setup-card" style={{textAlign:'center',padding:'44px',maxWidth:440}}>
         <div style={{display:'inline-block',marginBottom:18}}><AlyseeLogo size={80} radius={14}/></div>
         <div style={{fontWeight:700,fontSize:26,color:'var(--pri)',marginBottom:4}}>alyDoc</div>
-        <div style={{color:'var(--mut)',marginBottom:32,fontSize:14}}>Dokumentenmanagement · alysee GmbH</div>
+        <div style={{color:'var(--mut)',marginBottom:32,fontSize:14}}>Dokumentenmanagement · alysee GmbH<br/><span style={{fontSize:11,opacity:.7}}>{APP_BUILD}</span></div>
         <button style={{width:'100%',padding:'13px',fontSize:14,justifyContent:'center',marginBottom:10,background:'#0061FF',color:'#fff',border:'none',borderRadius:5,cursor:'pointer',fontWeight:500,display:'flex',alignItems:'center',gap:10}} onClick={onIn}>
           <i className="fab fa-dropbox" style={{fontSize:20}}/>
           Mit Dropbox verbinden
@@ -1244,6 +1551,153 @@ function Login({onIn,onDemo}){
 }
 
 /* ── HAUPT-APP ── */
+/* ── ZIELORDNER-BAUM (kompakt, fuer Ablage) ── */
+function FolderPick({folders,value,onChange,isDemo,onCreated}){
+  const [exp,setExp]=useState({'':true});
+  const [search,setSearch]=useState('');
+  const [creating,setCreating]=useState(false);
+  const toast=useContext(TC);
+  const root={id:'',name:'Dropbox',parentId:null};
+  const all=[root,...(folders||[]).map(f=>({id:f.id,name:f.displayName?f.displayName.split(' / ').pop():f.name,fullName:f.displayName||f.name,parentId:f.parentId||''}))];
+  const childrenOf=p=>all.filter(d=>d.id!==''&&d.parentId===p);
+  const sl=search.toLowerCase().trim();
+  const match=d=>!sl||(d.fullName||d.name).toLowerCase().includes(sl);
+  const hasMatchDesc=d=>match(d)||childrenOf(d.id).some(hasMatchDesc);
+  const mkSub=async()=>{
+    if(isDemo){toast('Im Demo-Modus nicht moeglich','i');return;}
+    const name=window.prompt('Neuer Ordner unter "'+(all.find(d=>d.id===value)?.name||'Dropbox')+'":');
+    if(!name||!name.trim())return;
+    setCreating(true);
+    try{const f=await DR.mkdir(name.trim(),value||'');toast('Ordner erstellt','s');onChange(f.id,name.trim());if(onCreated)await onCreated();setExp(p=>({...p,[value||'']:true}));}
+    catch(e){toast('Fehler beim Erstellen','e');console.error(e);}
+    setCreating(false);
+  };
+  const Row=({d,depth})=>{
+    if(sl&&!hasMatchDesc(d))return null;
+    const kids=childrenOf(d.id);const isExp=d.id===''||exp[d.id]||!!sl;
+    return(<React.Fragment>
+      <div onClick={()=>onChange(d.id,d.fullName||d.name)} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',paddingLeft:10+depth*16,cursor:'pointer',background:value===d.id?'#eaf2fd':'transparent',color:value===d.id?'#0055b8':'var(--txt)',borderBottom:'1px solid #f0f4f8',fontSize:13}}>
+        <span onClick={kids.length?e=>{e.stopPropagation();setExp(p=>({...p,[d.id]:!p[d.id]}));}:undefined} style={{width:14,flexShrink:0,color:'var(--mut)',fontSize:10,cursor:kids.length?'pointer':'default'}}>{kids.length>0&&<i className={`fas fa-chevron-${isExp?'down':'right'}`}/>}</span>
+        <i className={`fas ${d.id===''?'fa-dropbox':'fa-folder'}`} style={{color:d.id===''?'#0061FF':'#F7941D',fontSize:13,flexShrink:0}}/>
+        <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</span>
+        {value===d.id&&<i className="fas fa-check-circle" style={{color:'#0061FF',fontSize:12,flexShrink:0}}/>}
+      </div>
+      {isExp&&kids.map(c=><Row key={c.id} d={c} depth={depth+1}/>)}
+    </React.Fragment>);
+  };
+  return(<div>
+    <div style={{display:'flex',gap:6,marginBottom:6}}>
+      <div style={{position:'relative',flex:1}}><i className="fas fa-search" style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',color:'var(--mut)',fontSize:11}}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ordner suchen…" style={{width:'100%',padding:'6px 8px 6px 28px',border:'.5px solid var(--bdr)',borderRadius:6,fontSize:12,outline:'none'}}/></div>
+      <button className="btn bs" style={{padding:'0 10px',fontSize:11,flexShrink:0}} onClick={mkSub} disabled={creating}><i className={`fas ${creating?'fa-spinner fa-spin':'fa-folder-plus'}`}/> Neu</button>
+    </div>
+    <div style={{border:'.5px solid var(--bdr)',borderRadius:8,maxHeight:200,overflowY:'auto',background:'#fff'}}><Row d={root} depth={0}/></div>
+  </div>);
+}
+
+/* ── VERSCHLAGWORTUNGS-MASKE (ELO Indexmaske) ── */
+function guessDocType(name){
+  const n=(name||'').toLowerCase();
+  if(/(rechnung|invoice|beleg|re[-_ ])/.test(n))return'rechnung';
+  if(/(angebot|offer|quote)/.test(n))return'angebot';
+  if(/(liefersch|lieferant|delivery)/.test(n))return'lieferant';
+  if(/(vertrag|contract|agb)/.test(n))return'vertrag';
+  if(/(projekt|project)/.test(n))return'projekt';
+  if(/\.(eml|msg)$/.test(n)||/mail/.test(n))return'korrespondenz';
+  return'allgemein';
+}
+function IndexMod({file,mode,isDemo,folders,onClose,onDone,onReloadFolders}){
+  const existing=MD.get(mdKey(file));
+  const [docType,setDocType]=useState(existing?.docType||guessDocType(file.name));
+  const [fields,setFields]=useState(existing?.fields||{});
+  const [keywords,setKeywords]=useState(existing?.keywords||[]);
+  const [notes,setNotes]=useState(existing?.notes||'');
+  const [kwInput,setKwInput]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [target,setTarget]=useState(()=>dtOf(existing?.docType||guessDocType(file.name)).target||'');
+  const [targetName,setTargetName]=useState('');
+  const [targetTouched,setTargetTouched]=useState(false);
+  const toast=useContext(TC);
+  const dt=dtOf(docType);
+
+  // Bei Typwechsel Zielordner-Vorschlag aktualisieren (sofern nicht manuell gewaehlt)
+  const pickType=k=>{setDocType(k);if(mode==='file'&&!targetTouched){const t=dtOf(k).target||'';setTarget(t);setTargetName('');}};
+  const setField=(k,v)=>setFields(p=>({...p,[k]:v}));
+  const addKw=raw=>{const parts=raw.split(',').map(s=>s.trim().replace(/^#/,'')).filter(Boolean);if(parts.length){setKeywords(p=>[...new Set([...p,...parts])]);}setKwInput('');};
+  const curParent=()=>{const p=file.path_lower||file.id||'';return p.substring(0,p.lastIndexOf('/'))||'';};
+
+  const save=async()=>{
+    setBusy(true);
+    try{
+      let f=file;
+      if(mode==='file'&&!isDemo&&target!=null&&target!==curParent()){
+        f=await DR.move(file.id,target);
+      }
+      const entry={docType,fields,keywords,notes,name:f.name,path_display:f.path_display||file.path_display,path_lower:f.path_lower||file.path_lower};
+      if(isDemo){MD.demo=true;if(!_mdCache)_mdCache={version:1,docs:{}};_mdCache.docs[mdKey(f)]={...entry,updatedAt:new Date().toISOString()};}
+      else{await MD.set(mdKey(f),entry);}
+      toast(mode==='file'?`Abgelegt in "${targetName||dt.target||'Ziel'}" & verschlagwortet`:'Verschlagwortung gespeichert','s');
+      onDone&&onDone();
+    }catch(e){console.error(e);toast('Fehler beim Speichern','e');}
+    setBusy(false);onClose();
+  };
+
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}>
+    <div className="modal" style={{width:560,maxHeight:'92vh',overflowY:'auto'}}>
+      <h2><i className="fas fa-tags" style={{color:'#0061FF'}}/>{mode==='file'?'Verschlagworten & Ablegen':'Verschlagwortung'}</h2>
+      <div style={{display:'flex',alignItems:'center',gap:10,padding:'9px 13px',background:'#F4F7FB',borderRadius:7,marginBottom:14,border:'1px solid var(--bdr)'}}>
+        <i className={`fas ${mi(file.mimeType,file.name).i}`} style={{color:mi(file.mimeType,file.name).c,fontSize:18,flexShrink:0}}/>
+        <span style={{fontSize:13,fontWeight:500,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',flex:1}}>{file.name}</span>
+      </div>
+
+      <label style={{display:'block',fontSize:11,fontWeight:700,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:7}}>Dokumenttyp</label>
+      <div className="dt-picker">
+        {DOCTYPES.map(t=>(
+          <div key={t.key} className={`dt-choice ${docType===t.key?'sel':''}`} onClick={()=>pickType(t.key)}>
+            <i className={`fas ${t.icon}`} style={{color:t.color}}/><span>{t.label}</span>
+          </div>
+        ))}
+      </div>
+
+      <label style={{display:'block',fontSize:11,fontWeight:700,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.4px',marginBottom:7}}>Indexfelder</label>
+      <div className="mask-grid" style={{marginBottom:14}}>
+        {dt.fields.map(f=>(
+          <div key={f.key} className={`fg ${dt.fields.length%2!==0&&f===dt.fields[dt.fields.length-1]?'full':''}`}>
+            <label>{f.label}</label>
+            <input className="fc" type={f.type==='number'?'number':f.type==='date'?'date':'text'} step={f.type==='number'?'0.01':undefined}
+              value={fields[f.key]||''} onChange={e=>setField(f.key,e.target.value)} placeholder={f.label}/>
+          </div>
+        ))}
+      </div>
+
+      <div className="fg">
+        <label>Stichworte</label>
+        <div className="kw-box" onClick={e=>e.currentTarget.querySelector('input')?.focus()}>
+          {keywords.map(k=>(<span key={k} className="kw-tag">#{k}<i className="fas fa-times" onClick={()=>setKeywords(p=>p.filter(x=>x!==k))}/></span>))}
+          <input value={kwInput} onChange={e=>setKwInput(e.target.value)} placeholder={keywords.length?'':'z.B. küche, q2, eilt'}
+            onKeyDown={e=>{if(e.key==='Enter'||e.key===','){e.preventDefault();if(kwInput.trim())addKw(kwInput);}else if(e.key==='Backspace'&&!kwInput&&keywords.length){setKeywords(p=>p.slice(0,-1));}}}
+            onBlur={()=>{if(kwInput.trim())addKw(kwInput);}}/>
+        </div>
+      </div>
+      <div className="fg"><label>Notiz</label><textarea className="fc" rows="2" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Freitext / Bemerkung…"/></div>
+
+      {mode==='file'&&<div className="fg">
+        <label>Ablegen in</label>
+        <FolderPick folders={folders} value={target} isDemo={isDemo}
+          onChange={(id,name)=>{setTarget(id);setTargetName(name);setTargetTouched(true);}}
+          onCreated={onReloadFolders}/>
+        <div style={{marginTop:6,fontSize:12,color:'#1c8c3e',display:'flex',alignItems:'center',gap:6}}>
+          <i className="fas fa-arrow-right"/><span>Ziel: <strong>{targetName||dt.target||'(Dropbox-Wurzel)'}</strong></span>
+        </div>
+      </div>}
+
+      <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:10}}>
+        <button className="btn bs" onClick={onClose} disabled={busy}>Abbrechen</button>
+        <button className="btn bp" onClick={save} disabled={busy}>{busy?<><i className="fas fa-spinner fa-spin"/>Speichere…</>:<><i className="fas fa-tags"/>{mode==='file'?'Ablegen':'Speichern'}</>}</button>
+      </div>
+    </div>
+  </div>);
+}
+
 function Main({onOut,isDemo}){
   const [nav,setNav]=useState('archive');
   const [cur,setCur]=useState({id:'',name:'Dropbox'});
@@ -1267,6 +1721,14 @@ function Main({onOut,isDemo}){
   const [treeResizing,setTreeResizing]=useState(false);
   const [moveFile,setMoveFile]=useState(null);
   const [allFolders,setAllFolders]=useState([]);
+  // ── ELO: Ribbon, Verschlagwortung, Posteingang, Feldsuche ──
+  const [ribTab,setRibTab]=useState('start');
+  const [indexFile,setIndexFile]=useState(null);   // {file, mode:'index'|'file'}
+  const [mdMap,setMdMap]=useState({});              // Metadaten-Map fuer Listenspalten
+  const [inbox,setInbox]=useState([]);              // Posteingang-Dateien
+  const [inboxLoading,setInboxLoading]=useState(false);
+  const [inboxExists,setInboxExists]=useState(true);
+  const [sf,setSf]=useState({docType:'',korrespondent:''}); // strukturierte Suchfilter
   const [treeCache,setTreeCache]=useState({});  // {parentId: [folder, ...]} – lazy loaded
   const [treeLoading,setTreeLoading]=useState({});  // {parentId: true} – wird gerade geladen
   // Drag & Drop state
@@ -1291,8 +1753,30 @@ function Main({onOut,isDemo}){
     setTreeNewFolder(null);
   };
 
+  /* ── Metadaten / Verschlagwortung ── */
+  const refreshMd=()=>setMdMap({...MD.all()});
+  /* ── Posteingang laden ── */
+  const loadInbox=useCallback(async()=>{
+    if(isDemo){setInbox(DEMO_INBOX);setInboxExists(true);return;}
+    setInboxLoading(true);
+    try{const items=await DR.ls(POSTEINGANG);setInbox(items.filter(f=>f.mimeType!=='application/vnd.dropbox.folder'));setInboxExists(true);}
+    catch(e){setInbox([]);setInboxExists(false);} // Ordner existiert vermutlich noch nicht
+    setInboxLoading(false);
+  },[isDemo]);
+  const ensureInboxFolder=async()=>{
+    if(isDemo)return;
+    try{await DR.mkdir('Posteingang','');toast('Posteingang angelegt','s');setInboxExists(true);loadInbox();rf();}
+    catch(e){toast('Fehler beim Anlegen','e');console.error(e);}
+  };
+  /* ── Verschlagwortungs-Maske oeffnen ── */
+  const openIndex=(file,mode)=>{
+    setIndexFile({file,mode});
+    if(mode==='file'&&!isDemo&&allFolders.length===0){DR.allFolders().then(setAllFolders).catch(e=>console.error(e));}
+  };
+  const onIndexDone=()=>{refreshMd();loadInbox();rf();};
+
   useEffect(()=>{
-    if(isDemo){setFiles(DF);setTasks(DT);}
+    if(isDemo){setFiles(DF);setTasks(DT);MD.load(true).then(m=>setMdMap({...m.docs}));setInbox(DEMO_INBOX);}
     else{
       // Race-Fix: erst DR.me() (setzt Team-Root-Namespace _dbxRootNs) awaiten,
       // damit Folder-Calls den korrekten Path-Root-Header bekommen.
@@ -1301,6 +1785,8 @@ function Main({onOut,isDemo}){
         try{const u=await DR.me();if(u)setUser(u);}catch(e){console.warn('me err:',e);}
         load('');
         DR.loadWF().then(d=>setTasks(d.tasks||[]));
+        MD.load(false).then(()=>refreshMd()).catch(e=>console.warn('MD load err:',e));
+        loadInbox();
         // Strukturbaum: nur Root-Ebene sofort laden (Rest lazy)
         DR.listSubfolders('').then(f=>{setTreeCache(p=>({...p,'':f}));f.forEach(k=>loadTreeChildren(k.id,false));}).catch(e=>console.error('tree root FEHLER:',e));
       })();
@@ -1342,7 +1828,24 @@ function Main({onOut,isDemo}){
   }
 };
   const dbl=f=>{if(f.mimeType==='application/vnd.dropbox.folder')go(f);else{setSel(f);setBig(true);}};
-  const search=async qry=>{if(!qry.trim()){setRes(null);return;}setSrc(true);try{if(isDemo)setRes(DF.filter(f=>f.name.toLowerCase().includes(qry.toLowerCase())));else setRes(await DR.find(qry));}catch{toast('Suche fehlgeschlagen','e');}setSrc(false);};
+  // Metadaten-Treffer in datei-aehnliche Objekte fuer die Liste umwandeln
+  const synthFromMd=e=>({id:e.path_lower||('md:'+e.key),dbxId:e.key,name:e.name||e.key,mimeType:_mimeFromName(e.name||''),path_lower:e.path_lower,path_display:e.path_display,modifiedTime:e.updatedAt,size:0,_md:true});
+  const doSearch=async(qry,filters)=>{
+    const f=filters||{docType:'',korrespondent:''};
+    const hasCrit=(qry&&qry.trim())||f.docType||f.korrespondent;
+    if(!hasCrit){setRes(null);return;}
+    setSrc(true);
+    try{
+      const mdHits=MD.search(qry,{docType:f.docType||undefined,korrespondent:f.korrespondent||undefined}).map(synthFromMd);
+      let fileHits=[];
+      if(qry&&qry.trim()){fileHits=isDemo?DF.filter(x=>x.name.toLowerCase().includes(qry.toLowerCase())):await DR.find(qry);}
+      const seen=new Set(mdHits.map(x=>x.path_lower||x.id));
+      setRes([...mdHits,...fileHits.filter(x=>!seen.has(x.path_lower||x.id))]);
+    }catch(e){console.error(e);toast('Suche fehlgeschlagen','e');}
+    setSrc(false);
+  };
+  const search=qry=>doSearch(qry,null);
+  const runFieldSearch=()=>{setNav('archive');doSearch(q,sf);};
   const swf=t=>{setTasks(t);if(!isDemo)DR.saveWF({tasks:t});};
   const rf=()=>{
     if(isDemo){setFiles(DF);return;}
@@ -1449,7 +1952,9 @@ function Main({onOut,isDemo}){
 
   const disp=res!==null?res:files;
   const pend=tasks.filter(t=>!t.done).length;
-  const NI=[{id:'archive',ic:'fa-archive',l:'Archiv'},{id:'workflow',ic:'fa-tasks',l:'Aufgaben',b:pend||null},{id:'inbox',ic:'fa-inbox',l:'E-Mails'},{id:'settings',ic:'fa-gear',l:'Einstellungen'}];
+  const inboxCount=isDemo?DEMO_INBOX.length:inbox.length;
+  const selFile=sel&&sel.mimeType!=='application/vnd.dropbox.folder'?sel:null; // Datei (kein Ordner)
+  const NI=[{id:'archive',ic:'fa-folder-tree',l:'Archiv'},{id:'inbox',ic:'fa-inbox',l:'Posteingang',b:inboxCount||null},{id:'workflow',ic:'fa-list-check',l:'Aufgaben',b:pend||null},{id:'settings',ic:'fa-gear',l:'Einstellungen'}];
   // Rekursiver Ordnerbaum aus treeCache (lazy loaded)
   const treeChildrenOf=parentId=>treeCache[parentId]||[];
   const folders4tree=isDemo?DTREE:[{id:'',name:'Dropbox',icon:'fa-dropbox',color:'#0061FF'}];
@@ -1457,50 +1962,117 @@ function Main({onOut,isDemo}){
 
   return(<div style={{height:'100%',display:'flex',flexDirection:'column'}}>
 
-    {/* TOP BAR */}
-    <div className="top-bar">
-      <div style={{display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
-        <AlyseeLogo size={36} radius={6}/>
-        <div><div style={{fontWeight:700,fontSize:15,lineHeight:1}}>alyDoc</div><div style={{fontSize:9,color:'rgba(255,255,255,.5)',letterSpacing:'.5px'}}>DOKUMENTENMANAGEMENT</div></div>
-      </div>
-      <div className="srch">
-        <i className="fas fa-search" style={{color:'rgba(255,255,255,.5)',fontSize:13}}/>
-        <input type="text" placeholder="Suchen…" value={q} onChange={e=>{setQ(e.target.value);if(e.target.value.length>2)search(e.target.value);else if(!e.target.value)setRes(null);}} onKeyDown={e=>e.key==='Enter'&&search(q)}/>
-        {src&&<i className="fas fa-spinner fa-spin" style={{color:'rgba(255,255,255,.5)'}}/>}
-        {q&&!src&&<i className="fas fa-times" style={{color:'rgba(255,255,255,.5)',cursor:'pointer'}} onClick={()=>{setQ('');setRes(null);}}/>}
+    {/* ELO BRAND-STRIP */}
+    <div className="elo-brand">
+      <AlyseeLogo size={26} radius={4}/>
+      <div><div className="eb-title">alyDoc <span style={{fontSize:9,fontWeight:600,opacity:.6,letterSpacing:0}}>{APP_BUILD}</span></div><div className="eb-sub">Dokumentenmanagement</div></div>
+      <div className="elo-qsrch">
+        <i className="fas fa-search"/>
+        <input type="text" placeholder="Schnellsuche – Name, Stichwort, Korrespondent…" value={q} onChange={e=>{setQ(e.target.value);if(e.target.value.length>2)search(e.target.value);else if(!e.target.value)setRes(null);}} onKeyDown={e=>e.key==='Enter'&&search(q)}/>
+        {src&&<i className="fas fa-spinner fa-spin"/>}
+        {q&&!src&&<i className="fas fa-times" style={{cursor:'pointer'}} onClick={()=>{setQ('');setRes(null);}}/>}
       </div>
       <div style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:10,flexShrink:0}}>
-        {isDemo&&<span style={{background:'var(--org)',color:'#fff',padding:'3px 10px',borderRadius:12,fontSize:11,fontWeight:700}}>DEMO</span>}
-        <div style={{display:'flex',alignItems:'center',gap:8}}>
-          <div style={{width:32,height:32,borderRadius:'50%',background:'var(--blue)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:14,fontWeight:700}}>{(user?.name||'S').charAt(0)}</div>
-          <span className='hide-mobile' style={{fontSize:13}}>{user?.name||'Stefan Hoffmann'}</span>
+        {isDemo&&<span style={{background:'var(--org)',color:'#fff',padding:'2px 9px',borderRadius:11,fontSize:10,fontWeight:700}}>DEMO</span>}
+        <div style={{display:'flex',alignItems:'center',gap:7}}>
+          <div style={{width:24,height:24,borderRadius:'50%',background:'#3f6694',display:'flex',alignItems:'center',justifyContent:'center',fontSize:12,fontWeight:700}}>{(user?.name||'S').charAt(0)}</div>
+          <span className='hide-mobile' style={{fontSize:12}}>{user?.name||'Stefan Hoffmann'}</span>
         </div>
-        {!isDemo&&<button onClick={onOut} title="Abmelden" style={{background:'rgba(0,122,255,.08)',border:'1px solid var(--blue)',color:'var(--blue)',padding:'5px 10px',borderRadius:5,cursor:'pointer',fontSize:13}}><i className="fas fa-right-from-bracket"/></button>}
+        {!isDemo&&<button className="eb-userbtn" onClick={onOut} title="Abmelden"><i className="fas fa-right-from-bracket"/></button>}
       </div>
     </div>
 
-    {/* TOOLBAR */}
-    <div className="toolbar">
-      <AlyseeLogo size={28} radius={4}/>
-      <div className="tsep"/>
-      <button className="tbtn" onClick={()=>setModal('up')}><i className="fas fa-upload"/><span>Hochladen</span></button>
-      <button className="tbtn" onClick={()=>setModal('mk')}><i className="fas fa-folder-plus"/><span>Neuer Ordner</span></button>
-      <div className="tsep"/>
-      <button className="tbtn" onClick={rf}><i className="fas fa-rotate-right"/><span>Aktualisieren</span></button>
-      {multiSel.length>0?<><div className="tsep"/>
-        <span style={{fontSize:12,color:'var(--blue)',fontWeight:600,padding:'0 6px'}}>{multiSel.length} ausgewaehlt</span>
-        <button className="tbtn grn" onClick={()=>{setMoveFile(multiSel);if(!isDemo)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));}}><i className="fas fa-share-square"/><span>Verschieben</span></button>
-        {!isDemo&&<button className="tbtn red" onClick={async()=>{if(window.confirm(multiSel.length+' Dateien loeschen?')){try{for(const f of multiSel)await DR.del(f.path_lower||f.id);toast(multiSel.length+' Dateien geloescht','i');rf();setSel(null);setMultiSel([]);}catch{toast('Fehler','e');}}}}><i className="fas fa-trash"/><span>Loeschen</span></button>}
-        <button className="tbtn" onClick={()=>setMultiSel([])}><i className="fas fa-times"/><span>Aufheben</span></button>
-      </>:sel&&<><div className="tsep"/>
-        <button className="tbtn" onClick={()=>setBig(true)}><i className="fas fa-expand-alt"/><span>Gross</span></button>
-        <button className="tbtn" onClick={()=>setModal('ren')}><i className="fas fa-pencil"/><span>Umbenennen</span></button>
-        <button className="tbtn grn" onClick={()=>doMove(sel)}><i className="fas fa-share-square"/><span>Verschieben</span></button>
-        {!sel.mimeType.includes('folder')&&<button className="tbtn" onClick={()=>setModal('mail')}><i className="fas fa-envelope"/><span>Senden</span></button>}
-        {!isDemo&&<button className="tbtn red" onClick={async()=>{if(window.confirm(`"${sel.name}" loeschen?`)){try{await DR.del(sel.path_lower||sel.id);toast('Geloescht','i');rf();setSel(null);}catch{toast('Fehler','e');}}}}>
-          <i className="fas fa-trash"/><span>Loeschen</span>
-        </button>}
-      </>}
+    {/* ELO RIBBON */}
+    <div className="ribbon">
+      <div className="rib-tabs">
+        {[['start','Start'],['ablage','Ablage'],['suche','Suche'],['ansicht','Ansicht']].map(([k,l])=>(
+          <button key={k} className={`rib-tab ${ribTab===k?'active':''}`} onClick={()=>setRibTab(k)}>{l}</button>
+        ))}
+      </div>
+      <div className="rib-body">
+        {ribTab==='start'&&<>
+          <div className="rib-group">
+            <div className="rib-group-inner">
+              <button className="rib-btn accent" disabled={!selFile} onClick={()=>openIndex(sel,'index')}><i className="fas fa-tags"/>Ver-<br/>schlagworten</button>
+              <button className="rib-btn" disabled={!sel} onClick={()=>setBig(true)}><i className="fas fa-magnifying-glass-plus"/>Vorschau</button>
+              <button className="rib-btn" disabled={!selFile} onClick={()=>setModal('mail')}><i className="fas fa-paper-plane"/>Senden</button>
+            </div>
+            <div className="rib-group-cap">Dokument</div>
+          </div>
+          <div className="rib-group">
+            <div className="rib-group-inner">
+              {multiSel.length>0?<>
+                <div className="rib-col">
+                  <button className="rib-sm accent" onClick={()=>{setMoveFile(multiSel);if(!isDemo)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));}}><i className="fas fa-share-square"/>{multiSel.length} verschieben</button>
+                  {!isDemo&&<button className="rib-sm danger" onClick={async()=>{if(window.confirm(multiSel.length+' Dateien loeschen?')){try{for(const f of multiSel)await DR.del(f.path_lower||f.id);toast(multiSel.length+' Dateien geloescht','i');rf();setSel(null);setMultiSel([]);}catch{toast('Fehler','e');}}}}><i className="fas fa-trash"/>Loeschen</button>}
+                  <button className="rib-sm" onClick={()=>setMultiSel([])}><i className="fas fa-times"/>Auswahl aufheben</button>
+                </div>
+              </>:<>
+                <div className="rib-col">
+                  <button className="rib-sm" disabled={!sel} onClick={()=>setModal('ren')}><i className="fas fa-pen"/>Umbenennen</button>
+                  <button className="rib-sm accent" disabled={!sel} onClick={()=>doMove(sel)}><i className="fas fa-share-square"/>Verschieben</button>
+                  {!isDemo&&<button className="rib-sm danger" disabled={!sel} onClick={async()=>{if(window.confirm(`"${sel.name}" loeschen?`)){try{await DR.del(sel.path_lower||sel.id);toast('Geloescht','i');rf();setSel(null);}catch{toast('Fehler','e');}}}}><i className="fas fa-trash"/>Loeschen</button>}
+                </div>
+              </>}
+            </div>
+            <div className="rib-group-cap">Bearbeiten</div>
+          </div>
+        </>}
+        {ribTab==='ablage'&&<>
+          <div className="rib-group">
+            <div className="rib-group-inner">
+              <button className="rib-btn" onClick={()=>setModal('up')}><i className="fas fa-upload"/>Hochladen</button>
+              <button className="rib-btn" onClick={()=>setModal('mk')}><i className="fas fa-folder-plus"/>Neuer<br/>Ordner</button>
+            </div>
+            <div className="rib-group-cap">Neu</div>
+          </div>
+          <div className="rib-group">
+            <div className="rib-group-inner">
+              <button className="rib-btn" onClick={()=>setNav('inbox')}><i className="fas fa-inbox"/>Posteingang{inboxCount?` (${inboxCount})`:''}</button>
+              <button className="rib-btn accent" disabled={!selFile} onClick={()=>openIndex(sel,'file')}><i className="fas fa-folder-tree"/>Ver-<br/>schlagw. &amp; Ablegen</button>
+            </div>
+            <div className="rib-group-cap">Posteingang / Ablage</div>
+          </div>
+        </>}
+        {ribTab==='suche'&&<>
+          <div className="rib-group">
+            <div className="rib-group-inner" style={{alignItems:'center',gap:8,paddingTop:4}}>
+              <div className="rib-field"><label>Volltext / Stichwort</label>
+                <div className="rib-srch"><i className="fas fa-search" style={{color:'#7b8a9c',fontSize:12}}/><input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==='Enter'&&runFieldSearch()} placeholder="Suchbegriff…" style={{width:150}}/></div>
+              </div>
+              <div className="rib-field"><label>Dokumenttyp</label>
+                <select value={sf.docType} onChange={e=>setSf(p=>({...p,docType:e.target.value}))}><option value="">– alle –</option>{DOCTYPES.map(t=><option key={t.key} value={t.key}>{t.label}</option>)}</select>
+              </div>
+              <div className="rib-field"><label>Korrespondent</label>
+                <input value={sf.korrespondent} onChange={e=>setSf(p=>({...p,korrespondent:e.target.value}))} onKeyDown={e=>e.key==='Enter'&&runFieldSearch()} placeholder="Lieferant / Kunde"/>
+              </div>
+            </div>
+            <div className="rib-group-cap">Verschlagwortungs-Suche</div>
+          </div>
+          <div className="rib-group">
+            <div className="rib-group-inner">
+              <button className="rib-btn" onClick={runFieldSearch}><i className="fas fa-magnifying-glass"/>Suchen</button>
+              <button className="rib-btn" onClick={()=>{setSf({docType:'',korrespondent:''});setQ('');setRes(null);}}><i className="fas fa-eraser"/>Zuruecksetzen</button>
+            </div>
+            <div className="rib-group-cap">Aktion</div>
+          </div>
+        </>}
+        {ribTab==='ansicht'&&<>
+          <div className="rib-group">
+            <div className="rib-group-inner">
+              <button className="rib-btn" onClick={()=>{rf();loadInbox();}}><i className="fas fa-rotate-right"/>Aktualisieren</button>
+            </div>
+            <div className="rib-group-cap">Daten</div>
+          </div>
+          <div className="rib-group">
+            <div className="rib-group-inner">
+              <button className="rib-btn" onClick={()=>setPrevW(w=>Math.min(window.innerWidth*0.7,w+80))}><i className="fas fa-left-right"/>Vorschau<br/>breiter</button>
+              <button className="rib-btn" onClick={()=>setPrevW(w=>Math.max(150,w-80))}><i className="fas fa-right-left"/>Vorschau<br/>schmaler</button>
+            </div>
+            <div className="rib-group-cap">Layout</div>
+          </div>
+        </>}
+      </div>
     </div>
 
     {/* DRAG HINWEIS-LEISTE */}
@@ -1525,21 +2097,57 @@ function Main({onOut,isDemo}){
         onAdd={fm=>{const t={...fm,id:'t'+Date.now(),done:false};swf([...tasks,t]);}}
         onTog={id=>swf(tasks.map(t=>t.id===id?{...t,done:!t.done}:t))}
         onDel={id=>swf(tasks.filter(t=>t.id!==id))}/>)
-      :nav==='settings'?(<div style={{flex:1,display:'flex',alignItems:'center',justifyContent:'center',flexDirection:'column',gap:12,color:'var(--mut)'}}>
-        <i className="fas fa-gear" style={{fontSize:48,color:'#D0D9E4'}}/>
-        <p style={{fontSize:14}}>Einstellungen</p>
-        <p style={{fontSize:12}}>Version 1.3 · alysee GmbH</p>
-      </div>)
-      :nav==='inbox'?(<div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',minHeight:0}}>
-        <div style={{padding:'11px 16px',borderBottom:'1px solid var(--bdr)',background:'#fff',fontWeight:700,color:'var(--pri)',fontSize:14,flexShrink:0}}><i className="fas fa-inbox" style={{marginRight:8,color:'var(--blue)'}}/>E-Mail Posteingang</div>
-        <div style={{flex:1,overflow:'auto',background:'var(--bg)'}}>
-          {DF.filter(f=>f.mimeType==='message/rfc822').map(m=>(
-            <div key={m.id} style={{background:'#fff',margin:'8px 12px',borderRadius:8,border:'1px solid var(--bdr)',padding:'14px 16px',cursor:'pointer'}} onClick={()=>{setSel(m);setNav('archive');}}>
-              <div style={{display:'flex',justifyContent:'space-between',marginBottom:4}}><span style={{fontWeight:600,fontSize:13}}>{m.name}</span><span style={{fontSize:12,color:'var(--mut)'}}>{fd(m.modifiedTime)}</span></div>
-              <span className="badge b-grn">E-Mail</span>
+      :nav==='settings'?(<div style={{flex:1,overflow:'auto',background:'#f4f7fa',padding:'18px 20px'}}>
+        <div style={{maxWidth:560,margin:'0 auto'}}>
+          <h3 style={{fontSize:15,fontWeight:700,color:'#1f3a55',marginBottom:14}}><i className="fas fa-gear" style={{marginRight:8,color:'#3f6694'}}/>Einstellungen</h3>
+          <div style={{background:'#fff',border:'1px solid var(--bdr)',borderRadius:10,padding:'4px 16px',marginBottom:14}}>
+            {[['Posteingang-Ordner',POSTEINGANG],['Verschlagwortete Dokumente',String(Object.keys(mdMap).length)],['Index-Datei',MD_FILE],['Version','2.0']].map(([k,v])=>(
+              <div key={k} style={{display:'flex',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid #f0f4f8',fontSize:13}}><span style={{color:'var(--mut)'}}>{k}</span><span style={{fontWeight:600,color:'var(--txt)'}}>{v}</span></div>
+            ))}
+          </div>
+          <div style={{background:'#fff',border:'1px solid var(--bdr)',borderRadius:10,padding:'14px 16px'}}>
+            <div style={{fontSize:11,color:'var(--mut)',textTransform:'uppercase',letterSpacing:'.5px',fontWeight:700,marginBottom:10}}>Dokumenttypen &amp; Masken</div>
+            <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+              {DOCTYPES.map(t=>(<span key={t.key} className="dt-pill" style={{background:t.color+'22',color:t.color,fontSize:12,padding:'4px 10px'}}><i className={`fas ${t.icon}`}/>{t.label} · {t.fields.length} Felder</span>))}
             </div>
-          ))}
+          </div>
+          <p style={{fontSize:11,color:'var(--mut)',textAlign:'center',marginTop:18}}>alyDoc · alysee GmbH · Dropbox-Backend</p>
         </div>
+      </div>)
+      :nav==='inbox'?(<div className="pe-wrap">
+        <div className="pe-head">
+          <span style={{fontWeight:700,color:'#1f3a55',fontSize:14}}><i className="fas fa-inbox" style={{marginRight:8,color:'#3f6694'}}/>Posteingang{inboxCount?` · ${inboxCount} zu klären`:''}</span>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            <button className="btn bs" style={{padding:'5px 12px',fontSize:12}} onClick={loadInbox} disabled={inboxLoading}><i className={`fas ${inboxLoading?'fa-spinner fa-spin':'fa-rotate-right'}`}/> Aktualisieren</button>
+            <button className="btn bs" style={{padding:'5px 12px',fontSize:12}} onClick={()=>setModal('up')}><i className="fas fa-upload"/> Hochladen</button>
+          </div>
+        </div>
+        {(!inboxExists&&!isDemo)?(
+          <div className="empty-ctr">
+            <i className="fas fa-inbox" style={{fontSize:48,color:'#cdd6e0'}}/>
+            <p style={{fontSize:14,fontWeight:600,color:'#1f3a55'}}>Kein Posteingang-Ordner</p>
+            <p style={{fontSize:12,maxWidth:340,lineHeight:1.5}}>Lege einen <code>/Posteingang</code>-Ordner an. Dokumente, die dort landen (Scans, eingehende Mails aus dem Outlook-Add-in), erscheinen hier zum Verschlagworten &amp; Ablegen.</p>
+            <button className="btn bp" onClick={ensureInboxFolder}><i className="fas fa-folder-plus"/>Posteingang anlegen</button>
+          </div>
+        ):inboxLoading?(
+          <div className="empty-ctr"><div className="spin"/><p style={{fontSize:13}}>Lade Posteingang…</p></div>
+        ):inbox.length===0?(
+          <div className="empty-ctr"><i className="fas fa-circle-check" style={{fontSize:48,color:'#34C759'}}/><p style={{fontSize:14,fontWeight:600,color:'#1c8c3e'}}>Posteingang leer</p><p style={{fontSize:12}}>Alle Dokumente sind verschlagwortet und abgelegt.</p></div>
+        ):(
+          <div className="pe-list">
+            {inbox.map(m=>{const {i,c,l}=mi(m.mimeType,m.name);const e=MD.get(mdKey(m));return(
+              <div key={m.id} className="pe-card">
+                <i className={`fas ${i}`} style={{color:c,fontSize:22,flexShrink:0,width:26,textAlign:'center'}}/>
+                <div className="pe-meta">
+                  <div className="pe-name">{m.name}</div>
+                  <div className="pe-sub">{l} · {fs(m.size)} · {fd(m.modifiedTime)}{e&&<> · <span className="dt-pill" style={{background:dtOf(e.docType).color+'22',color:dtOf(e.docType).color}}><i className={`fas ${dtOf(e.docType).icon}`}/>{dtOf(e.docType).label}</span></>}</div>
+                </div>
+                <button className="btn bs" style={{padding:'6px 11px',fontSize:12}} title="Vorschau" onClick={()=>{setSel(m);setBig(true);}}><i className="fas fa-eye"/></button>
+                <button className="btn bp" style={{padding:'6px 13px',fontSize:12,whiteSpace:'nowrap'}} onClick={()=>openIndex(m,'file')}><i className="fas fa-tags"/> Verschlagworten &amp; Ablegen</button>
+              </div>
+            );})}
+          </div>
+        )}
       </div>)
       :(<>
         {/* STRUKTURBAUM */}
@@ -1592,19 +2200,22 @@ function Main({onOut,isDemo}){
 
         <div className={`resizer ${treeResizing?'drag':''}`} onMouseDown={startResizeTree} onTouchStart={startResizeTree}/>
         {/* DATEILISTE */}
-        <div className="doc-panel">
+        <div className="doc-panel elo-list">
           <div className="breadcrumb">
             {res!==null?<><i className="fas fa-search" style={{marginRight:4}}/><strong>Suche:</strong>&nbsp;"{q}"&nbsp;<span style={{color:'var(--mut)'}}>({res.length} Treffer)</span></> :(
               path.map((f,i)=><React.Fragment key={f.id}>{i>0&&<i className="fas fa-chevron-right" style={{fontSize:9,color:'var(--mut)'}}/>}<span className={`bc ${i===path.length-1?'cur':''}`} onClick={()=>i<path.length-1&&go(f)}>{f.name}</span></React.Fragment>)
             )}
           </div>
-          <div className="doc-list-head"><div className="doc-hrow"><span/><span>Name</span><span>Geaendert am</span><span>Typ</span><span style={{textAlign:'right'}}>Groesse</span></div></div>
+          <div className="doc-list-head"><div className="doc-hrow"><span/><span>Name</span><span>Typ</span><span>Korrespondent</span><span>Datum</span><span style={{textAlign:'right'}}>Größe</span></div></div>
           <div className="doc-list">
             {loading?<div className="ctr"><div className="spin"/><p>Lade…</p></div>
             :disp.length===0?<div className="ctr"><i className="fas fa-folder-open" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13}}>{res!==null?'Keine Treffer':'Ordner leer'}</p></div>
             :disp.map(f=>{
               const {i,c,l}=mi(f.mimeType,f.name);
               const isFd=f.mimeType==='application/vnd.dropbox.folder';
+              const md=isFd?null:MD.get(mdKey(f));         // Verschlagwortung
+              const dty=md?dtOf(md.docType):null;
+              const korr=(md&&md.fields&&md.fields.korrespondent)||'';
               const isDragOver=dragOverId===f.id&&isFd;
               const openCtx=(f,e)=>{setSel(f);if(isMobile||isTouch){setShowActionSheet(true);}else{setCtx({x:Math.min(e.clientX,window.innerWidth-195),y:Math.min(e.clientY,window.innerHeight-220),f});}};
               return(<div key={f.id}
@@ -1620,18 +2231,19 @@ function Main({onOut,isDemo}){
                 onTouchEnd={isTouch?()=>{if(longPressRef.current&&longPressRef.current!=='fired')clearTimeout(longPressRef.current);longPressRef.current=null;}:undefined}
                 onTouchMove={isTouch?()=>{if(longPressRef.current&&longPressRef.current!=='fired')clearTimeout(longPressRef.current);longPressRef.current=null;}:undefined}
               >
-                <i className={`fas ${i}`} style={{color:c,fontSize:18,textAlign:'center'}}/>
+                <i className={`fas ${i}`} style={{color:c,fontSize:15,textAlign:'center'}}/>
                 <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',fontWeight:isFd?600:400}}>{f.name}</span>
+                <span className="col-typ">{isFd?<span className="dt-none">Ordner</span>:dty?<span className="dt-pill" style={{background:dty.color+'22',color:dty.color}}><i className={`fas ${dty.icon}`}/>{dty.label}</span>:<span className="dt-none">nicht verschl.</span>}</span>
+                <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:korr?'var(--txt)':'#aab4c0',fontSize:12}}>{korr||'–'}</span>
                 <span style={{color:'var(--mut)',fontSize:12}}>{fd(f.modifiedTime)}</span>
-                <span><span className={`badge ${isFd?'b-org':'b-blue'}`}>{l}</span></span>
-                <span style={{textAlign:'right',color:'var(--mut)',fontSize:12}}>{isFd?'–':fs(f.size)}</span>
+                <span style={{textAlign:'right',color:'var(--mut)',fontSize:12}}>{isFd||f._md?'–':fs(f.size)}</span>
               </div>);
             })}
           </div>
         </div>
 
         <div className={`resizer ${resizing?'drag':''}`} onMouseDown={startResize} onTouchStart={startResize}/>
-        <PrevPanel file={sel} isDemo={isDemo} onExpand={()=>sel&&setBig(true)} width={prevW} onWider={()=>setPrevW(w=>Math.min(window.innerWidth*0.7,w+80))} onNarrower={()=>setPrevW(w=>Math.max(150,w-80))}/>
+        <PrevPanel file={sel} isDemo={isDemo} onExpand={()=>sel&&setBig(true)} width={prevW} onWider={()=>setPrevW(w=>Math.min(window.innerWidth*0.7,w+80))} onNarrower={()=>setPrevW(w=>Math.max(150,w-80))} onIndex={f=>openIndex(f,'index')}/>
       </>)}
     </div>
 
@@ -1656,6 +2268,7 @@ function Main({onOut,isDemo}){
           <div className="as-handle"/>
           <div className="as-title"><i className={`fas ${mi(sel.mimeType,sel.name).i}`} style={{marginRight:6,color:mi(sel.mimeType,sel.name).c}}/>{sel.name}</div>
           <div className="as-item" onClick={()=>{setBig(true);setShowActionSheet(false);}}><i className="fas fa-eye"/>Vorschau</div>
+          {sel.mimeType!=='application/vnd.dropbox.folder'&&<div className="as-item" onClick={()=>{openIndex(sel,'index');setShowActionSheet(false);}}><i className="fas fa-tags"/>Verschlagworten</div>}
           <div className="as-item grn" onClick={()=>{doMove(sel);setShowActionSheet(false);}}><i className="fas fa-share-square"/>Verschieben nach…</div>
           <div className="as-item" onClick={()=>{setModal('ren');setShowActionSheet(false);}}><i className="fas fa-pencil"/>Umbenennen</div>
           <div className="as-item" onClick={()=>{setModal('up');setShowActionSheet(false);}}><i className="fas fa-upload"/>Hochladen</div>
@@ -1678,6 +2291,7 @@ function Main({onOut,isDemo}){
     {ctx&&(
       <div className="ctx" style={{left:ctx.x,top:ctx.y}} onClick={e=>e.stopPropagation()}>
         <div className="cxi" onClick={()=>{setSel(ctx.f);setBig(true);setCtx(null);}}><i className="fas fa-eye"/>Vorschau</div>
+        {ctx.f.mimeType!=='application/vnd.dropbox.folder'&&<div className="cxi" onClick={()=>{openIndex(ctx.f,'index');setCtx(null);}}><i className="fas fa-tags" style={{color:'#0061FF'}}/>Verschlagworten</div>}
         <div className="cxi" onClick={()=>{setSel(ctx.f);setModal('ren');setCtx(null);}}><i className="fas fa-pencil"/>Umbenennen</div>
         <div className="cxs"/>
         <div className="cxi grn" onClick={()=>{doMove(ctx.f);setCtx(null);}}><i className="fas fa-share-square"/>Verschieben nach…</div>
@@ -1688,7 +2302,8 @@ function Main({onOut,isDemo}){
 
     {/* MODALS */}
     {big&&sel&&<ExpandMod file={sel} isDemo={isDemo} onClose={()=>setBig(false)}/>}
-    {modal==='up'&&<UpMod fid={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
+    {indexFile&&<IndexMod file={indexFile.file} mode={indexFile.mode} isDemo={isDemo} folders={allFolders} onClose={()=>setIndexFile(null)} onDone={onIndexDone} onReloadFolders={async()=>{const f=await DR.allFolders();setAllFolders(f);return f;}}/>}
+    {modal==='up'&&<UpMod fid={nav==='inbox'?POSTEINGANG:cur.id} onClose={()=>setModal(null)} onDone={()=>{rf();loadInbox();}} isDemo={isDemo}/>}
     {modal==='mk'&&<MkMod par={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
     {modal==='ren'&&sel&&<RenMod file={sel} onClose={()=>setModal(null)} onDone={()=>{rf();setModal(null);}} isDemo={isDemo}/>}
     {modal==='mail'&&sel&&<MailMod file={sel} onClose={()=>setModal(null)} isDemo={isDemo}/>}
