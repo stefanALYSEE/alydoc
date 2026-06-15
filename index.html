@@ -296,6 +296,8 @@
 <script type="text/babel">
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
+// Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
+const APP_BUILD='v2.1 · 2026-06-15';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -1534,7 +1536,7 @@ function Login({onIn,onDemo}){
       <div className="setup-card" style={{textAlign:'center',padding:'44px',maxWidth:440}}>
         <div style={{display:'inline-block',marginBottom:18}}><AlyseeLogo size={80} radius={14}/></div>
         <div style={{fontWeight:700,fontSize:26,color:'var(--pri)',marginBottom:4}}>alyDoc</div>
-        <div style={{color:'var(--mut)',marginBottom:32,fontSize:14}}>Dokumentenmanagement · alysee GmbH</div>
+        <div style={{color:'var(--mut)',marginBottom:32,fontSize:14}}>Dokumentenmanagement · alysee GmbH<br/><span style={{fontSize:11,opacity:.7}}>{APP_BUILD}</span></div>
         <button style={{width:'100%',padding:'13px',fontSize:14,justifyContent:'center',marginBottom:10,background:'#0061FF',color:'#fff',border:'none',borderRadius:5,cursor:'pointer',fontWeight:500,display:'flex',alignItems:'center',gap:10}} onClick={onIn}>
           <i className="fab fa-dropbox" style={{fontSize:20}}/>
           Mit Dropbox verbinden
@@ -1963,7 +1965,7 @@ function Main({onOut,isDemo}){
     {/* ELO BRAND-STRIP */}
     <div className="elo-brand">
       <AlyseeLogo size={26} radius={4}/>
-      <div><div className="eb-title">alyDoc</div><div className="eb-sub">Dokumentenmanagement</div></div>
+      <div><div className="eb-title">alyDoc <span style={{fontSize:9,fontWeight:600,opacity:.6,letterSpacing:0}}>{APP_BUILD}</span></div><div className="eb-sub">Dokumentenmanagement</div></div>
       <div className="elo-qsrch">
         <i className="fas fa-search"/>
         <input type="text" placeholder="Schnellsuche – Name, Stichwort, Korrespondent…" value={q} onChange={e=>{setQ(e.target.value);if(e.target.value.length>2)search(e.target.value);else if(!e.target.value)setRes(null);}} onKeyDown={e=>e.key==='Enter'&&search(q)}/>
