@@ -297,7 +297,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v2.1 · 2026-06-15';
+const APP_BUILD='v2.2 · 2026-06-15';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -1257,7 +1257,7 @@ function useEmlPreview(file,isDemo){
 }
 // ── .msg (Outlook-Binärformat) – via MSGReader (dynamisch vom CDN) ──
 let _msgReaderMod=null;
-function loadMsgReader(){if(!_msgReaderMod)_msgReaderMod=window.__imp('./msgreader.bundle.js').then(m=>m.default).catch(e=>{_msgReaderMod=null;throw e;});return _msgReaderMod;}
+function loadMsgReader(){if(!_msgReaderMod)_msgReaderMod=window.__imp('./msgreader.bundle.v2.js').then(m=>m.default).catch(e=>{_msgReaderMod=null;throw e;});return _msgReaderMod;}
 function _bytesToB64(u8){let s='';const C=0x8000;for(let i=0;i<u8.length;i+=C)s+=String.fromCharCode.apply(null,u8.subarray(i,i+C));return btoa(s);}
 function buildMsgHtml(d,reader){
   const esc=v=>(v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
