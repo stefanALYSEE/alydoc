@@ -300,7 +300,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v2.3 · 2026-06-15';
+const APP_BUILD='v2.4 · 2026-06-15';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -1732,6 +1732,7 @@ function Main({onOut,isDemo}){
   const [inboxLoading,setInboxLoading]=useState(false);
   const [inboxExists,setInboxExists]=useState(true);
   const [sf,setSf]=useState({docType:'',korrespondent:''}); // strukturierte Suchfilter
+  const [sort,setSort]=useState({key:'name',dir:'asc'}); // Sortierung der Dateiliste
   const [treeCache,setTreeCache]=useState({});  // {parentId: [folder, ...]} – lazy loaded
   const [treeLoading,setTreeLoading]=useState({});  // {parentId: true} – wird gerade geladen
   // Drag & Drop state
@@ -1953,7 +1954,25 @@ function Main({onOut,isDemo}){
     document.addEventListener(isTouch?'touchend':'mouseup',mu);
   },[treeW]);
 
-  const disp=res!==null?res:files;
+  const dispRaw=res!==null?res:files;
+  // Sortierung (Ordner bleiben immer oben), nach Name/Typ/Korrespondent/Datum/Größe
+  const _dtLabel=f=>{const e=mdMap[mdKey(f)];return e?dtOf(e.docType).label:'';};
+  const _korr=f=>{const e=mdMap[mdKey(f)];return(e&&e.fields&&e.fields.korrespondent)||'';};
+  const _cmpName=(a,b)=>(a.name||'').localeCompare(b.name||'','de',{numeric:true,sensitivity:'base'});
+  const disp=[...dispRaw].sort((a,b)=>{
+    const af=a.mimeType==='application/vnd.dropbox.folder',bf=b.mimeType==='application/vnd.dropbox.folder';
+    if(af!==bf)return af?-1:1;
+    let r=0;const k=sort.key;
+    if(k==='date')r=new Date(a.modifiedTime||0).getTime()-new Date(b.modifiedTime||0).getTime();
+    else if(k==='size')r=(a.size||0)-(b.size||0);
+    else if(k==='typ')r=_dtLabel(a).localeCompare(_dtLabel(b),'de');
+    else if(k==='korr')r=_korr(a).localeCompare(_korr(b),'de');
+    else r=_cmpName(a,b);
+    if(r===0)r=_cmpName(a,b);
+    return sort.dir==='asc'?r:-r;
+  });
+  const onSort=k=>setSort(s=>({key:k,dir:s.key===k&&s.dir==='asc'?'desc':'asc'}));
+  const sortArr=k=>sort.key===k?(sort.dir==='asc'?' ▲':' ▼'):'';
   const pend=tasks.filter(t=>!t.done).length;
   const inboxCount=isDemo?DEMO_INBOX.length:inbox.length;
   const selFile=sel&&sel.mimeType!=='application/vnd.dropbox.folder'?sel:null; // Datei (kein Ordner)
@@ -2209,7 +2228,7 @@ function Main({onOut,isDemo}){
               path.map((f,i)=><React.Fragment key={f.id}>{i>0&&<i className="fas fa-chevron-right" style={{fontSize:9,color:'var(--mut)'}}/>}<span className={`bc ${i===path.length-1?'cur':''}`} onClick={()=>i<path.length-1&&go(f)}>{f.name}</span></React.Fragment>)
             )}
           </div>
-          <div className="doc-list-head"><div className="doc-hrow"><span/><span>Name</span><span>Typ</span><span>Korrespondent</span><span>Datum</span><span style={{textAlign:'right'}}>Größe</span></div></div>
+          <div className="doc-list-head"><div className="doc-hrow"><span/><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('name')}>Name{sortArr('name')}</span><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('typ')}>Typ{sortArr('typ')}</span><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('korr')}>Korrespondent{sortArr('korr')}</span><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('date')}>Datum{sortArr('date')}</span><span style={{textAlign:'right',cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('size')}>Größe{sortArr('size')}</span></div></div>
           <div className="doc-list">
             {loading?<div className="ctr"><div className="spin"/><p>Lade…</p></div>
             :disp.length===0?<div className="ctr"><i className="fas fa-folder-open" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13}}>{res!==null?'Keine Treffer':'Ordner leer'}</p></div>
