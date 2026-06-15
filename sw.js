@@ -1,5 +1,5 @@
 // alysee DMS Service Worker
-const CACHE = 'alydoc-v7';
+const CACHE = 'alydoc-v8';
 
 // Install: sofort aktivieren
 self.addEventListener('install', event => {
@@ -15,10 +15,11 @@ self.addEventListener('activate', event => {
   );
 });
 
-// Fetch: NUR Navigation (HTML-Seitenaufrufe) abfangen, alles andere direkt durchlassen
+// Fetch: NUR Navigation (HTML-Seitenaufrufe) abfangen – IMMER frisch aus dem Netz holen
+// (cache:'reload' umgeht den HTTP-Cache des Browsers → kein veralteter index.html-Stand)
 self.addEventListener('fetch', event => {
   if (event.request.mode !== 'navigate') return;
   event.respondWith(
-    fetch(event.request).catch(() => caches.match('index.html'))
+    fetch(event.request, { cache: 'reload' }).catch(() => fetch(event.request))
   );
 });
