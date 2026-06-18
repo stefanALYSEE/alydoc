@@ -1342,7 +1342,7 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower,onIndex}){
       </div>
       <div className="prev-body">
         {tab==='prev'
-          ?isDir?<div className="ctr"><i className="fas fa-folder" style={{fontSize:64,color:'var(--org)'}}/><p style={{fontSize:13}}>Ordner – Doppelklick zum Oeffnen</p></div>
+          ?isDir?<div className="ctr"><i className="fas fa-folder" style={{fontSize:64,color:'#8E8E93'}}/><p style={{fontSize:13}}>Ordner – Doppelklick zum Oeffnen</p></div>
             :isCad3d(file.name)?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>3D-Datei wird geladen…</p></div>
               :pUrl?<Cad3DViewer url={pUrl} fileName={file.name}/>
               :<div className="ctr"><i className="fas fa-cube" style={{fontSize:52,color:'#7C3AED'}}/><p style={{fontSize:12}}>{file.name}</p></div>)
@@ -1416,7 +1416,7 @@ function UpMod({fid,onClose,onDone,isDemo}){
 function MkMod({par,onClose,onDone,isDemo}){
   const [n,setN]=useState('');const [b,setB]=useState(false);const t=useContext(TC);
   const go=async()=>{if(!n.trim())return;setB(true);try{if(!isDemo)await DR.mkdir(n,par||'');t('Ordner erstellt: '+n,'s');onDone();}catch{t('Fehler','e');}setB(false);onClose();};
-  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{width:400}}><h2><i className="fas fa-folder-plus" style={{color:'var(--org)'}}/>Neuer Ordner</h2><div className="fg"><label>Name</label><input className="fc" autoFocus value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} placeholder="z.B. Rechnungen 2025"/></div><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose}>Abbrechen</button><button className="btn bp" onClick={go} disabled={b||!n.trim()}>{b?'…':'Erstellen'}</button></div></div></div>);
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{width:400}}><h2><i className="fas fa-folder-plus" style={{color:'#8E8E93'}}/>Neuer Ordner</h2><div className="fg"><label>Name</label><input className="fc" autoFocus value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} placeholder="z.B. Rechnungen 2025"/></div><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose}>Abbrechen</button><button className="btn bp" onClick={go} disabled={b||!n.trim()}>{b?'…':'Erstellen'}</button></div></div></div>);
 }
 function RenMod({file,onClose,onDone,isDemo}){
   const [n,setN]=useState(file.name);const [b,setB]=useState(false);const t=useContext(TC);
@@ -2199,7 +2199,7 @@ function Main({onOut,isDemo}){
                     {isLoading?<i className="fas fa-spinner fa-spin" style={{fontSize:10,color:'var(--mut)',width:10,flexShrink:0}}/>
                     :showChevron?<i className={`fas fa-chevron-${exp[node.id]?'down':'right'}`} style={{fontSize:10,color:'var(--mut)',width:10,flexShrink:0,cursor:'pointer'}} onClick={toggleExpand}/>
                     :<span style={{width:10,display:'inline-block',flexShrink:0}}/>}
-                    <i className={`fas ${node.icon||'fa-folder'}`} style={{color:node.color||'var(--org)',flexShrink:0}}/>
+                    <i className={`fas ${node.icon||'fa-folder'}`} style={{color:node.color||'#8E8E93',flexShrink:0}}/>
                     <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis'}}>{node.name}</span>
                     {isLoaded&&kids.length>0&&<span style={{fontSize:9,color:'var(--mut)',background:'#f0f4f8',borderRadius:8,padding:'0 5px',flexShrink:0}}>{kids.length}</span>}
                     {!isDemo&&<button className="tree-add" title="Unterordner erstellen" onClick={e=>{e.stopPropagation();setTreeNewFolder(node.id);setExp(p=>({...p,[node.id]:true}));if(!isLoaded)loadTreeChildren(node.id);}}><i className="fas fa-plus"/></button>}
