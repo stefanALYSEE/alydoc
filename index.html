@@ -306,7 +306,7 @@ const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-dig
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
 const fs=b=>{if(!b)return'–';b=+b;if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB';};
 function mi(mt='',nm=''){
-  if(mt==='application/vnd.dropbox.folder')return{i:'fa-folder',c:'#F7941D',l:'Ordner'};
+  if(mt==='application/vnd.dropbox.folder')return{i:'fa-folder',c:'#8E8E93',l:'Ordner'};
   if(mt.includes('pdf'))return{i:'fa-file-pdf',c:'#CC0000',l:'PDF'};
   if(mt.includes('word')||mt.includes('wordprocessing'))return{i:'fa-file-word',c:'#2B579A',l:'Word'};
   if(mt.includes('sheet')||mt.includes('excel'))return{i:'fa-file-excel',c:'#217346',l:'Excel'};
@@ -589,10 +589,10 @@ const DF=[
 const DT=[{id:'t1',title:'Angebot Muster AG pruefen',priority:'high',dueDate:'2025-03-15',note:'',done:false},{id:'t2',title:'Preisliste aktualisieren',priority:'normal',dueDate:'',note:'Q1 2025',done:false}];
 const DTREE=[
   {id:'',name:'Dropbox',icon:'fa-dropbox',color:'#0061FF',ch:[
-    {id:'/angebote',name:'Angebote',icon:'fa-folder',color:'#F7941D'},
-    {id:'/rechnungen',name:'Rechnungen',icon:'fa-folder',color:'#F7941D'},
-    {id:'/projekte',name:'Projekte',icon:'fa-folder',color:'#F7941D'},
-    {id:'/lieferanten',name:'Lieferanten',icon:'fa-folder',color:'#F7941D'},
+    {id:'/angebote',name:'Angebote',icon:'fa-folder',color:'#8E8E93'},
+    {id:'/rechnungen',name:'Rechnungen',icon:'fa-folder',color:'#8E8E93'},
+    {id:'/projekte',name:'Projekte',icon:'fa-folder',color:'#8E8E93'},
+    {id:'/lieferanten',name:'Lieferanten',icon:'fa-folder',color:'#8E8E93'},
   ]},
 ];
 const DEMO_FOLDERS=[
@@ -753,7 +753,7 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
             {hasKids&&<i className={`fas fa-chevron-${isExp?'down':'right'}`}/>}
           </span>
           <i className={`fas ${d.id===''?'fa-dropbox':'fa-folder'}`}
-            style={{color:d.id===''?'#0061FF':'#F7941D',fontSize:13,width:16,flexShrink:0}}/>
+            style={{color:d.id===''?'#0061FF':'#8E8E93',fontSize:13,width:16,flexShrink:0}}/>
           <span style={{flex:1,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{shortName}</span>
           {isCur(d.id)&&<span style={{fontSize:10,color:'var(--mut)',background:'#F0F4F8',padding:'1px 5px',borderRadius:3,flexShrink:0}}>aktuell</span>}
           {isSelected&&<i className="fas fa-check-circle" style={{color:'var(--blue)',fontSize:12,flexShrink:0}}/>}
@@ -1581,7 +1581,7 @@ function FolderPick({folders,value,onChange,isDemo,onCreated}){
     return(<React.Fragment>
       <div onClick={()=>onChange(d.id,d.fullName||d.name)} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',paddingLeft:10+depth*16,cursor:'pointer',background:value===d.id?'#eaf2fd':'transparent',color:value===d.id?'#0055b8':'var(--txt)',borderBottom:'1px solid #f0f4f8',fontSize:13}}>
         <span onClick={kids.length?e=>{e.stopPropagation();setExp(p=>({...p,[d.id]:!p[d.id]}));}:undefined} style={{width:14,flexShrink:0,color:'var(--mut)',fontSize:10,cursor:kids.length?'pointer':'default'}}>{kids.length>0&&<i className={`fas fa-chevron-${isExp?'down':'right'}`}/>}</span>
-        <i className={`fas ${d.id===''?'fa-dropbox':'fa-folder'}`} style={{color:d.id===''?'#0061FF':'#F7941D',fontSize:13,flexShrink:0}}/>
+        <i className={`fas ${d.id===''?'fa-dropbox':'fa-folder'}`} style={{color:d.id===''?'#0061FF':'#8E8E93',fontSize:13,flexShrink:0}}/>
         <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</span>
         {value===d.id&&<i className="fas fa-check-circle" style={{color:'#0061FF',fontSize:12,flexShrink:0}}/>}
       </div>
