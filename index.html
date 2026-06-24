@@ -46,7 +46,7 @@
     async function msEnsureToken(){if(_msToken&&Date.now()<_msExpires-60000)return;if(await msTryRefresh())return;throw new Error('MS_LOGIN_REQUIRED');}
     async function msRpc(url,body){await msEnsureToken();const r=await fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+_msToken,'Content-Type':'application/json'},body:JSON.stringify(body)});if(r.status===401){if(await msTryRefresh()){return msRpc(url,body);}throw new Error('MS_LOGIN_REQUIRED');}if(!r.ok){const t=await r.text();throw new Error('Graph '+r.status+': '+t);}return r.status===202?null:r.json().catch(()=>null);}
   </script>
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+  <link rel="stylesheet" href="vendor/fa/css/all.min.css">
   <script src="vendor/pdf.min.js"></script>
   <script>if(window.pdfjsLib){pdfjsLib.GlobalWorkerOptions.workerSrc='vendor/pdf.worker.min.js';}</script>
   <style>
