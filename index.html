@@ -434,11 +434,7 @@ const DR={
     const blob=await dbxDownloadBlob(path);
     return URL.createObjectURL(blob);
   },
-  async prevBlob(path){
-    await _dbxEnsureToken();
-    const r=await fetch(DBX_CONTENT+'/files/download',{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Dropbox-API-Arg':jsonHeaderSafe({path}),..._dbxPathRootHeader()}});
-    if(!r.ok)throw new Error('Download '+r.status);
-    return r.blob();
+  async prevBlob(path){return dbxDownloadBlob(path);
   },
   // Office-Vorschau: Dropbox liefert eine PDF-Rendition (doc/docx/xls/xlsx/ppt/pptx …) – authentifiziert, kein Drittanbieter
   async officePdfBlob(path){
@@ -1085,7 +1081,8 @@ function PdfViewer({url,blobUrl}){
       const viewport=page.getViewport({scale:1});
       const fitScale=cw/viewport.width;
       const finalScale=fitScale*scale;
-      const sv=page.getViewport({scale:finalScale});
+      const dpr=window.devicePixelRatio||1;
+      const sv=page.getViewport({scale:finalScale*dpr});
       // Canvas erstellen/wiederverwenden
       let canvas=container.querySelector('canvas');
       if(!canvas){canvas=document.createElement('canvas');container.innerHTML='';container.appendChild(canvas);}
@@ -1269,7 +1266,14 @@ function buildMsgHtml(d,reader){
   const date=esc(d.clientSubmitTime||d.messageDeliveryTime||d.creationTime||'');
   const bh=d.bodyHtml||d.bodyHTML;
   let body;
-  if(bh&&/<\w+[\s>]/.test(bh))body=bh;
+  if(bh&&/<\w+[\s>]/.test(bh)){
+    // Charset-Metas entfernen: unser UTF-8-Wrapper muss gewinnen, sonst re-interpretiert der Browser
+    let clean=bh.replace(/<meta[^>]+(?:charset|http-equiv\s*=\s*["']?content-type)[^>]*\/?>/gi,'');
+    // Vollständiges HTML-Dokument: nur <body>-Inhalt verwenden (vermeidet doppeltes <html>/<head>)
+    const bm=clean.match(/<body(?:[^>]*)>([\s\S]*)<\/body>/i);
+    if(bm)clean=bm[1];
+    body=clean;
+  }
   else body='<pre style="font-family:-apple-system,Segoe UI,sans-serif;white-space:pre-wrap;padding:14px 18px;margin:0;font-size:13px;line-height:1.5">'+esc(d.body||'(kein Textinhalt)')+'</pre>';
   let imgs='';const files=[];
   for(const a of (d.attachments||[])){
@@ -1791,6 +1795,7 @@ function Main({onOut,isDemo}){
         DR.loadWF().then(d=>setTasks(d.tasks||[]));
         MD.load(false).then(()=>refreshMd()).catch(e=>console.warn('MD load err:',e));
         loadInbox();
+        loadMsgReader().catch(()=>{});
         // Strukturbaum: nur Root-Ebene sofort laden (Rest lazy)
         DR.listSubfolders('').then(f=>{setTreeCache(p=>({...p,'':f}));f.forEach(k=>loadTreeChildren(k.id,false));}).catch(e=>console.error('tree root FEHLER:',e));
       })();
