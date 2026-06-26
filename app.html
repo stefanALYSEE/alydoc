@@ -225,7 +225,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version">v4.6</div>
+    <div class="nav-version">v4.7</div>
   </div>
 </nav>
 
@@ -707,17 +707,20 @@ async function dbxUpload(path,bytesOrString,mode){
     try{const r=await fetch(API_BASE+'/users/get_current_account',{method:'POST'});d+=' api='+r.status;}catch(x){d+=' api=FAIL('+(x&&x.message||x)+')';}
     return d;
   };
-  const post=async(url,arg,body,_retry)=>{
+  const post=async(url,arg,body,_retry,_netTry)=>{
     const headers={'Authorization':'Bearer '+accessToken,'Content-Type':'application/octet-stream','Dropbox-API-Arg':jsonHeaderSafe(arg)};
     if(prh['Dropbox-API-Path-Root'])headers['Dropbox-API-Path-Root']=prh['Dropbox-API-Path-Root'];
     const controller=new AbortController();
-    const tid=setTimeout(()=>controller.abort(),180000);
+    const tid=setTimeout(()=>controller.abort(),300000);
     let r;
     try{
       r=await fetch(url,{method:'POST',headers:headers,body:body,signal:controller.signal});
     }catch(e){
       clearTimeout(tid);
       if(e.name==='AbortError')throw new Error('Upload Timeout');
+      // transienten Netzfehler bis zu 2x wiederholen (wichtig bei 20-40 MB)
+      const nt=_netTry||0;
+      if(nt<2){await new Promise(res=>setTimeout(res,800*(nt+1)));return post(url,arg,body,_retry,nt+1);}
       const diag=await probe();
       throw new Error('Upload Netzwerkfehler: '+e.message+' |'+diag);
     }
@@ -732,12 +735,12 @@ async function dbxUpload(path,bytesOrString,mode){
     return data;
   };
   const SIMPLE_MAX=1024*1024;   // <=1 MB: ein Request
-  const CHUNK=4*1024*1024;      // Session-Stueckgroesse
+  const CHUNK=4*1024*1024;      // Session-Stueckgroesse (auch fuer 20-40 MB Mails)
   if(blob.size<=SIMPLE_MAX){
     return post(CONTENT_BASE+'/files/upload',commit,blob);
   }
   // Groesser: upload_session (chunked) – ein grosser fetch-Body bricht in
-  // Outlooks WebView2 mit "Failed to fetch" ab.
+  // Outlooks WebView2 mit "Failed to fetch" ab; chunked traegt beliebige Groessen.
   let offset=0;
   const first=blob.slice(0,CHUNK);
   const start=await post(CONTENT_BASE+'/files/upload_session/start',{close:false},first);
