@@ -225,7 +225,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version">v4.5</div>
+    <div class="nav-version">v4.6</div>
   </div>
 </nav>
 
@@ -699,32 +699,45 @@ async function dbxUpload(path,bytesOrString,mode){
   const blob=new Blob([bytesOrString],{type:'application/octet-stream'});
   const commit={path:path,mode:mode||'add',autorename:true,mute:false,strict_conflict:false};
   const prh=pathRootHeader();
-  const post=async(url,arg,body)=>{
+  // Diagnose: bei Netzfehler beide Hosts ohne Auth anpingen -> zeigt, ob der
+  // content-Host aus Outlooks WebView2 ueberhaupt erreichbar ist.
+  const probe=async()=>{
+    let d='';
+    try{const r=await fetch(CONTENT_BASE+'/files/upload',{method:'POST'});d+=' content='+r.status;}catch(x){d+=' content=FAIL('+(x&&x.message||x)+')';}
+    try{const r=await fetch(API_BASE+'/users/get_current_account',{method:'POST'});d+=' api='+r.status;}catch(x){d+=' api=FAIL('+(x&&x.message||x)+')';}
+    return d;
+  };
+  const post=async(url,arg,body,_retry)=>{
     const headers={'Authorization':'Bearer '+accessToken,'Content-Type':'application/octet-stream','Dropbox-API-Arg':jsonHeaderSafe(arg)};
     if(prh['Dropbox-API-Path-Root'])headers['Dropbox-API-Path-Root']=prh['Dropbox-API-Path-Root'];
     const controller=new AbortController();
     const tid=setTimeout(()=>controller.abort(),180000);
+    let r;
     try{
-      const r=await fetch(url,{method:'POST',headers:headers,body:body,signal:controller.signal});
-      clearTimeout(tid);
-      if(r.status===401)throw new Error('Nicht authentifiziert (401)');
-      const txt=await r.text();
-      let data;try{data=txt?JSON.parse(txt):{};}catch{data={raw:txt};}
-      if(!r.ok)throw new Error('Upload '+r.status+': '+(data.error_summary||txt));
-      return data;
+      r=await fetch(url,{method:'POST',headers:headers,body:body,signal:controller.signal});
     }catch(e){
       clearTimeout(tid);
       if(e.name==='AbortError')throw new Error('Upload Timeout');
-      throw new Error('Upload Netzwerkfehler: '+e.message);
+      const diag=await probe();
+      throw new Error('Upload Netzwerkfehler: '+e.message+' |'+diag);
     }
+    clearTimeout(tid);
+    if(r.status===401){
+      if(!_retry&&typeof tryRefreshToken==='function'&&await tryRefreshToken())return post(url,arg,body,true);
+      throw new Error('Nicht authentifiziert (401)');
+    }
+    const txt=await r.text();
+    let data;try{data=txt?JSON.parse(txt):{};}catch{data={raw:txt};}
+    if(!r.ok)throw new Error('Upload '+r.status+': '+(data.error_summary||txt));
+    return data;
   };
-  // 4-MB-Chunks: ein einzelner grosser fetch-Body laesst Outlooks WebView2 mit
-  // "Failed to fetch" abbrechen (grosse Mails mit Inline-Bildern). upload_session
-  // zerlegt den Upload in vertraegliche Stuecke.
-  const CHUNK=4*1024*1024;
-  if(blob.size<=CHUNK){
+  const SIMPLE_MAX=1024*1024;   // <=1 MB: ein Request
+  const CHUNK=4*1024*1024;      // Session-Stueckgroesse
+  if(blob.size<=SIMPLE_MAX){
     return post(CONTENT_BASE+'/files/upload',commit,blob);
   }
+  // Groesser: upload_session (chunked) – ein grosser fetch-Body bricht in
+  // Outlooks WebView2 mit "Failed to fetch" ab.
   let offset=0;
   const first=blob.slice(0,CHUNK);
   const start=await post(CONTENT_BASE+'/files/upload_session/start',{close:false},first);
