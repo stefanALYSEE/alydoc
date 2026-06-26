@@ -225,7 +225,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version">v4.4</div>
+    <div class="nav-version">v4.5</div>
   </div>
 </nav>
 
@@ -696,30 +696,47 @@ async function dbxRpc(path,arg){
 
 async function dbxUpload(path,bytesOrString,mode){
   await ensureToken();
-  const arg={path:path,mode:mode||'add',autorename:true,mute:false,strict_conflict:false};
-  // Blob-Ansatz: kein TextEncoder nötig, funktioniert auch in Outlook WKWebView
-  const sendData=new Blob([bytesOrString],{type:'application/octet-stream'});
-  const headers={
-    'Authorization':'Bearer '+accessToken,
-    'Dropbox-API-Arg':jsonHeaderSafe(arg),
-    'Content-Type':'application/octet-stream'
-  };
+  const blob=new Blob([bytesOrString],{type:'application/octet-stream'});
+  const commit={path:path,mode:mode||'add',autorename:true,mute:false,strict_conflict:false};
   const prh=pathRootHeader();
-  if(prh['Dropbox-API-Path-Root'])headers['Dropbox-API-Path-Root']=prh['Dropbox-API-Path-Root'];
-  const controller=new AbortController();
-  const tid=setTimeout(()=>controller.abort(),120000);
-  try{
-    const r=await fetch(CONTENT_BASE+'/files/upload',{method:'POST',headers,body:sendData,signal:controller.signal});
-    clearTimeout(tid);
-    if(r.status===401)throw new Error('Nicht authentifiziert (401)');
-    let data;try{data=await r.json();}catch{data={};}
-    if(!r.ok)throw new Error('Upload '+r.status+': '+(data.error_summary||JSON.stringify(data)));
-    return data;
-  }catch(e){
-    clearTimeout(tid);
-    if(e.name==='AbortError')throw new Error('Upload Timeout');
-    throw new Error('Upload Netzwerkfehler: '+e.message);
+  const post=async(url,arg,body)=>{
+    const headers={'Authorization':'Bearer '+accessToken,'Content-Type':'application/octet-stream','Dropbox-API-Arg':jsonHeaderSafe(arg)};
+    if(prh['Dropbox-API-Path-Root'])headers['Dropbox-API-Path-Root']=prh['Dropbox-API-Path-Root'];
+    const controller=new AbortController();
+    const tid=setTimeout(()=>controller.abort(),180000);
+    try{
+      const r=await fetch(url,{method:'POST',headers:headers,body:body,signal:controller.signal});
+      clearTimeout(tid);
+      if(r.status===401)throw new Error('Nicht authentifiziert (401)');
+      const txt=await r.text();
+      let data;try{data=txt?JSON.parse(txt):{};}catch{data={raw:txt};}
+      if(!r.ok)throw new Error('Upload '+r.status+': '+(data.error_summary||txt));
+      return data;
+    }catch(e){
+      clearTimeout(tid);
+      if(e.name==='AbortError')throw new Error('Upload Timeout');
+      throw new Error('Upload Netzwerkfehler: '+e.message);
+    }
+  };
+  // 4-MB-Chunks: ein einzelner grosser fetch-Body laesst Outlooks WebView2 mit
+  // "Failed to fetch" abbrechen (grosse Mails mit Inline-Bildern). upload_session
+  // zerlegt den Upload in vertraegliche Stuecke.
+  const CHUNK=4*1024*1024;
+  if(blob.size<=CHUNK){
+    return post(CONTENT_BASE+'/files/upload',commit,blob);
   }
+  let offset=0;
+  const first=blob.slice(0,CHUNK);
+  const start=await post(CONTENT_BASE+'/files/upload_session/start',{close:false},first);
+  const sessionId=start.session_id;
+  offset+=first.size;
+  while(blob.size-offset>CHUNK){
+    const part=blob.slice(offset,offset+CHUNK);
+    await post(CONTENT_BASE+'/files/upload_session/append_v2',{cursor:{session_id:sessionId,offset:offset},close:false},part);
+    offset+=part.size;
+  }
+  const lastPart=blob.slice(offset);
+  return post(CONTENT_BASE+'/files/upload_session/finish',{cursor:{session_id:sessionId,offset:offset},commit:commit},lastPart);
 }
 
 // ── FOLDER LOADING (Lazy) ────────────────────────────────────────────────────

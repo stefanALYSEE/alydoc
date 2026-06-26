@@ -300,7 +300,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v2.5 · 2026-06-24';
+const APP_BUILD='v2.6 · 2026-06-26';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -400,8 +400,8 @@ const DR={
     const r=await dbxRpc('/files/move_v2',{from_path:path,to_path:newPath,autorename:false,allow_ownership_transfer:false});
     return _dbxToFile(r.metadata);
   },
-  async move(filePath,newParentPath){
-    const name=filePath.split('/').pop();
+  async move(filePath,newParentPath,displayName){
+    const name=displayName||filePath.split('/').pop();
     const toPath=(newParentPath||'')+'/'+name;
     const r=await dbxRpc('/files/move_v2',{from_path:filePath,to_path:toPath,autorename:true,allow_ownership_transfer:false});
     return _dbxToFile(r.metadata);
@@ -699,10 +699,10 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
     setBusy(true);
     try{
       if(isMulti){
-        if(!isDemo){for(const f of file){await DR.move(f.id,selId);}}
+        if(!isDemo){for(const f of file){await DR.move(f.id,selId,f.name);}}
         toast(file.length+' Dateien verschoben nach "'+selName+'"','s');
       }else{
-        if(!isDemo){await DR.move(file.id,selId);}
+        if(!isDemo){await DR.move(file.id,selId,file.name);}
         toast('"'+file.name+'" verschoben nach "'+selName+'"','s');
       }
       onDone();
@@ -1318,7 +1318,7 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower,onIndex}){
   const isEml=isEmlFile(file);
   const isMsg=isMsgFile(file);
   // PDF: pdf.js | Bild: img | EML: MIME-Parser | MSG: MSGReader | Office: get_preview-PDF | Rest: Blob-iframe
-  const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isOffice&&!isEml&&!isMsg)?file:null,isDemo);
+  const {url:pUrl,loading,err}=useBlobUrl((!isDemo&&!isOffice&&!isEml&&!isMsg&&file&&file.mimeType!=='application/vnd.dropbox.folder')?file:null,isDemo);
   const {html:emlHtml,loading:emlLoading}=useEmlPreview(isEml?file:null,isDemo);
   const {url:offUrl,loading:offLoading,err:offErr}=useOfficePreview(isOffice?file:null,isDemo);
   const {html:msgHtml,loading:msgLoading,err:msgErr}=useMsgPreview(isMsg?file:null,isDemo);
@@ -1637,7 +1637,7 @@ function IndexMod({file,mode,isDemo,folders,onClose,onDone,onReloadFolders}){
     try{
       let f=file;
       if(mode==='file'&&!isDemo&&target!=null&&target!==curParent()){
-        f=await DR.move(file.id,target);
+        f=await DR.move(file.id,target,file.name);
       }
       const entry={docType,fields,keywords,notes,name:f.name,path_display:f.path_display||file.path_display,path_lower:f.path_lower||file.path_lower};
       if(isDemo){MD.demo=true;if(!_mdCache)_mdCache={version:1,docs:{}};_mdCache.docs[mdKey(f)]={...entry,updatedAt:new Date().toISOString()};}
@@ -1813,8 +1813,8 @@ function Main({onOut,isDemo}){
   const load=async fid=>{setLoading(true);setSel(null);setMultiSel([]);try{setFiles(await DR.ls(fid));}catch(e){console.error(e);toast('Ladefehler','e');}setLoading(false);};
   const go=f=>{const isSame=cur.id===f.id;if(isSame){setExp(p=>({...p,[f.id]:!p[f.id]}));return;}const idx=path.findIndex(x=>x.id===f.id);setPath(idx>=0?path.slice(0,idx+1):[...path,{id:f.id,name:f.name}]);setCur(f);setRes(null);setQ('');setExp(p=>({...p,[f.id]:true}));if(!isDemo){load(f.id);if(!treeCache[f.id])loadTreeChildren(f.id,true);}else setFiles(DF);};
   const click=(f,e)=>{
-  if(f.mimeType==='application/vnd.dropbox.folder'){if(!e?.ctrlKey&&!e?.metaKey)go(f);return;}
-  if(e?.ctrlKey||e?.metaKey){
+  const _isFd=f.mimeType==='application/vnd.dropbox.folder';
+  if(!_isFd&&(e?.ctrlKey||e?.metaKey)){
     setMultiSel(prev=>{
       const exists=prev.find(s=>s.id===f.id);
       let next=exists?prev.filter(s=>s.id!==f.id):[...prev,f];
@@ -1822,7 +1822,7 @@ function Main({onOut,isDemo}){
       return next;
     });
     setSel(f);
-  } else if(e?.shiftKey&&sel){
+  } else if(!_isFd&&e?.shiftKey&&sel){
     const list=disp;
     const fromIdx=list.findIndex(x=>x.id===sel.id);
     const toIdx=list.findIndex(x=>x.id===f.id);
@@ -1926,7 +1926,7 @@ function Main({onOut,isDemo}){
         const dfParent=df.path_lower?df.path_lower.substring(0,df.path_lower.lastIndexOf('/'))||'':cur.id||'';
         if(dfParent===targetFolder.id){toast('Datei ist bereits in diesem Ordner','i');return;}
         try{
-          if(!isDemo)await DR.move(df.id,targetFolder.id);
+          if(!isDemo)await DR.move(df.id,targetFolder.id,df.name);
           toast(`"${df.name}" nach "${targetFolder.name}" verschoben`,'s');
           rf();if(sel?.id===df.id)setSel(null);
         }catch(err){console.error(err);toast('Verschieben fehlgeschlagen','e');}
