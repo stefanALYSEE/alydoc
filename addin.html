@@ -1141,6 +1141,15 @@ async function getEmlContent(){
   if(cc.length)eml+='Cc: '+cc.map(formatAddr).join(', ')+'\r\n';
   eml+='Subject: '+encodeHeader(subject)+'\r\n';
   eml+='Date: '+date+'\r\n';
+  // Für "In Outlook öffnen" in der DMS-Webapp: Graph-Message-ID direkt speichern (kein Rätselraten nötig),
+  // plus die echte RFC-Message-ID als Fallback/Beweismittel
+  try{
+    const restId=Office.context.mailbox.convertToRestId(mailItem.itemId,Office.MailboxEnums.RestVersion.v2_0);
+    if(restId)eml+='X-AlyDoc-GraphId: '+restId+'\r\n';
+  }catch(e){console.warn('GraphId nicht ermittelbar:',e);}
+  try{
+    if(mailItem.internetMessageId)eml+='Message-ID: '+mailItem.internetMessageId+'\r\n';
+  }catch(e){console.warn('internetMessageId nicht verfuegbar:',e);}
   eml+='MIME-Version: 1.0\r\n';
 
   if(inlineImgs.length&&regular.length){
