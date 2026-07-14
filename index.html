@@ -45,25 +45,6 @@
     async function msTryRefresh(){if(!_msRefresh)return false;try{const b=new URLSearchParams();b.set('grant_type','refresh_token');b.set('refresh_token',_msRefresh);b.set('client_id',MS_CLIENT);b.set('scope','Mail.Send Mail.Read User.Read offline_access');const r=await fetch(`https://login.microsoftonline.com/${MS_TENANT}/oauth2/v2.0/token`,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b.toString()});if(!r.ok)return false;const d=await r.json();if(!d.access_token)return false;_msToken=d.access_token;_msExpires=Date.now()+(d.expires_in||3600)*1000;if(d.refresh_token)_msRefresh=d.refresh_token;try{localStorage.setItem('alydoc_ms_token',_msToken);localStorage.setItem('alydoc_ms_refresh',_msRefresh||'');localStorage.setItem('alydoc_ms_expires',_msExpires.toString());}catch{}return true;}catch{return false;}}
     async function msEnsureToken(){if(_msToken&&Date.now()<_msExpires-60000)return;if(await msTryRefresh())return;throw new Error('MS_LOGIN_REQUIRED');}
     async function msRpc(url,body){await msEnsureToken();const r=await fetch(url,{method:'POST',headers:{'Authorization':'Bearer '+_msToken,'Content-Type':'application/json'},body:JSON.stringify(body)});if(r.status===401){if(await msTryRefresh()){return msRpc(url,body);}throw new Error('MS_LOGIN_REQUIRED');}if(!r.ok){const t=await r.text();throw new Error('Graph '+r.status+': '+t);}return r.status===202?null:r.json().catch(()=>null);}
-    async function msGet(url){await msEnsureToken();const r=await fetch(url,{headers:{'Authorization':'Bearer '+_msToken}});if(r.status===401){if(await msTryRefresh()){return msGet(url);}throw new Error('MS_LOGIN_REQUIRED');}if(!r.ok){const t=await r.text();throw new Error('Graph '+r.status+': '+t);}return r.json();}
-    async function msEnsureAuth(){
-      if(_msToken&&Date.now()<_msExpires-60000)return;
-      if(await msTryRefresh())return;
-      await new Promise((resolve,reject)=>{
-        const baseUrl=window.location.origin+window.location.pathname.replace(/[^/]*$/,'');
-        const popup=window.open(baseUrl+'ms-auth.html','ms_auth','width=480,height=650');
-        if(!popup){reject(new Error('POPUP_BLOCKED'));return;}
-        const handler=e=>{
-          if(e.data?.type==='ms_auth_success'){
-            window.removeEventListener('message',handler);
-            _msToken=e.data.token;_msRefresh=e.data.refresh||'';_msExpires=Date.now()+(e.data.expires_in||3600)*1000;
-            try{localStorage.setItem('alydoc_ms_token',_msToken);localStorage.setItem('alydoc_ms_refresh',_msRefresh);localStorage.setItem('alydoc_ms_expires',_msExpires.toString());}catch{}
-            resolve();
-          }
-        };
-        window.addEventListener('message',handler);
-      });
-    }
   </script>
   <link rel="stylesheet" href="vendor/fa/css/all.min.css">
   <script src="vendor/pdf.min.js"></script>
@@ -319,7 +300,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v2.8 · 2026-07-14';
+const APP_BUILD='v2.9 · 2026-07-14';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -1204,20 +1185,10 @@ function _decodePart(rawBody,head){
   if(enc==='quoted-printable')return decodeQPBytes(rawBody,cs);
   return rawBody; // 7bit/8bit: bereits via UTF-8 dekodiert (useEmlPreview)
 }
-// ── "In Outlook öffnen" – Original-Mail per Graph auflösen und deep-linken ──
+// ── "In Outlook öffnen" – wie ELOoffice: zuverlässig immer aus der Ablage selbst, nie auf eine
+// fehleranfällige Suche im Postfach angewiesen. Direkter Deeplink nur als Bonus-Abkürzung, wenn beim
+// Ablegen bereits eine Graph-ID mitgespeichert wurde (frische Mails, siehe X-AlyDoc-GraphId-Header).
 const OUTLOOK_DEEPLINK='https://outlook.office.com/mail/deeplink/read/';
-// Sucht zuerst im eigenen Postfach, dann testweise in den beteiligten Adressen als Shared Mailbox
-// (z.B. info@alysee.de) – /me/messages sieht Shared Mailboxes nicht, auch wenn sie in Outlook eingebunden sind.
-async function graphSearchAcrossMailboxes(filterQs,candidates){
-  const bases=['me',...candidates.map(a=>'users/'+encodeURIComponent(a))];
-  for(const base of bases){
-    try{
-      const data=await msGet(`https://graph.microsoft.com/v1.0/${base}/messages?$select=id,subject,from,receivedDateTime&${filterQs}`);
-      if(data.value&&data.value.length)return data.value;
-    }catch(e){/* 403/404 bei fremden/nicht zugeordneten Postfächern ignorieren */}
-  }
-  return[];
-}
 async function fetchEmlText(file){
   const blobUrl=await DR.prev(file.id);
   const r=await fetch(blobUrl);
@@ -1225,30 +1196,8 @@ async function fetchEmlText(file){
   URL.revokeObjectURL(blobUrl);
   return new TextDecoder('utf-8').decode(new Uint8Array(buf));
 }
-async function resolveOutlookIds(text){
-  const head=_splitHeadersBody(text).head;
-  const graphId=_hdr(head,'X-AlyDoc-GraphId');
-  if(graphId)return{direct:true,ids:[graphId],items:null};
-  await msEnsureAuth();
-  const esc=s=>s.replace(/'/g,"''");
-  const fromAddr=(_hdr(head,'From').match(/<([^>]+)>/)||[])[1]||'';
-  const toAddrs=[..._hdr(head,'To').matchAll(/<([^>]+)>/g)].map(m=>m[1]);
-  const candidates=[...new Set([fromAddr,...toAddrs])].filter(Boolean);
-  const subject=decodeMimeHeader(_hdr(head,'Subject'));
-  const meta={subject,fromAddr};
-  const msgId=_hdr(head,'Message-ID');
-  if(msgId){
-    const hits=await graphSearchAcrossMailboxes('$filter='+encodeURIComponent(`internetMessageId eq '${esc(msgId)}'`),candidates);
-    if(hits.length)return{direct:false,ids:hits.map(m=>m.id),items:hits,meta};
-  }
-  // Fallback für alte Mails ohne gespeicherte ID: Betreff + Absender + Datum (±5 Min.)
-  const dateHdr=_hdr(head,'Date');
-  const d=dateHdr?new Date(dateHdr):null;
-  let filt=`subject eq '${esc(subject)}'`;
-  if(fromAddr)filt+=` and from/emailAddress/address eq '${esc(fromAddr)}'`;
-  let hits=await graphSearchAcrossMailboxes('$top=15&$filter='+encodeURIComponent(filt),candidates);
-  if(d&&!isNaN(d))hits=hits.filter(m=>Math.abs(new Date(m.receivedDateTime)-d)<5*60*1000);
-  return{direct:false,ids:hits.map(m=>m.id),items:hits,meta};
+function findStoredGraphId(text){
+  return _hdr(_splitHeadersBody(text).head,'X-AlyDoc-GraphId');
 }
 // Baut aus einer .eml einen vollwertigen Weiterleitungs-Entwurf: Klartext-Body + echte Anhänge einzeln
 // (statt die ganze .eml als einen Blob anzuhängen) – funktioniert unabhängig davon, ob Outlook das Original findet.
@@ -1539,23 +1488,6 @@ function RenMod({file,onClose,onDone,isDemo}){
   // file.id = path_lower for Dropbox
   const go=async()=>{if(!n.trim()||n===file.name)return;setB(true);try{if(!isDemo)await DR.ren(file.id,n);t('Umbenannt: '+n,'s');onDone();}catch{t('Fehler','e');}setB(false);onClose();};
   return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{width:400}}><h2><i className="fas fa-pencil" style={{color:'var(--blue)'}}/>Umbenennen</h2><div className="fg"><label>Neuer Name</label><input className="fc" autoFocus value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()}/></div><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose}>Abbrechen</button><button className="btn bp" onClick={go} disabled={b||!n.trim()||n===file.name}>{b?'…':'Speichern'}</button></div></div></div>);
-}
-
-function OutlookPickMod({items,onClose}){
-  const open=id=>{window.open(OUTLOOK_DEEPLINK+encodeURIComponent(id),'_blank');onClose();};
-  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{width:480}}>
-    <h2><i className="fab fa-microsoft" style={{color:'#0061FF'}}/>Welche Mail in Outlook öffnen?</h2>
-    <p style={{fontSize:12,color:'var(--mut)',marginBottom:12}}>Für diese Mail gibt es keine eindeutige gespeicherte ID – mehrere Treffer im Postfach gefunden. Bitte auswählen:</p>
-    <div style={{maxHeight:320,overflow:'auto'}}>
-      {items.map(m=>(
-        <div key={m.id} onClick={()=>open(m.id)} style={{padding:'10px 12px',border:'1px solid var(--bdr)',borderRadius:6,marginBottom:6,cursor:'pointer'}}>
-          <div style={{fontWeight:600,fontSize:13}}>{m.subject||'(kein Betreff)'}</div>
-          <div style={{fontSize:12,color:'var(--mut)'}}>{m.from?.emailAddress?.address||''} · {m.receivedDateTime?new Date(m.receivedDateTime).toLocaleString('de-DE'):''}</div>
-        </div>
-      ))}
-    </div>
-    <div style={{display:'flex',gap:8,marginTop:16,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose}>Abbrechen</button></div>
-  </div></div>);
 }
 
 function MailMod({file,onClose,isDemo,prefill}){
@@ -1863,7 +1795,6 @@ function Main({onOut,isDemo}){
   const [treeResizing,setTreeResizing]=useState(false);
   const [moveFile,setMoveFile]=useState(null);
   const [allFolders,setAllFolders]=useState([]);
-  const [outlookPick,setOutlookPick]=useState(null);
   const [outlookBusy,setOutlookBusy]=useState(false);
   const [mailPrefill,setMailPrefill]=useState(null);
   // ── ELO: Ribbon, Verschlagwortung, Posteingang, Feldsuche ──
@@ -1903,31 +1834,27 @@ function Main({onOut,isDemo}){
     setOutlookBusy(true);
     try{
       const text=await fetchEmlText(file);
-      const res=await resolveOutlookIds(text);
-      if(res.direct||res.ids.length===1){
-        window.open(OUTLOOK_DEEPLINK+encodeURIComponent(res.ids[0]),'_blank');
-      }else if(res.ids.length>1){
-        setOutlookPick(res.items);
+      const graphId=findStoredGraphId(text);
+      if(graphId){
+        // Bonus-Abkürzung für frische Mails: direkter Deeplink, keine Suche nötig
+        window.open(OUTLOOK_DEEPLINK+encodeURIComponent(graphId),'_blank');
       }else{
-        // Original in Outlook nicht auffindbar (z.B. verschoben/gelöscht) – trotzdem bearbeit-/weiterleitbar halten:
-        // aus der archivierten .eml selbst einen vollwertigen Weiterleitungs-Entwurf bauen (Text + echte Anhänge),
-        // statt nur die .eml als Datei anzuhängen.
+        // Wie ELOoffice: nie im Postfach suchen (fehleranfällig), sondern immer zuverlässig aus der
+        // archivierten .eml selbst einen vollwertigen Antwort-/Weiterleitungs-Entwurf bauen
+        // (Text + echte Anhänge einzeln statt der ganzen .eml als Blob).
         const fwd=parseEmlForForward(text);
         const subj=fwd.subject||file.name;
         const fromAddr=(fwd.from.match(/<([^>]+)>/)||[])[1]||fwd.from||'';
         setMailPrefill({
           to:fromAddr,
-          subject:/^(AW|RE|FW|WG):/i.test(subj)?subj:'WG: '+subj,
-          body:'\n\n---\nUrsprüngliche Nachricht (im Outlook-Postfach nicht mehr auffindbar, z.B. verschoben/gelöscht)\n'+
-            'Von: '+fwd.from+'\nDatum: '+fwd.date+'\nAn: '+fwd.to+'\nBetreff: '+fwd.subject+'\n\n'+fwd.bodyText,
+          subject:/^(AW|RE|FW|WG):/i.test(subj)?subj:'AW: '+subj,
+          body:'\n\n---\nUrsprüngliche Nachricht\nVon: '+fwd.from+'\nDatum: '+fwd.date+'\nAn: '+fwd.to+'\nBetreff: '+fwd.subject+'\n\n'+fwd.bodyText,
           attachments:fwd.attachments
         });
         setModal('mail');
-        toast('Original nicht mehr auffindbar – Weiterleitungs-Entwurf aus der Ablage vorbereitet','i');
       }
     }catch(e){
-      if(e.message==='MS_LOGIN_REQUIRED'||e.message==='POPUP_BLOCKED')toast('Microsoft-Anmeldung erforderlich/abgebrochen – bitte erneut versuchen','e');
-      else toast('Fehler: '+e.message,'e');
+      toast('Fehler: '+e.message,'e');
     }
     setOutlookBusy(false);
   };
@@ -2505,7 +2432,6 @@ function Main({onOut,isDemo}){
 
     {/* MODALS */}
     {big&&sel&&<ExpandMod file={sel} isDemo={isDemo} onClose={()=>setBig(false)} onOutlook={openInOutlook} outlookBusy={outlookBusy}/>}
-    {outlookPick&&<OutlookPickMod items={outlookPick} onClose={()=>setOutlookPick(null)}/>}
     {indexFile&&<IndexMod file={indexFile.file} mode={indexFile.mode} isDemo={isDemo} folders={allFolders} onClose={()=>setIndexFile(null)} onDone={onIndexDone} onReloadFolders={async()=>{const f=await DR.allFolders();setAllFolders(f);return f;}}/>}
     {modal==='up'&&<UpMod fid={nav==='inbox'?POSTEINGANG:cur.id} onClose={()=>setModal(null)} onDone={()=>{rf();loadInbox();}} isDemo={isDemo}/>}
     {modal==='mk'&&<MkMod par={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
