@@ -1218,12 +1218,14 @@ async function graphSearchAcrossMailboxes(filterQs,candidates){
   }
   return[];
 }
-async function resolveOutlookIds(file){
+async function fetchEmlText(file){
   const blobUrl=await DR.prev(file.id);
   const r=await fetch(blobUrl);
   const buf=await r.arrayBuffer();
   URL.revokeObjectURL(blobUrl);
-  const text=new TextDecoder('utf-8').decode(new Uint8Array(buf));
+  return new TextDecoder('utf-8').decode(new Uint8Array(buf));
+}
+async function resolveOutlookIds(text){
   const head=_splitHeadersBody(text).head;
   const graphId=_hdr(head,'X-AlyDoc-GraphId');
   if(graphId)return{direct:true,ids:[graphId],items:null};
@@ -1247,6 +1249,52 @@ async function resolveOutlookIds(file){
   let hits=await graphSearchAcrossMailboxes('$top=15&$filter='+encodeURIComponent(filt),candidates);
   if(d&&!isNaN(d))hits=hits.filter(m=>Math.abs(new Date(m.receivedDateTime)-d)<5*60*1000);
   return{direct:false,ids:hits.map(m=>m.id),items:hits,meta};
+}
+// Baut aus einer .eml einen vollwertigen Weiterleitungs-Entwurf: Klartext-Body + echte Anhänge einzeln
+// (statt die ganze .eml als einen Blob anzuhängen) – funktioniert unabhängig davon, ob Outlook das Original findet.
+function parseEmlForForward(text){
+  const top=_splitHeadersBody(text);
+  const subject=decodeMimeHeader(_hdr(top.head,'Subject'));
+  const from=decodeMimeHeader(_hdr(top.head,'From'));
+  const to=decodeMimeHeader(_hdr(top.head,'To'));
+  const date=_hdr(top.head,'Date');
+  let htmlBody='',plainBody='';
+  const attachments=[];
+  function walk(head,body,depth){
+    if(depth>8)return;
+    const ctRaw=_hdr(head,'Content-Type');
+    const ct=ctRaw.toLowerCase();
+    const bm=ctRaw.match(/boundary\s*=\s*"?([^";\r\n]+)"?/i);
+    if(ct.indexOf('multipart/')===0&&bm){
+      const parts=body.split('--'+bm[1]);
+      for(let p of parts){
+        p=p.replace(/^\r?\n/,'');
+        if(!p||p.indexOf('--')===0)continue;
+        const sp=_splitHeadersBody(p);
+        walk(sp.head,sp.body,depth+1);
+      }
+      return;
+    }
+    const disp=(_hdr(head,'Content-Disposition')||'').toLowerCase();
+    const isInlineImage=disp.indexOf('inline')===0&&/^image\//.test(ct);
+    const isAttachment=disp.indexOf('attachment')===0||(!isInlineImage&&ct.indexOf('text/')!==0&&ct);
+    if(isAttachment){
+      const nm=(_hdr(head,'Content-Disposition').match(/filename\*?=\s*"?([^";\r\n]+)"?/i))||(ctRaw.match(/name\s*=\s*"?([^";\r\n]+)"?/i));
+      const name=nm?decodeMimeHeader(nm[1].replace(/^UTF-8''/,'')):'Anhang';
+      const enc=(_hdr(head,'Content-Transfer-Encoding')||'').toLowerCase();
+      const b64=enc==='base64'?body.replace(/\s/g,''):btoa(unescape(encodeURIComponent(_decodePart(body,head))));
+      attachments.push({name,mimeType:ct.split(';')[0].trim()||'application/octet-stream',base64:b64});
+      return;
+    }
+    if(ct.indexOf('text/html')===0){if(!htmlBody)htmlBody=_decodePart(body,head);}
+    else if(ct.indexOf('text/plain')===0||(!ct&&body.trim())){if(!plainBody)plainBody=_decodePart(body,head);}
+  }
+  walk(top.head,top.body,0);
+  let bodyText=plainBody;
+  if(!bodyText&&htmlBody){
+    bodyText=htmlBody.replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<br\s*\/?>/gi,'\n').replace(/<\/p>/gi,'\n\n').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
+  }
+  return{subject,from,to,date,bodyText:bodyText||'',attachments};
 }
 async function buildEmlHtml(text){
   const top=_splitHeadersBody(text);
@@ -1537,18 +1585,24 @@ function MailMod({file,onClose,isDemo,prefill}){
   };
 
   const send=async()=>{
-    if(!to.trim()||!file)return;
+    if(!to.trim())return;
     setBusy(true);
     try{
-      const blob=await DR.prevBlob(file.id);
-      const b64=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.readAsDataURL(blob);});
-      const mime=blob.type||'application/octet-stream';
+      let attachments;
+      if(prefill?.attachments){
+        // vorgefertigter Weiterleitungs-Entwurf: bereits dekodierte Original-Anhänge einzeln mitschicken
+        attachments=prefill.attachments.map(a=>({'@odata.type':'#microsoft.graph.fileAttachment',name:a.name,contentType:a.mimeType,contentBytes:a.base64}));
+      }else if(file){
+        const blob=await DR.prevBlob(file.id);
+        const b64=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result.split(',')[1]);r.readAsDataURL(blob);});
+        attachments=[{'@odata.type':'#microsoft.graph.fileAttachment',name:file.name,contentType:blob.type||'application/octet-stream',contentBytes:b64}];
+      }else attachments=[];
       await msRpc('https://graph.microsoft.com/v1.0/me/sendMail',{
         message:{
-          subject:subj||file.name,
+          subject:subj||(file?file.name:''),
           body:{contentType:'Text',content:body||''},
           toRecipients:[{emailAddress:{address:to.trim()}}],
-          attachments:[{'@odata.type':'#microsoft.graph.fileAttachment',name:file.name,contentType:mime,contentBytes:b64}]
+          attachments
         },
         saveToSentItems:true
       });
@@ -1572,7 +1626,7 @@ function MailMod({file,onClose,isDemo,prefill}){
       <div className="fg"><label>An</label><input className="fc" type="email" value={to} onChange={e=>setTo(e.target.value)} placeholder="empfaenger@beispiel.de"/></div>
       <div className="fg"><label>Betreff</label><input className="fc" value={subj} onChange={e=>setSubj(e.target.value)}/></div>
       <div className="fg"><label>Nachricht</label><textarea className="fc" rows={4} value={body} onChange={e=>setBody(e.target.value)} style={{resize:'vertical'}}/></div>
-      {file&&<div style={{fontSize:12,color:'var(--mut)',marginBottom:14,display:'flex',alignItems:'center',gap:6}}><i className="fas fa-paperclip"/>{file.name}</div>}
+      {prefill?.attachments?prefill.attachments.map(a=><div key={a.name} style={{fontSize:12,color:'var(--mut)',marginBottom:6,display:'flex',alignItems:'center',gap:6}}><i className="fas fa-paperclip"/>{a.name}</div>):file&&<div style={{fontSize:12,color:'var(--mut)',marginBottom:14,display:'flex',alignItems:'center',gap:6}}><i className="fas fa-paperclip"/>{file.name}</div>}
       <div style={{display:'flex',gap:8,justifyContent:'flex-end'}}>
         <button className="btn bs" onClick={onClose} disabled={busy}>Abbrechen</button>
         <button className="btn bp" onClick={send} disabled={busy||!to.trim()||!msReady}>{busy?<><i className="fas fa-spinner fa-spin"/>Sendet…</>:<><i className="fas fa-paper-plane"/>Senden</>}</button>
@@ -1848,22 +1902,28 @@ function Main({onOut,isDemo}){
     if(!file||isDemo){toast('Im Demo-Modus nicht verfügbar','e');return;}
     setOutlookBusy(true);
     try{
-      const res=await resolveOutlookIds(file);
+      const text=await fetchEmlText(file);
+      const res=await resolveOutlookIds(text);
       if(res.direct||res.ids.length===1){
         window.open(OUTLOOK_DEEPLINK+encodeURIComponent(res.ids[0]),'_blank');
       }else if(res.ids.length>1){
         setOutlookPick(res.items);
       }else{
-        // Original in Outlook nicht auffindbar (z.B. verschoben/gelöscht) – trotzdem bearbeitbar/weiterleitbar halten:
-        // bewährten "E-Mail senden"-Weg (Anhang + Graph sendMail) vorbefüllt öffnen, statt Sackgasse.
-        const subj=res.meta?.subject||file.name;
+        // Original in Outlook nicht auffindbar (z.B. verschoben/gelöscht) – trotzdem bearbeit-/weiterleitbar halten:
+        // aus der archivierten .eml selbst einen vollwertigen Weiterleitungs-Entwurf bauen (Text + echte Anhänge),
+        // statt nur die .eml als Datei anzuhängen.
+        const fwd=parseEmlForForward(text);
+        const subj=fwd.subject||file.name;
+        const fromAddr=(fwd.from.match(/<([^>]+)>/)||[])[1]||fwd.from||'';
         setMailPrefill({
-          to:res.meta?.fromAddr||'',
-          subject:/^(AW|RE|FW|WG):/i.test(subj)?subj:'AW: '+subj,
-          body:'\n\n---\nHinweis: Original-Mail war über die Outlook-Suche nicht mehr auffindbar (z.B. verschoben/gelöscht). Die Original-Mail ist als Anhang beigefügt.'
+          to:fromAddr,
+          subject:/^(AW|RE|FW|WG):/i.test(subj)?subj:'WG: '+subj,
+          body:'\n\n---\nUrsprüngliche Nachricht (im Outlook-Postfach nicht mehr auffindbar, z.B. verschoben/gelöscht)\n'+
+            'Von: '+fwd.from+'\nDatum: '+fwd.date+'\nAn: '+fwd.to+'\nBetreff: '+fwd.subject+'\n\n'+fwd.bodyText,
+          attachments:fwd.attachments
         });
         setModal('mail');
-        toast('Original nicht mehr auffindbar – Antwort/Weiterleitung mit Original als Anhang vorbereitet','i');
+        toast('Original nicht mehr auffindbar – Weiterleitungs-Entwurf aus der Ablage vorbereitet','i');
       }
     }catch(e){
       if(e.message==='MS_LOGIN_REQUIRED'||e.message==='POPUP_BLOCKED')toast('Microsoft-Anmeldung erforderlich/abgebrochen – bitte erneut versuchen','e');
