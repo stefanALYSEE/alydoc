@@ -1232,20 +1232,21 @@ async function resolveOutlookIds(file){
   const fromAddr=(_hdr(head,'From').match(/<([^>]+)>/)||[])[1]||'';
   const toAddrs=[..._hdr(head,'To').matchAll(/<([^>]+)>/g)].map(m=>m[1]);
   const candidates=[...new Set([fromAddr,...toAddrs])].filter(Boolean);
+  const subject=decodeMimeHeader(_hdr(head,'Subject'));
+  const meta={subject,fromAddr};
   const msgId=_hdr(head,'Message-ID');
   if(msgId){
     const hits=await graphSearchAcrossMailboxes('$filter='+encodeURIComponent(`internetMessageId eq '${esc(msgId)}'`),candidates);
-    if(hits.length)return{direct:false,ids:hits.map(m=>m.id),items:hits};
+    if(hits.length)return{direct:false,ids:hits.map(m=>m.id),items:hits,meta};
   }
   // Fallback für alte Mails ohne gespeicherte ID: Betreff + Absender + Datum (±5 Min.)
-  const subject=decodeMimeHeader(_hdr(head,'Subject'));
   const dateHdr=_hdr(head,'Date');
   const d=dateHdr?new Date(dateHdr):null;
   let filt=`subject eq '${esc(subject)}'`;
   if(fromAddr)filt+=` and from/emailAddress/address eq '${esc(fromAddr)}'`;
   let hits=await graphSearchAcrossMailboxes('$top=15&$filter='+encodeURIComponent(filt),candidates);
   if(d&&!isNaN(d))hits=hits.filter(m=>Math.abs(new Date(m.receivedDateTime)-d)<5*60*1000);
-  return{direct:false,ids:hits.map(m=>m.id),items:hits};
+  return{direct:false,ids:hits.map(m=>m.id),items:hits,meta};
 }
 async function buildEmlHtml(text){
   const top=_splitHeadersBody(text);
@@ -1509,10 +1510,10 @@ function OutlookPickMod({items,onClose}){
   </div></div>);
 }
 
-function MailMod({file,onClose,isDemo}){
-  const [to,setTo]=useState('');
-  const [subj,setSubj]=useState(file?file.name:'');
-  const [body,setBody]=useState('');
+function MailMod({file,onClose,isDemo,prefill}){
+  const [to,setTo]=useState(prefill?.to||'');
+  const [subj,setSubj]=useState(prefill?.subject||(file?file.name:''));
+  const [body,setBody]=useState(prefill?.body||'');
   const [busy,setBusy]=useState(false);
   const [msReady,setMsReady]=useState(!!_msToken&&Date.now()<_msExpires-60000);
   const toast=useContext(TC);
@@ -1810,6 +1811,7 @@ function Main({onOut,isDemo}){
   const [allFolders,setAllFolders]=useState([]);
   const [outlookPick,setOutlookPick]=useState(null);
   const [outlookBusy,setOutlookBusy]=useState(false);
+  const [mailPrefill,setMailPrefill]=useState(null);
   // ── ELO: Ribbon, Verschlagwortung, Posteingang, Feldsuche ──
   const [ribTab,setRibTab]=useState('start');
   const [indexFile,setIndexFile]=useState(null);   // {file, mode:'index'|'file'}
@@ -1852,7 +1854,16 @@ function Main({onOut,isDemo}){
       }else if(res.ids.length>1){
         setOutlookPick(res.items);
       }else{
-        toast('Mail im Postfach nicht gefunden – evtl. gelöscht oder verschoben','e');
+        // Original in Outlook nicht auffindbar (z.B. verschoben/gelöscht) – trotzdem bearbeitbar/weiterleitbar halten:
+        // bewährten "E-Mail senden"-Weg (Anhang + Graph sendMail) vorbefüllt öffnen, statt Sackgasse.
+        const subj=res.meta?.subject||file.name;
+        setMailPrefill({
+          to:res.meta?.fromAddr||'',
+          subject:/^(AW|RE|FW|WG):/i.test(subj)?subj:'AW: '+subj,
+          body:'\n\n---\nHinweis: Original-Mail war über die Outlook-Suche nicht mehr auffindbar (z.B. verschoben/gelöscht). Die Original-Mail ist als Anhang beigefügt.'
+        });
+        setModal('mail');
+        toast('Original nicht mehr auffindbar – Antwort/Weiterleitung mit Original als Anhang vorbereitet','i');
       }
     }catch(e){
       if(e.message==='MS_LOGIN_REQUIRED'||e.message==='POPUP_BLOCKED')toast('Microsoft-Anmeldung erforderlich/abgebrochen – bitte erneut versuchen','e');
@@ -2439,7 +2450,7 @@ function Main({onOut,isDemo}){
     {modal==='up'&&<UpMod fid={nav==='inbox'?POSTEINGANG:cur.id} onClose={()=>setModal(null)} onDone={()=>{rf();loadInbox();}} isDemo={isDemo}/>}
     {modal==='mk'&&<MkMod par={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
     {modal==='ren'&&sel&&<RenMod file={sel} onClose={()=>setModal(null)} onDone={()=>{rf();setModal(null);}} isDemo={isDemo}/>}
-    {modal==='mail'&&sel&&<MailMod file={sel} onClose={()=>setModal(null)} isDemo={isDemo}/>}
+    {modal==='mail'&&sel&&<MailMod file={sel} onClose={()=>{setModal(null);setMailPrefill(null);}} isDemo={isDemo} prefill={mailPrefill}/>}
     {moveFile&&<MoveMod file={moveFile} curFolderId={cur.id} onClose={()=>setMoveFile(null)} onDone={onMoveDone} isDemo={isDemo} folders={allFolders} onReloadFolders={async()=>{const f=await DR.allFolders();console.log('reload:',f.length);setAllFolders(f);return f;}}/>}
   </div>);
 }
