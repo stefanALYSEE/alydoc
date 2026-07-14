@@ -1206,6 +1206,18 @@ function _decodePart(rawBody,head){
 }
 // ── "In Outlook öffnen" – Original-Mail per Graph auflösen und deep-linken ──
 const OUTLOOK_DEEPLINK='https://outlook.office.com/mail/deeplink/read/';
+// Sucht zuerst im eigenen Postfach, dann testweise in den beteiligten Adressen als Shared Mailbox
+// (z.B. info@alysee.de) – /me/messages sieht Shared Mailboxes nicht, auch wenn sie in Outlook eingebunden sind.
+async function graphSearchAcrossMailboxes(filterQs,candidates){
+  const bases=['me',...candidates.map(a=>'users/'+encodeURIComponent(a))];
+  for(const base of bases){
+    try{
+      const data=await msGet(`https://graph.microsoft.com/v1.0/${base}/messages?$select=id,subject,from,receivedDateTime&${filterQs}`);
+      if(data.value&&data.value.length)return data.value;
+    }catch(e){/* 403/404 bei fremden/nicht zugeordneten Postfächern ignorieren */}
+  }
+  return[];
+}
 async function resolveOutlookIds(file){
   const blobUrl=await DR.prev(file.id);
   const r=await fetch(blobUrl);
@@ -1217,20 +1229,21 @@ async function resolveOutlookIds(file){
   if(graphId)return{direct:true,ids:[graphId],items:null};
   await msEnsureAuth();
   const esc=s=>s.replace(/'/g,"''");
+  const fromAddr=(_hdr(head,'From').match(/<([^>]+)>/)||[])[1]||'';
+  const toAddrs=[..._hdr(head,'To').matchAll(/<([^>]+)>/g)].map(m=>m[1]);
+  const candidates=[...new Set([fromAddr,...toAddrs])].filter(Boolean);
   const msgId=_hdr(head,'Message-ID');
   if(msgId){
-    const data=await msGet('https://graph.microsoft.com/v1.0/me/messages?$select=id,subject,from,receivedDateTime&$filter='+encodeURIComponent(`internetMessageId eq '${esc(msgId)}'`));
-    if(data.value&&data.value.length)return{direct:false,ids:data.value.map(m=>m.id),items:data.value};
+    const hits=await graphSearchAcrossMailboxes('$filter='+encodeURIComponent(`internetMessageId eq '${esc(msgId)}'`),candidates);
+    if(hits.length)return{direct:false,ids:hits.map(m=>m.id),items:hits};
   }
   // Fallback für alte Mails ohne gespeicherte ID: Betreff + Absender + Datum (±5 Min.)
   const subject=decodeMimeHeader(_hdr(head,'Subject'));
-  const fromAddr=(_hdr(head,'From').match(/<([^>]+)>/)||[])[1]||'';
   const dateHdr=_hdr(head,'Date');
   const d=dateHdr?new Date(dateHdr):null;
   let filt=`subject eq '${esc(subject)}'`;
   if(fromAddr)filt+=` and from/emailAddress/address eq '${esc(fromAddr)}'`;
-  const data=await msGet('https://graph.microsoft.com/v1.0/me/messages?$select=id,subject,from,receivedDateTime&$top=15&$filter='+encodeURIComponent(filt));
-  let hits=data.value||[];
+  let hits=await graphSearchAcrossMailboxes('$top=15&$filter='+encodeURIComponent(filt),candidates);
   if(d&&!isNaN(d))hits=hits.filter(m=>Math.abs(new Date(m.receivedDateTime)-d)<5*60*1000);
   return{direct:false,ids:hits.map(m=>m.id),items:hits};
 }
