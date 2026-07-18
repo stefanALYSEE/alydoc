@@ -22,7 +22,7 @@
       --pri:#007AFF;
       --blue:#007AFF;
       --grn:#34C759;
-      --org:#FF9F0A;
+      --org:#8E8E93;
       --red:#FF3B30;
       --sep:rgba(60,60,67,.18);
       --label:#000;
@@ -44,7 +44,7 @@
     }
     .nav-logo{
       width:30px;height:30px;
-      background:linear-gradient(145deg,#FF9F0A,#FF5500);
+      background:linear-gradient(145deg,#8E8E93,#FF5500);
       border-radius:8px;
       display:flex;align-items:center;justify-content:center;
       font-size:10px;font-weight:700;color:#fff;letter-spacing:-.3px;flex-shrink:0;
@@ -155,7 +155,7 @@
       color:var(--tertiary);font-size:10px;flex-shrink:0;
     }
     .tree-item i.fa-folder,
-    .tree-item i.fa-folder-open{color:#FF9F0A;font-size:13px;width:15px;flex-shrink:0}
+    .tree-item i.fa-folder-open{color:#8E8E93;font-size:13px;width:15px;flex-shrink:0}
     .tree-item i.fa-dropbox{color:var(--dbx);font-size:13px;width:15px;flex-shrink:0}
     .tree-item .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
@@ -225,7 +225,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version">v4.7</div>
+    <div class="nav-version">v4.8</div>
   </div>
 </nav>
 
@@ -267,6 +267,14 @@
       <div class="att-header-row">Anhänge</div>
       <div id="att-items"></div>
     </div>
+  </div>
+
+  <!-- Microsoft-Verbindung: ohne Graph-Token kann die Original-Mail (Anhänge, Inline-Bilder,
+       korrekte Umlaute) nicht zuverlässig gespeichert werden -->
+  <div id="ms-banner" class="status warn" style="display:none;align-items:center">
+    <i class="fab fa-microsoft"></i>
+    <span style="flex:1">Microsoft nicht verbunden – Anhänge &amp; Bilder werden beim Ablegen NICHT mitgespeichert.</span>
+    <button onclick="msLogin()" style="background:#0067b8;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">Verbinden</button>
   </div>
 
   <button class="btn btn-success" id="btn-ablegen" onclick="ablegen()" disabled>
@@ -381,6 +389,45 @@ async function refreshMsToken(){
     if(data.refresh_token)localStorage.setItem('alydoc_ms_refresh',data.refresh_token);
     return data.access_token;
   }catch{return null;}
+}
+
+// ── MICROSOFT LOGIN IM TASKPANE ──────────────────────────────────────────────
+// Outlooks WebView hat einen EIGENEN localStorage – der MS-Login aus dem Browser
+// (index.html) ist hier NICHT sichtbar. Ohne eigenen Login lief die Ablage immer
+// im anhanglosen Fallback (Ursache: 0 von 300 abgelegten Mails hatten Anhänge).
+async function updateMsBanner(){
+  const banner=document.getElementById('ms-banner');
+  if(!banner)return;
+  const token=await getValidMsToken();
+  banner.style.display=token?'none':'flex';
+}
+function msLogin(){
+  const url=window.location.origin+'/ms-auth.html';
+  try{
+    Office.context.ui.displayDialogAsync(url,{height:70,width:35},result=>{
+      if(result.status!==Office.AsyncResultStatus.Succeeded){
+        showStatus('Login-Dialog konnte nicht geoeffnet werden: '+(result.error&&result.error.message||''),'error');
+        return;
+      }
+      const dialog=result.value;
+      dialog.addEventHandler(Office.EventType.DialogMessageReceived,arg=>{
+        try{
+          const msg=JSON.parse(arg.message||'{}');
+          if(msg.type==='ms_auth_success'&&msg.token){
+            localStorage.setItem('alydoc_ms_token',msg.token);
+            localStorage.setItem('alydoc_ms_expires',(Date.now()+(msg.expires_in||3600)*1000).toString());
+            if(msg.refresh)localStorage.setItem('alydoc_ms_refresh',msg.refresh);
+            showStatus('Microsoft verbunden – Anhänge werden ab jetzt mitgespeichert.','success');
+          }
+        }catch(e){console.warn('MS-Dialog-Message:',e);}
+        dialog.close();
+        updateMsBanner();
+      });
+      dialog.addEventHandler(Office.EventType.DialogEventReceived,()=>updateMsBanner());
+    });
+  }catch(e){
+    showStatus('Login nicht moeglich: '+e.message,'error');
+  }
 }
 
 function arrayBufferToBase64(buf){
@@ -1037,7 +1084,11 @@ async function ablegen(){
     msg+='<br><small>Datei: '+(uploadResult.name||fileName)+'</small>';
     msg+='<br><small>Pfad: '+(uploadResult.path_display||targetPath)+'</small>';
     if(attCount)msg+='<br>'+attCount+' Anhang/Anhänge';
-    showStatus(msg,'success');
+    if(emlWarnings.length){
+      showStatus(msg+'<br><b>⚠ '+emlWarnings.join('<br>⚠ ')+'</b>','warn');
+    }else{
+      showStatus(msg,'success');
+    }
 
     document.getElementById('btn-ablegen').disabled=false;
     document.getElementById('progress-wrap').style.display='none';
@@ -1081,7 +1132,39 @@ async function getAttachmentsWithMeta(){
   return out;
 }
 
+// Warnungen aus der EML-Erzeugung – werden von ablegen() in der Erfolgsmeldung angezeigt,
+// damit fehlende Anhänge/Bodies nie wieder STILL passieren.
+let emlWarnings=[];
+
+// Bevorzugter Weg: das komplette Original-MIME der Mail via Graph.
+// Enthält Body, ALLE Anhänge, Inline-Bilder und korrekte Zeichensätze – ohne fehleranfälliges
+// Selbst-Zusammenbauen aus Office.js-Einzelteilen.
+async function getOriginalMimeViaGraph(){
+  const msToken=await getValidMsToken();
+  if(!msToken)return null;
+  const restId=Office.context.mailbox.convertToRestId(mailItem.itemId,Office.MailboxEnums.RestVersion.v2_0);
+  const r=await fetch('https://graph.microsoft.com/v1.0/me/messages/'+encodeURIComponent(restId)+'/$value',{
+    headers:{'Authorization':'Bearer '+msToken}
+  });
+  if(!r.ok)throw new Error('Graph MIME '+r.status);
+  // Als Bytes weiterreichen (kein String-Umweg) – vermeidet jede Charset-Verfaelschung
+  const buf=await r.arrayBuffer();
+  if(!buf||buf.byteLength<100)throw new Error('Graph MIME leer');
+  // Graph-ID fuer "In Outlook oeffnen" in der DMS-Webapp als zusaetzlichen Header voranstellen
+  return new Blob(['X-AlyDoc-GraphId: '+restId+'\r\n',buf]);
+}
+
 async function getEmlContent(){
+  emlWarnings=[];
+  // 1) Original-MIME via Graph (vollstaendig + verlustfrei)
+  try{
+    const mime=await getOriginalMimeViaGraph();
+    if(mime)return mime;
+  }catch(e){console.warn('Graph-MIME nicht verfuegbar, EML wird lokal gebaut:',e);}
+  if(!(await getValidMsToken()))emlWarnings.push('Microsoft nicht verbunden – Anhänge/Bilder wurden NICHT mitgespeichert („Verbinden" oben nutzen).');
+  else emlWarnings.push('Original-Mail via Microsoft nicht abrufbar – vereinfachte Kopie ohne Anhänge gespeichert.');
+
+  // 2) Fallback: EML lokal aus Office.js-Teilen zusammenbauen (wie bis v4.7)
   const from=mailItem.from;
   const to=mailItem.to||[];
   const cc=mailItem.cc||[];
@@ -1090,23 +1173,34 @@ async function getEmlContent(){
   const boundary='__alyDoc_'+Date.now()+'__';
   const mixedBoundary='__alyDoc_mixed_'+Date.now()+'__';
 
+  let bodyLoadFailed=false;
   const htmlBody=await new Promise((resolve)=>{
     mailItem.body.getAsync(Office.CoercionType.Html,result=>{
-      if(result.status===Office.AsyncResultStatus.Failed){console.warn('HTML body load failed:',result.error.message);resolve('');return;}
+      if(result.status===Office.AsyncResultStatus.Failed){console.warn('HTML body load failed:',result.error.message);bodyLoadFailed=true;resolve('');return;}
       resolve(result.value||'');
     });
   });
 
   const textBody=await new Promise((resolve)=>{
     mailItem.body.getAsync(Office.CoercionType.Text,result=>{
-      if(result.status===Office.AsyncResultStatus.Failed){resolve('');return;}
+      if(result.status===Office.AsyncResultStatus.Failed){bodyLoadFailed=true;resolve('');return;}
       resolve(result.value||'');
     });
   });
 
+  // NIE mehr still eine leere Mail ablegen (Ursache der "kryptischen Zeichen"-Dateien:
+  // beide Body-Parts leer → Vorschau zeigte rohes MIME)
+  if(!htmlBody&&!textBody&&bodyLoadFailed){
+    throw new Error('Outlook hat den Mail-Text nicht geliefert. Mail wurde NICHT gespeichert – bitte kurz warten und erneut ablegen.');
+  }
+
   // Anhänge inkl. Inline-Bilder (mit contentId) – Graph bevorzugt, sonst Office.js
   let allAtts=[];
   try{allAtts=await getAttachmentsWithMeta();}catch(e){console.warn('Anhang-Liste Fehler:',e);allAtts=[];}
+  const expectedAtts=(mailItem.attachments||[]).length;
+  if(expectedAtts>0&&allAtts.length===0){
+    emlWarnings.push(expectedAtts+' Anhang/Anhänge konnten NICHT eingebettet werden.');
+  }
   const isImg=a=>/^image\//i.test(a.mimeType||'');
   const inlineImgs=allAtts.filter(a=>a.isInline&&a.contentId&&isImg(a));
   const regular=allAtts.filter(a=>!(a.isInline&&a.contentId&&isImg(a)));
@@ -1197,6 +1291,7 @@ function showScreen(id){
     document.getElementById('status-box').style.display='none';
     document.getElementById('progress-wrap').style.display='none';
     document.getElementById('btn-ablegen').disabled=(selectedFolderPath===null);
+    updateMsBanner();
   }
 }
 

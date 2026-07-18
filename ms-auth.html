@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <title>alyDoc – Microsoft Anmeldung</title>
+  <!-- office.js: noetig damit die Seite als Office-Dialog (Add-in-Taskpane-Login) den Token
+       per messageParent zurueckgeben kann. Im normalen Browser-Popup harmlos. -->
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
   <style>
     body{font-family:'Segoe UI',system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#F5F7FA;margin:0}
     .card{background:#fff;border-radius:10px;padding:32px;text-align:center;box-shadow:0 4px 24px rgba(0,0,0,.1);max-width:360px;width:90%}
@@ -59,10 +62,28 @@ if(tokenFromUrl){
   const token=tokenFromUrl;
   const refresh=urlParams.get('refresh')||'';
   const expires_in=parseInt(urlParams.get('expires_in')||'3600');
+  // Immer direkt persistieren (gleiche Origin) – deckt Faelle ab, in denen Dialog und
+  // Taskpane denselben Storage teilen
+  try{
+    localStorage.setItem('alydoc_ms_token',token);
+    localStorage.setItem('alydoc_ms_expires',(Date.now()+expires_in*1000).toString());
+    if(refresh)localStorage.setItem('alydoc_ms_refresh',refresh);
+  }catch(e){}
+  // Browser-Popup (DMS-Webapp index.html)
   if(window.opener){
     try{
       window.opener.postMessage({type:'ms_auth_success',token,refresh,expires_in},'*');
     }catch(e){console.error('postMessage failed:',e);}
+  }
+  // Office-Dialog (Outlook-Add-in Taskpane): Token via messageParent zurueckgeben
+  if(window.Office&&Office.onReady){
+    Office.onReady(()=>{
+      try{
+        if(Office.context&&Office.context.ui&&Office.context.ui.messageParent){
+          Office.context.ui.messageParent(JSON.stringify({type:'ms_auth_success',token,refresh,expires_in}));
+        }
+      }catch(e){console.warn('messageParent:',e);}
+    });
   }
   setTimeout(()=>window.close(),1500);
 }

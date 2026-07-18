@@ -35,6 +35,18 @@
     async function dbxRpc(path,arg){await _dbxEnsureToken();const r=await fetch(DBX_API+path,{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Content-Type':'application/json',..._dbxPathRootHeader()},body:JSON.stringify(arg||null)});if(r.status===401){if(await _dbxTryRefresh())return dbxRpc(path,arg);throw new Error('401');}const t=await r.text();let d;try{d=t?JSON.parse(t):{};}catch{d={raw:t};}if(!r.ok)throw new Error('Dropbox '+path+' '+r.status+': '+(d.error_summary||t));return d;}
     async function dbxUploadRaw(dropboxPath,data,mode){await _dbxEnsureToken();const arg={path:dropboxPath,mode:mode||'add',autorename:true,mute:false};let body=data;if(typeof body==='string')body=new TextEncoder().encode(body);const r=await fetch(DBX_CONTENT+'/files/upload',{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Dropbox-API-Arg':jsonHeaderSafe(arg),'Content-Type':'application/octet-stream',..._dbxPathRootHeader()},body});if(r.status===401){if(await _dbxTryRefresh())return dbxUploadRaw(dropboxPath,data,mode);throw new Error('401');}const t=await r.text();let d;try{d=t?JSON.parse(t):{};}catch{d={raw:t};}if(!r.ok)throw new Error('Upload '+r.status+': '+(d.error_summary||t));return d;}
     async function dbxDownloadBlob(dropboxPath){await _dbxEnsureToken();const r=await fetch(DBX_CONTENT+'/files/download',{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Dropbox-API-Arg':jsonHeaderSafe({path:dropboxPath}),..._dbxPathRootHeader()}});if(r.status===401){if(await _dbxTryRefresh())return dbxDownloadBlob(dropboxPath);throw new Error('401 – bitte neu anmelden');}if(!r.ok)throw new Error('Download '+r.status);return r.blob();}
+    // Vorschau-Cache: gleiche Datei nicht mehrfach herunterladen (PrevPanel + Vollbild = 2x, erneutes Anklicken = jedes Mal).
+    // Promise wird sofort gecacht, parallele Aufrufe teilen sich EINEN Download. LRU, max. 30 Eintraege.
+    const _blobCache=new Map();
+    function _blobCachePut(key,p){_blobCache.set(key,p);if(_blobCache.size>30)_blobCache.delete(_blobCache.keys().next().value);}
+    function _blobCacheGet(key){const e=_blobCache.get(key);if(e){_blobCache.delete(key);_blobCache.set(key,e);}return e;}
+    function dbxDownloadBlobCached(dropboxPath){
+      const hit=_blobCacheGet(dropboxPath);
+      if(hit)return hit;
+      const p=dbxDownloadBlob(dropboxPath).catch(err=>{_blobCache.delete(dropboxPath);throw err;});
+      _blobCachePut(dropboxPath,p);
+      return p;
+    }
     // Load tokens from localStorage on startup
     try{_dbxToken=localStorage.getItem('alydoc_dbx_token')||null;_dbxRefresh=localStorage.getItem('alydoc_dbx_refresh')||null;_dbxExpires=parseInt(localStorage.getItem('alydoc_dbx_expires')||'0');_dbxRootNs=localStorage.getItem('alydoc_dbx_root_ns')||null;}catch{}
     // Microsoft OAuth config
@@ -300,7 +312,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v2.9 · 2026-07-14';
+const APP_BUILD='v3.0 · 2026-07-18';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -419,28 +431,41 @@ const DR={
       return out;
     }catch(e){console.warn('listSubfolders err:',e);return[];}
   },
-  async allFolders(){
-    const result=[];const queue=[''];const visited=new Set(['']);let depth=0;
-    while(queue.length>0&&depth<4){
-      const batch=queue.splice(0,queue.length);
-      const lists=await Promise.all(batch.map(p=>this.listSubfolders(p)));
-      lists.flat().forEach(f=>{if(!visited.has(f.id)){visited.add(f.id);result.push(f);queue.push(f.id);}});
-      depth++;
-    }
-    return result.sort((a,b)=>a.name.localeCompare(b.name,'de'));
+  // Ordnersuche serverseitig (search_v2, nur Ordner) – ersetzt das Durchsuchen eines vorgeladenen Baums
+  async findFolders(q){
+    try{
+      const r=await dbxRpc('/files/search_v2',{query:q,options:{max_results:100,file_status:'active',filename_only:true,file_categories:['folder']}});
+      const out=[];
+      for(const m of(r.matches||[])){
+        const md=m.metadata&&m.metadata.metadata;
+        if(!md||md['.tag']!=='folder')continue;
+        const parent=(md.path_lower||'').substring(0,(md.path_lower||'').lastIndexOf('/'))||'';
+        out.push({id:md.path_lower,name:md.name,parentId:parent,path_lower:md.path_lower,path_display:md.path_display,fullName:(md.path_display||md.name).replace(/^\//,'').replace(/\//g,' / ')});
+      }
+      out.sort((a,b)=>a.fullName.localeCompare(b.fullName,'de'));
+      return out;
+    }catch(e){console.warn('findFolders err:',e);return[];}
   },
   async prev(path){
     if(!path)throw new Error('Kein Pfad');
-    const blob=await dbxDownloadBlob(path);
+    const blob=await dbxDownloadBlobCached(path);
     return URL.createObjectURL(blob);
   },
-  async prevBlob(path){return dbxDownloadBlob(path);
+  async prevBlob(path){return dbxDownloadBlobCached(path);
   },
   // Office-Vorschau: Dropbox liefert eine PDF-Rendition (doc/docx/xls/xlsx/ppt/pptx …) – authentifiziert, kein Drittanbieter
   async officePdfBlob(path){
+    const ck='office-preview:'+path;
+    const hit=_blobCacheGet(ck);
+    if(hit)return hit;
+    const p=DR._officePdfBlobRaw(path).catch(err=>{_blobCache.delete(ck);throw err;});
+    _blobCachePut(ck,p);
+    return p;
+  },
+  async _officePdfBlobRaw(path){
     await _dbxEnsureToken();
     const r=await fetch(DBX_CONTENT+'/files/get_preview',{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Dropbox-API-Arg':jsonHeaderSafe({path}),..._dbxPathRootHeader()}});
-    if(r.status===401){if(await _dbxTryRefresh())return DR.officePdfBlob(path);throw new Error('401');}
+    if(r.status===401){if(await _dbxTryRefresh())return DR._officePdfBlobRaw(path);throw new Error('401');}
     if(!r.ok){let t='';try{t=await r.text();}catch{}throw new Error('Vorschau '+r.status+(t?': '+t:''));}
     return r.blob();
   },
@@ -473,6 +498,27 @@ const DR={
   },
   // ── Versionierung (Dropbox-Revisionen) – Basis fuer spaetere Ausbaustufe ──
   async revisions(path){try{const r=await dbxRpc('/files/list_revisions',{path,mode:'path',limit:50});return r.entries||[];}catch(e){console.warn('rev err:',e);return[];}},
+};
+
+/* ── LAZY-ORDNERCACHE fuer Verschieben-Dialog + Verschlagwortung ──
+   Ersetzt das alte DR.allFolders() (BFS bis Tiefe 4 = bei ~45.000 Ordnern rund 1.900 API-Calls
+   pro Dialog-Oeffnung → Rate-Limit-Bremse, und tiefere Ebenen fehlten komplett).
+   Jede Ebene wird erst beim Aufklappen geladen (1 Call) und sessionweit gecacht. */
+const FLD={
+  _list:[],_loaded:{},
+  reset(){FLD._list=[];FLD._loaded={};},
+  list(){return FLD._list;},
+  isLoaded(parentId){return !!FLD._loaded[parentId||''];},
+  add(f){if(!FLD._list.some(x=>x.id===f.id)){FLD._list.push(f);FLD._list.sort((a,b)=>a.name.localeCompare(b.name,'de'));}},
+  async ensure(parentId){
+    const pid=parentId||'';
+    if(FLD._loaded[pid])return FLD._list;
+    const kids=await DR.listSubfolders(pid);
+    FLD._loaded[pid]=true;
+    const known=new Set(FLD._list.map(f=>f.id));
+    kids.forEach(k=>{if(!known.has(k.id))FLD._list.push({...k,fullName:(k.path_display||k.name).replace(/^\//,'').replace(/\//g,' / ')});});
+    return FLD._list;
+  },
 };
 
 /* ── DOKUMENTTYPEN / VERSCHLAGWORTUNGS-MASKEN (ELO-Stil) ── */
@@ -607,29 +653,37 @@ function ToastProv({children}){
 }
 
 /* ── VERSCHIEBEN MODAL ── */
-function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders}){
+function MoveMod({file,curFolderId,onClose,onDone,isDemo}){
   const [selId,setSelId]=useState(null);
   const [selName,setSelName]=useState('');
   const [busy,setBusy]=useState(false);
   const [reloading,setReloading]=useState(false);
   const [expandedIds,setExpandedIds]=useState({});
+  const [loadingIds,setLoadingIds]=useState({});
   const [search,setSearch]=useState('');
-  const [localNewFolders,setLocalNewFolders]=useState([]); // sofort angezeigte neue Ordner
+  const [searchRes,setSearchRes]=useState(null); // null = keine aktive Suche
+  const [searching,setSearching]=useState(false);
+  const [,setTreeVer]=useState(0); // erzwingt Re-Render nach FLD-Nachladen
   const creatingRef=useRef(false); // verhindert Doppelaufruf
   const toast=useContext(TC);
 
   const isMulti=Array.isArray(file);
   const isCur=id=>id===curFolderId||(id===''&&(!curFolderId||curFolderId===''));
-  const isSelf=id=>!isMulti&&file.mimeType==='application/vnd.dropbox.folder'&&id===file.id;
+  const isSelf=id=>!isMulti&&file.mimeType==='application/vnd.dropbox.folder'&&(id===file.id||(id+'/').startsWith(file.id+'/'));
+
+  // Root-Ebene beim Oeffnen laden (aus Session-Cache sofort da)
+  useEffect(()=>{
+    if(isDemo)return;
+    FLD.ensure('').then(()=>setTreeVer(v=>v+1)).catch(e=>console.error(e));
+  },[isDemo]);
 
   const reloadFolders=async()=>{
     setReloading(true);
-    try{if(onReloadFolders)await onReloadFolders();}catch(e){console.error(e);}
-    setLocalNewFolders([]); // lokale Ordner nach Reload entfernen (jetzt in folders)
+    try{FLD.reset();await FLD.ensure('');setExpandedIds({});setTreeVer(v=>v+1);}catch(e){console.error(e);}
     setReloading(false);
   };
 
-  // Alle Ordner inkl. Root aufbauen
+  // Alle bisher geladenen Ordner inkl. Root
   const rootEntry={id:'',name:'Dropbox',parentId:null};
   const allDirs=isDemo
     ?[rootEntry,
@@ -641,39 +695,39 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
       {id:'/projekte/laufend',name:'Laufend',parentId:'/projekte'},
       {id:'/projekte/abgeschlossen',name:'Abgeschlossen',parentId:'/projekte'},
     ]
-    :[rootEntry,...(folders||[]).map(f=>({
-        id:f.id,
-        name:f.displayName?f.displayName.split(' / ').pop():f.name,
-        fullName:f.displayName||f.name,
-        parentId:f.parentId||''
-      })),...localNewFolders.filter(nf=>!(folders||[]).some(f=>f.id===nf.id))];
+    :[rootEntry,...FLD.list()];
 
   // Kinder eines Ordners ermitteln
   const childrenOf=parentId=>allDirs.filter(d=>d.id!==''&&d.parentId===parentId);
 
-  // Suchfilter: alle Ordner die den Suchbegriff enthalten (und ihre Eltern)
+  // Aufklappen: Unterordner bei Bedarf nachladen (genau 1 API-Call pro Ordner, sessionweit gecacht)
+  const toggleExpand=async d=>{
+    const open=!expandedIds[d.id];
+    setExpandedIds(p=>({...p,[d.id]:open}));
+    if(open&&!isDemo&&!FLD.isLoaded(d.id)){
+      setLoadingIds(p=>({...p,[d.id]:true}));
+      try{await FLD.ensure(d.id);setTreeVer(v=>v+1);}catch(e){console.warn(e);}
+      setLoadingIds(p=>{const n={...p};delete n[d.id];return n;});
+    }
+  };
+
+  // Suche: serverseitig ueber ALLE Ordner (search_v2), debounced – findet auch nie aufgeklappte Ebenen
   const searchLower=search.toLowerCase().trim();
   const matchesSearch=d=>{
     if(!searchLower)return true;
     return(d.fullName||d.name).toLowerCase().includes(searchLower);
   };
-
-  // Beim Suchen alle Eltern aufklappen
   useEffect(()=>{
-    if(!searchLower)return;
-    const newExp={};
-    allDirs.forEach(d=>{
-      if(matchesSearch(d)){
-        // Alle Eltern aufklappen
-        let cur=d;
-        while(cur&&cur.parentId){
-          newExp[cur.parentId]=true;
-          cur=allDirs.find(x=>x.id===cur.parentId);
-        }
-      }
-    });
-    setExpandedIds(p=>({...p,...newExp}));
-  },[search]);
+    if(isDemo)return;
+    if(searchLower.length<2){setSearchRes(null);setSearching(false);return;}
+    setSearching(true);
+    const t=setTimeout(async()=>{
+      try{setSearchRes(await DR.findFolders(search.trim()));}
+      catch(e){console.warn(e);setSearchRes([]);}
+      setSearching(false);
+    },350);
+    return()=>clearTimeout(t);
+  },[searchLower,isDemo]);
 
   const select=(id,name)=>{setSelId(id);setSelName(name);};
 
@@ -685,11 +739,10 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
       const f=await DR.mkdir(name.trim(),parentId);
       toast('Ordner erstellt: '+name.trim(),'s');
       // Sofort lokal anzeigen und auswählen
-      setLocalNewFolders(p=>[...p,{id:f.id,name:name.trim(),parentId:parentId,path_lower:f.path_lower}]);
+      FLD.add({id:f.id,name:name.trim(),parentId:parentId||'',path_lower:f.path_lower,fullName:name.trim()});
       setSelId(f.id);setSelName(name.trim());
       setExpandedIds(p=>({...p,[parentId]:true}));
-      // Im Hintergrund alle Ordner neu laden
-      reloadFolders();
+      setTreeVer(v=>v+1);
     }catch(e){toast('Fehler beim Erstellen','e');console.error(e);}
     creatingRef.current=false;
   };
@@ -710,22 +763,25 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
     setBusy(false);onClose();
   };
 
-  // Rekursive FolderRow Komponente - funktioniert für beliebige Tiefe
+  // Rekursive FolderRow Komponente – laedt Unterordner lazy beim Aufklappen (beliebige Tiefe)
   const FolderRow=({d,depth=0})=>{
     const kids=childrenOf(d.id);
-    const hasKids=kids.length>0;
+    // Solange die Ebene noch nie geladen wurde, wissen wir nicht ob es Kinder gibt → Chevron anbieten
+    const maybeKids=!isDemo&&d.id!==''&&!FLD.isLoaded(d.id);
+    const hasKids=kids.length>0||maybeKids;
     const isExp=d.id===''||expandedIds[d.id];
+    const isLoading=!!loadingIds[d.id];
     const dis=isCur(d.id)||isSelf(d.id);
     const isSelected=selId===d.id;
     const indent=depth*18;
     const shortName=d.name;
 
-    // Bei Suche: Zeige nur Ordner die matchen oder Kinder haben die matchen
+    // Demo-Suche: nur Ordner die matchen oder passende Kinder haben (live laeuft die Suche serverseitig)
     const hasMatchingDesc=fd=>{
       if(matchesSearch(fd))return true;
       return childrenOf(fd.id).some(c=>hasMatchingDesc(c));
     };
-    if(searchLower&&!hasMatchingDesc(d))return null;
+    if(isDemo&&searchLower&&!hasMatchingDesc(d))return null;
 
     return(
       <React.Fragment>
@@ -744,9 +800,9 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
           {/* Expand/Collapse Button */}
           <span
             style={{width:16,height:16,flexShrink:0,display:'flex',alignItems:'center',justifyContent:'center',color:'var(--mut)',fontSize:10,cursor:hasKids?'pointer':'default',borderRadius:3,background:hasKids?'rgba(0,0,0,.04)':'transparent'}}
-            onClick={hasKids?e=>{e.stopPropagation();setExpandedIds(p=>({...p,[d.id]:!p[d.id]}));}:undefined}
+            onClick={hasKids?e=>{e.stopPropagation();toggleExpand(d);}:undefined}
           >
-            {hasKids&&<i className={`fas fa-chevron-${isExp?'down':'right'}`}/>}
+            {isLoading?<i className="fas fa-spinner fa-spin"/>:hasKids&&<i className={`fas fa-chevron-${isExp?'down':'right'}`}/>}
           </span>
           <i className={`fas ${d.id===''?'fa-dropbox':'fa-folder'}`}
             style={{color:d.id===''?'#0061FF':'#8E8E93',fontSize:13,width:16,flexShrink:0}}/>
@@ -798,9 +854,29 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo,folders,onReloadFolders
           </button>}
         </div>
 
-        {/* Ordner-Baum */}
+        {/* Ordner-Baum bzw. Suchergebnisse (Suche laeuft serverseitig ueber ALLE Ordner, auch nie aufgeklappte) */}
         <div style={{border:'1px solid var(--bdr)',borderRadius:6,maxHeight:340,overflowY:'auto',background:'#fff'}}>
-          <FolderRow d={rootEntry} depth={0}/>
+          {(!isDemo&&searchRes!==null)?(
+            searching?<div style={{padding:'18px 12px',textAlign:'center',color:'var(--mut)',fontSize:12}}><i className="fas fa-spinner fa-spin"/> Suche…</div>
+            :searchRes.length===0?<div style={{padding:'18px 12px',textAlign:'center',color:'var(--mut)',fontSize:12}}>Keine Ordner gefunden</div>
+            :searchRes.map(d=>{
+              const dis=isCur(d.id)||isSelf(d.id);
+              const isSelected=selId===d.id;
+              return(
+                <div key={d.id}
+                  style={{display:'flex',alignItems:'center',gap:8,padding:'7px 12px',cursor:dis?'not-allowed':'pointer',background:isSelected?'#E0EDFF':dis?'#fafafa':'transparent',color:isSelected?'var(--blue)':dis?'#bbb':'var(--txt)',borderBottom:'1px solid #f0f4f8',userSelect:'none'}}
+                  onClick={()=>!dis&&select(d.id,d.fullName||d.name)}
+                >
+                  <i className="fas fa-folder" style={{color:'#8E8E93',fontSize:13,flexShrink:0}}/>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</div>
+                    <div style={{fontSize:10,color:'var(--mut)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.fullName}</div>
+                  </div>
+                  {isSelected&&<i className="fas fa-check-circle" style={{color:'var(--blue)',fontSize:12,flexShrink:0}}/>}
+                </div>
+              );
+            })
+          ):<FolderRow d={rootEntry} depth={0}/>}
         </div>
 
         {/* Ausgewählter Zielordner */}
@@ -1252,12 +1328,13 @@ async function buildEmlHtml(text){
   const to=decodeMimeHeader(_hdr(top.head,'To'));
   const cc=decodeMimeHeader(_hdr(top.head,'Cc'));
   const date=_hdr(top.head,'Date');
-  // MIME-Baum durchlaufen, HTML-/Plain-Teil + Inline-Bilder (cid) einsammeln
-  let htmlBody='',plainBody='';const cidMap={};
+  // MIME-Baum durchlaufen, HTML-/Plain-Teil + Inline-Bilder (cid) + Anhaenge einsammeln
+  let htmlBody='',plainBody='';const cidMap={};const attList=[];
   function walk(head,body,depth){
     if(depth>8)return;
     const ctRaw=_hdr(head,'Content-Type');
     const ct=ctRaw.toLowerCase();
+    const disp=(_hdr(head,'Content-Disposition')||'').toLowerCase();
     const bm=ctRaw.match(/boundary\s*=\s*"?([^";\r\n]+)"?/i); // Boundary case-sensitive!
     if(ct.indexOf('multipart/')===0&&bm){
       const parts=body.split('--'+bm[1]);
@@ -1267,11 +1344,27 @@ async function buildEmlHtml(text){
         const sp=_splitHeadersBody(p);
         walk(sp.head,sp.body,depth+1);
       }
-    }else if(ct.indexOf('image/')===0){
+      return;
+    }
+    // Echter Anhang (auch Bilder mit Content-Disposition: attachment)
+    if(disp.indexOf('attachment')===0||(ct&&ct.indexOf('text/')!==0&&ct.indexOf('image/')!==0&&ct.indexOf('multipart/')!==0)){
+      const nm=(_hdr(head,'Content-Disposition').match(/filename\*?=\s*"?([^";\r\n]+)"?/i))||(ctRaw.match(/name\s*=\s*"?([^";\r\n]+)"?/i));
+      const name=nm?decodeMimeHeader(nm[1].replace(/^UTF-8''/,'')):'Anhang';
+      const enc=(_hdr(head,'Content-Transfer-Encoding')||'').toLowerCase();
+      const b64=enc==='base64'?body.replace(/\s/g,''):'';
+      attList.push({name,mime:ct.split(';')[0].trim()||'application/octet-stream',b64});
+      return;
+    }
+    if(ct.indexOf('image/')===0){
       // Inline-Bild mit Content-ID → Data-URL fuer cid:-Aufloesung
       const cid=_hdr(head,'Content-ID').replace(/[<>]/g,'').trim();
       const enc=(_hdr(head,'Content-Transfer-Encoding')||'').toLowerCase();
       if(cid&&enc==='base64')cidMap[cid]='data:'+ct.split(';')[0].trim()+';base64,'+body.replace(/\s/g,'');
+      else if(enc==='base64'){
+        // Bild ohne Content-ID = Anhang
+        const nm=ctRaw.match(/name\s*=\s*"?([^";\r\n]+)"?/i);
+        attList.push({name:nm?decodeMimeHeader(nm[1]):'Bild',mime:ct.split(';')[0].trim(),b64:body.replace(/\s/g,'')});
+      }
     }else if(ct.indexOf('text/html')===0){
       if(!htmlBody)htmlBody=_decodePart(body,head);
     }else if(ct.indexOf('text/plain')===0||(!ct&&body.trim())){
@@ -1287,10 +1380,29 @@ async function buildEmlHtml(text){
     body=body.replace(/<img\b[^>]*\bsrc\s*=\s*["']?cid:[^>]*?>/gi,'<span style="display:inline-block;padding:1px 7px;margin:1px 2px;background:#eef2f8;border:1px dashed #b9cce4;border-radius:3px;color:#6678a0;font-size:11px">🖼 Bild</span>');
   }
   else if(plainBody)body='<pre style="font-family:-apple-system,Segoe UI,sans-serif;white-space:pre-wrap;padding:14px 18px;margin:0;font-size:13px;line-height:1.5">'+plainBody.replace(/</g,'&lt;')+'</pre>';
-  else body='<pre style="font-family:-apple-system,Segoe UI,sans-serif;white-space:pre-wrap;padding:14px 18px;margin:0;font-size:13px">'+(top.body||text).substring(0,8000).replace(/</g,'&lt;')+'</pre>';
+  else{
+    // KEIN lesbarer Text gefunden. Bei deklariertem multipart NIE den rohen MIME-/Base64-Text zeigen
+    // ("kryptische Zeichen") – das passiert z.B. wenn das Add-in die Mail mit leeren Body-Parts abgelegt hat.
+    const topCt=(_hdr(top.head,'Content-Type')||'').toLowerCase();
+    if(topCt.indexOf('multipart/')===0){
+      body='<div style="padding:26px 18px;color:#8a94a6;font-size:13px;line-height:1.6"><b>Kein Nachrichtentext in der abgelegten Datei.</b><br>Beim Ablegen aus Outlook wurde der Text nicht mitgespeichert (bekannter Add-in-Fehler, ab v4.8 behoben). Die Mail ggf. erneut aus Outlook ablegen.</div>';
+    }else{
+      body='<pre style="font-family:-apple-system,Segoe UI,sans-serif;white-space:pre-wrap;padding:14px 18px;margin:0;font-size:13px">'+(top.body||text).substring(0,8000).replace(/</g,'&lt;')+'</pre>';
+    }
+  }
   const esc=v=>(v||'').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  // Anhaenge als klickbare Download-Links (Data-URL); sehr grosse Anhaenge (>15 MB) nur als Name
+  let attHtml='';
+  if(attList.length){
+    attHtml='<div style="padding:10px 18px;border-top:1px solid #e3e8ef;background:#f8fafc;font-size:12px"><div style="font-weight:600;color:#555;margin-bottom:6px"><span style="font-size:11px">📎</span> Anhänge ('+attList.length+')</div>'+attList.map(a=>{
+      const sizeKb=Math.round(a.b64.length*0.75/1024);
+      const label=esc(a.name)+' <span style="color:#98a2b3">('+(sizeKb>1024?(sizeKb/1024).toFixed(1)+' MB':sizeKb+' KB')+')</span>';
+      if(a.b64&&a.b64.length<20*1024*1024)return'<a download="'+esc(a.name).replace(/"/g,'')+'" href="data:'+a.mime+';base64,'+a.b64+'" style="display:inline-block;margin:2px 6px 2px 0;padding:4px 10px;background:#fff;border:1px solid #d5dce6;border-radius:6px;color:#0061FF;text-decoration:none">'+label+'</a>';
+      return'<span style="display:inline-block;margin:2px 6px 2px 0;padding:4px 10px;background:#fff;border:1px solid #d5dce6;border-radius:6px;color:#555">'+label+'</span>';
+    }).join('')+'</div>';
+  }
   const headerHtml='<div style="font-family:-apple-system,Segoe UI,sans-serif;padding:14px 18px;background:#f5f7fa;border-bottom:1px solid #ddd;font-size:13px;line-height:1.5"><div style="font-weight:600;font-size:15px;margin-bottom:6px">'+esc(subj)+'</div>'+(from?'<div style="color:#555"><b>Von:</b> '+esc(from)+'</div>':'')+(to?'<div style="color:#555"><b>An:</b> '+esc(to)+'</div>':'')+(cc?'<div style="color:#555"><b>Cc:</b> '+esc(cc)+'</div>':'')+(date?'<div style="color:#888;font-size:12px;margin-top:4px">'+esc(date)+'</div>':'')+'</div>';
-  return'<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;font-family:-apple-system,Segoe UI,sans-serif;color:#222}img{max-width:100%}</style></head><body>'+headerHtml+body+'</body></html>';
+  return'<!DOCTYPE html><html><head><meta charset="utf-8"><style>body{margin:0;font-family:-apple-system,Segoe UI,sans-serif;color:#222}img{max-width:100%}</style></head><body>'+headerHtml+attHtml+body+'</body></html>';
 }
 function useEmlPreview(file,isDemo){
   const [html,setHtml]=useState(null);
@@ -1415,10 +1527,10 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower,onIndex,onOutl
               :pUrl?<PdfViewer blobUrl={pUrl}/>
               :<div className="ctr"><i className="fas fa-file-pdf" style={{fontSize:52,color:'#CC0000'}}/><p style={{fontSize:12}}>{file.name}</p>{err&&<p style={{fontSize:11,color:'var(--red)',textAlign:'center',padding:'0 12px'}}>{err}</p>}</div>)
             :isEml?(emlLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>E-Mail wird geladen…</p></div>
-              :emlHtml?<iframe src={emlHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="E-Mail Vorschau" sandbox="allow-same-origin"/>
+              :emlHtml?<iframe src={emlHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="E-Mail Vorschau" sandbox="allow-same-origin allow-downloads"/>
               :<div className="ctr"><i className="fas fa-envelope" style={{fontSize:52,color:'#3498DB'}}/><p style={{fontSize:12}}>{file.name}</p></div>)
             :isMsg?(msgLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Outlook-Nachricht wird gelesen…</p></div>
-              :msgHtml?<iframe src={msgHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Outlook-Nachricht" sandbox="allow-same-origin"/>
+              :msgHtml?<iframe src={msgHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Outlook-Nachricht" sandbox="allow-same-origin allow-downloads"/>
               :<div className="ctr"><i className="fas fa-envelope" style={{fontSize:52,color:'#3498DB'}}/><p style={{fontSize:12,textAlign:'center',padding:'0 12px'}}>{msgErr||file.name}</p></div>)
             :isOffice?(offLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:12,color:'var(--mut)'}}>Office-Vorschau wird erstellt…</p></div>
               :offUrl?<PdfViewer blobUrl={offUrl}/>
@@ -1469,7 +1581,7 @@ function ExpandMod({file,isDemo,onClose,onOutlook,outlookBusy}){
   const {html:msgHtml,loading:msgLoading,err:msgErr}=useMsgPreview(isMsg?file:null,isDemo);
   const is3d=isCad3d(file.name);
   const printPdf=()=>{if(!pUrl)return;const f=document.createElement('iframe');f.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';f.src=pUrl;document.body.appendChild(f);f.onload=()=>{f.contentWindow.focus();f.contentWindow.print();setTimeout(()=>document.body.removeChild(f),60000);};};
-  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span>{isPdf&&pUrl&&<button className="btn bs" style={{padding:'5px 12px'}} onClick={printPdf}><i className="fas fa-print"/>Drucken</button>}{isEml&&onOutlook&&<button className="btn bs" style={{padding:'5px 12px'}} onClick={()=>onOutlook(file)} disabled={outlookBusy}>{outlookBusy?<i className="fas fa-spinner fa-spin"/>:<i className="fab fa-microsoft"/>}In Outlook öffnen</button>}<button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{isPdf?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>PDF wird geladen…</p></div>:pUrl?<PdfViewer blobUrl={pUrl}/>:<div className="ctr"><i className="fas fa-file-pdf" style={{fontSize:64,color:'#CC0000'}}/></div>):isEml?(emlLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>E-Mail wird geladen…</p></div>:emlHtml?<iframe src={emlHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="E-Mail Vorschau" sandbox="allow-same-origin"/>:<div className="ctr"><i className="fas fa-envelope" style={{fontSize:64,color:'#3498DB'}}/><p style={{fontSize:14}}>{file.name}</p></div>):isMsg?(msgLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Outlook-Nachricht wird gelesen…</p></div>:msgHtml?<iframe src={msgHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Outlook-Nachricht" sandbox="allow-same-origin"/>:<div className="ctr"><i className="fas fa-envelope" style={{fontSize:64,color:'#3498DB'}}/><p style={{fontSize:14,textAlign:'center',padding:'0 16px'}}>{msgErr||file.name}</p></div>):isOffice?(offLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Office-Vorschau wird erstellt…</p></div>:offUrl?<PdfViewer blobUrl={offUrl}/>:<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p><p style={{fontSize:12,color:offErr?'var(--red)':'var(--mut)'}}>{offErr?'Office-Vorschau nicht verfügbar':''}</p></div>):loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?(is3d?<Cad3DViewer url={pUrl} fileName={file.name}/>:isImg?<div style={{flex:1,overflow:'auto',display:'flex',alignItems:'center',justifyContent:'center',padding:20,minHeight:0,background:'#f5f5f5'}}><img src={pUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}} alt={file.name}/></div>:<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>):<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span>{isPdf&&pUrl&&<button className="btn bs" style={{padding:'5px 12px'}} onClick={printPdf}><i className="fas fa-print"/>Drucken</button>}{isEml&&onOutlook&&<button className="btn bs" style={{padding:'5px 12px'}} onClick={()=>onOutlook(file)} disabled={outlookBusy}>{outlookBusy?<i className="fas fa-spinner fa-spin"/>:<i className="fab fa-microsoft"/>}In Outlook öffnen</button>}<button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{isPdf?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>PDF wird geladen…</p></div>:pUrl?<PdfViewer blobUrl={pUrl}/>:<div className="ctr"><i className="fas fa-file-pdf" style={{fontSize:64,color:'#CC0000'}}/></div>):isEml?(emlLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>E-Mail wird geladen…</p></div>:emlHtml?<iframe src={emlHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="E-Mail Vorschau" sandbox="allow-same-origin allow-downloads"/>:<div className="ctr"><i className="fas fa-envelope" style={{fontSize:64,color:'#3498DB'}}/><p style={{fontSize:14}}>{file.name}</p></div>):isMsg?(msgLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Outlook-Nachricht wird gelesen…</p></div>:msgHtml?<iframe src={msgHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Outlook-Nachricht" sandbox="allow-same-origin allow-downloads"/>:<div className="ctr"><i className="fas fa-envelope" style={{fontSize:64,color:'#3498DB'}}/><p style={{fontSize:14,textAlign:'center',padding:'0 16px'}}>{msgErr||file.name}</p></div>):isOffice?(offLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Office-Vorschau wird erstellt…</p></div>:offUrl?<PdfViewer blobUrl={offUrl}/>:<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p><p style={{fontSize:12,color:offErr?'var(--red)':'var(--mut)'}}>{offErr?'Office-Vorschau nicht verfügbar':''}</p></div>):loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?(is3d?<Cad3DViewer url={pUrl} fileName={file.name}/>:isImg?<div style={{flex:1,overflow:'auto',display:'flex',alignItems:'center',justifyContent:'center',padding:20,minHeight:0,background:'#f5f5f5'}}><img src={pUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}} alt={file.name}/></div>:<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>):<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
 }
 
 function UpMod({fid,onClose,onDone,isDemo}){
@@ -1626,32 +1738,61 @@ function Login({onIn,onDemo}){
 
 /* ── HAUPT-APP ── */
 /* ── ZIELORDNER-BAUM (kompakt, fuer Ablage) ── */
-function FolderPick({folders,value,onChange,isDemo,onCreated}){
+function FolderPick({value,onChange,isDemo,onCreated}){
   const [exp,setExp]=useState({'':true});
+  const [loadingIds,setLoadingIds]=useState({});
   const [search,setSearch]=useState('');
+  const [searchRes,setSearchRes]=useState(null);
+  const [searching,setSearching]=useState(false);
   const [creating,setCreating]=useState(false);
+  const [,setTreeVer]=useState(0);
   const toast=useContext(TC);
   const root={id:'',name:'Dropbox',parentId:null};
-  const all=[root,...(folders||[]).map(f=>({id:f.id,name:f.displayName?f.displayName.split(' / ').pop():f.name,fullName:f.displayName||f.name,parentId:f.parentId||''}))];
+  const all=[root,...(isDemo?[]:FLD.list())];
   const childrenOf=p=>all.filter(d=>d.id!==''&&d.parentId===p);
+  useEffect(()=>{
+    if(isDemo)return;
+    FLD.ensure('').then(()=>setTreeVer(v=>v+1)).catch(e=>console.error(e));
+  },[isDemo]);
   const sl=search.toLowerCase().trim();
-  const match=d=>!sl||(d.fullName||d.name).toLowerCase().includes(sl);
-  const hasMatchDesc=d=>match(d)||childrenOf(d.id).some(hasMatchDesc);
+  // Suche serverseitig ueber alle Ordner (auch nie aufgeklappte Ebenen)
+  useEffect(()=>{
+    if(isDemo)return;
+    if(sl.length<2){setSearchRes(null);setSearching(false);return;}
+    setSearching(true);
+    const t=setTimeout(async()=>{
+      try{setSearchRes(await DR.findFolders(search.trim()));}catch(e){setSearchRes([]);}
+      setSearching(false);
+    },350);
+    return()=>clearTimeout(t);
+  },[sl,isDemo]);
+  const toggle=async d=>{
+    const open=!exp[d.id];
+    setExp(p=>({...p,[d.id]:open}));
+    if(open&&!isDemo&&!FLD.isLoaded(d.id)){
+      setLoadingIds(p=>({...p,[d.id]:true}));
+      try{await FLD.ensure(d.id);setTreeVer(v=>v+1);}catch(e){console.warn(e);}
+      setLoadingIds(p=>{const n={...p};delete n[d.id];return n;});
+    }
+  };
   const mkSub=async()=>{
     if(isDemo){toast('Im Demo-Modus nicht moeglich','i');return;}
     const name=window.prompt('Neuer Ordner unter "'+(all.find(d=>d.id===value)?.name||'Dropbox')+'":');
     if(!name||!name.trim())return;
     setCreating(true);
-    try{const f=await DR.mkdir(name.trim(),value||'');toast('Ordner erstellt','s');onChange(f.id,name.trim());if(onCreated)await onCreated();setExp(p=>({...p,[value||'']:true}));}
+    try{const f=await DR.mkdir(name.trim(),value||'');toast('Ordner erstellt','s');FLD.add({id:f.id,name:name.trim(),parentId:value||'',fullName:name.trim()});onChange(f.id,name.trim());if(onCreated)await onCreated();setExp(p=>({...p,[value||'']:true}));setTreeVer(v=>v+1);}
     catch(e){toast('Fehler beim Erstellen','e');console.error(e);}
     setCreating(false);
   };
   const Row=({d,depth})=>{
-    if(sl&&!hasMatchDesc(d))return null;
-    const kids=childrenOf(d.id);const isExp=d.id===''||exp[d.id]||!!sl;
+    const kids=childrenOf(d.id);
+    const maybeKids=!isDemo&&d.id!==''&&!FLD.isLoaded(d.id);
+    const hasKids=kids.length>0||maybeKids;
+    const isExp=d.id===''||exp[d.id];
+    const isLoading=!!loadingIds[d.id];
     return(<React.Fragment>
       <div onClick={()=>onChange(d.id,d.fullName||d.name)} style={{display:'flex',alignItems:'center',gap:6,padding:'6px 10px',paddingLeft:10+depth*16,cursor:'pointer',background:value===d.id?'#eaf2fd':'transparent',color:value===d.id?'#0055b8':'var(--txt)',borderBottom:'1px solid #f0f4f8',fontSize:13}}>
-        <span onClick={kids.length?e=>{e.stopPropagation();setExp(p=>({...p,[d.id]:!p[d.id]}));}:undefined} style={{width:14,flexShrink:0,color:'var(--mut)',fontSize:10,cursor:kids.length?'pointer':'default'}}>{kids.length>0&&<i className={`fas fa-chevron-${isExp?'down':'right'}`}/>}</span>
+        <span onClick={hasKids?e=>{e.stopPropagation();toggle(d);}:undefined} style={{width:14,flexShrink:0,color:'var(--mut)',fontSize:10,cursor:hasKids?'pointer':'default'}}>{isLoading?<i className="fas fa-spinner fa-spin"/>:hasKids&&<i className={`fas fa-chevron-${isExp?'down':'right'}`}/>}</span>
         <i className={`fas ${d.id===''?'fa-dropbox':'fa-folder'}`} style={{color:d.id===''?'#0061FF':'#8E8E93',fontSize:13,flexShrink:0}}/>
         <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</span>
         {value===d.id&&<i className="fas fa-check-circle" style={{color:'#0061FF',fontSize:12,flexShrink:0}}/>}
@@ -1664,7 +1805,22 @@ function FolderPick({folders,value,onChange,isDemo,onCreated}){
       <div style={{position:'relative',flex:1}}><i className="fas fa-search" style={{position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',color:'var(--mut)',fontSize:11}}/><input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Ordner suchen…" style={{width:'100%',padding:'6px 8px 6px 28px',border:'.5px solid var(--bdr)',borderRadius:6,fontSize:12,outline:'none'}}/></div>
       <button className="btn bs" style={{padding:'0 10px',fontSize:11,flexShrink:0}} onClick={mkSub} disabled={creating}><i className={`fas ${creating?'fa-spinner fa-spin':'fa-folder-plus'}`}/> Neu</button>
     </div>
-    <div style={{border:'.5px solid var(--bdr)',borderRadius:8,maxHeight:200,overflowY:'auto',background:'#fff'}}><Row d={root} depth={0}/></div>
+    <div style={{border:'.5px solid var(--bdr)',borderRadius:8,maxHeight:200,overflowY:'auto',background:'#fff'}}>
+      {(!isDemo&&searchRes!==null)?(
+        searching?<div style={{padding:'14px 10px',textAlign:'center',color:'var(--mut)',fontSize:12}}><i className="fas fa-spinner fa-spin"/> Suche…</div>
+        :searchRes.length===0?<div style={{padding:'14px 10px',textAlign:'center',color:'var(--mut)',fontSize:12}}>Keine Ordner gefunden</div>
+        :searchRes.map(d=>(
+          <div key={d.id} onClick={()=>onChange(d.id,d.fullName||d.name)} style={{display:'flex',alignItems:'center',gap:8,padding:'6px 10px',cursor:'pointer',background:value===d.id?'#eaf2fd':'transparent',color:value===d.id?'#0055b8':'var(--txt)',borderBottom:'1px solid #f0f4f8'}}>
+            <i className="fas fa-folder" style={{color:'#8E8E93',fontSize:13,flexShrink:0}}/>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.name}</div>
+              <div style={{fontSize:10,color:'var(--mut)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.fullName}</div>
+            </div>
+            {value===d.id&&<i className="fas fa-check-circle" style={{color:'#0061FF',fontSize:12,flexShrink:0}}/>}
+          </div>
+        ))
+      ):<Row d={root} depth={0}/>}
+    </div>
   </div>);
 }
 
@@ -1679,7 +1835,7 @@ function guessDocType(name){
   if(/\.(eml|msg)$/.test(n)||/mail/.test(n))return'korrespondenz';
   return'allgemein';
 }
-function IndexMod({file,mode,isDemo,folders,onClose,onDone,onReloadFolders}){
+function IndexMod({file,mode,isDemo,onClose,onDone}){
   const existing=MD.get(mdKey(file));
   const [docType,setDocType]=useState(existing?.docType||guessDocType(file.name));
   const [fields,setFields]=useState(existing?.fields||{});
@@ -1756,9 +1912,8 @@ function IndexMod({file,mode,isDemo,folders,onClose,onDone,onReloadFolders}){
 
       {mode==='file'&&<div className="fg">
         <label>Ablegen in</label>
-        <FolderPick folders={folders} value={target} isDemo={isDemo}
-          onChange={(id,name)=>{setTarget(id);setTargetName(name);setTargetTouched(true);}}
-          onCreated={onReloadFolders}/>
+        <FolderPick value={target} isDemo={isDemo}
+          onChange={(id,name)=>{setTarget(id);setTargetName(name);setTargetTouched(true);}}/>
         <div style={{marginTop:6,fontSize:12,color:'#1c8c3e',display:'flex',alignItems:'center',gap:6}}>
           <i className="fas fa-arrow-right"/><span>Ziel: <strong>{targetName||dt.target||'(Dropbox-Wurzel)'}</strong></span>
         </div>
@@ -1794,7 +1949,6 @@ function Main({onOut,isDemo}){
   const [treeW,setTreeW]=useState(()=>window.innerWidth>1200?260:window.innerWidth>1024?220:200);
   const [treeResizing,setTreeResizing]=useState(false);
   const [moveFile,setMoveFile]=useState(null);
-  const [allFolders,setAllFolders]=useState([]);
   const [outlookBusy,setOutlookBusy]=useState(false);
   const [mailPrefill,setMailPrefill]=useState(null);
   // ── ELO: Ribbon, Verschlagwortung, Posteingang, Feldsuche ──
@@ -1877,7 +2031,6 @@ function Main({onOut,isDemo}){
   /* ── Verschlagwortungs-Maske oeffnen ── */
   const openIndex=(file,mode)=>{
     setIndexFile({file,mode});
-    if(mode==='file'&&!isDemo&&allFolders.length===0){DR.allFolders().then(setAllFolders).catch(e=>console.error(e));}
   };
   const onIndexDone=()=>{refreshMd();loadInbox();rf();};
 
@@ -1964,7 +2117,7 @@ function Main({onOut,isDemo}){
       f.forEach(k=>{DR.listSubfolders(k.id).then(kids=>setTreeCache(p=>({...p,[k.id]:kids}))).catch(()=>{});});
     }).catch(e=>console.error('tree refresh err:',e));
   };
-  const doMove=f=>{setSel(f);setMoveFile(f);if(!isDemo)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));};
+  const doMove=f=>{setSel(f);setMoveFile(f);};
   const onMoveDone=()=>{rf();setMoveFile(null);setSel(null);setMultiSel([]);};
 
   // Lazy-Load Unterordner fuer Strukturbaum
@@ -2128,7 +2281,7 @@ function Main({onOut,isDemo}){
             <div className="rib-group-inner">
               {multiSel.length>0?<>
                 <div className="rib-col">
-                  <button className="rib-sm accent" onClick={()=>{setMoveFile(multiSel);if(!isDemo)DR.allFolders().then(fl=>setAllFolders(fl)).catch(e=>console.error(e));}}><i className="fas fa-share-square"/>{multiSel.length} verschieben</button>
+                  <button className="rib-sm accent" onClick={()=>setMoveFile(multiSel)}><i className="fas fa-share-square"/>{multiSel.length} verschieben</button>
                   {!isDemo&&<button className="rib-sm danger" onClick={async()=>{if(window.confirm(multiSel.length+' Dateien loeschen?')){try{for(const f of multiSel)await DR.del(f.path_lower||f.id);toast(multiSel.length+' Dateien geloescht','i');rf();setSel(null);setMultiSel([]);}catch{toast('Fehler','e');}}}}><i className="fas fa-trash"/>Loeschen</button>}
                   <button className="rib-sm" onClick={()=>setMultiSel([])}><i className="fas fa-times"/>Auswahl aufheben</button>
                 </div>
@@ -2432,12 +2585,12 @@ function Main({onOut,isDemo}){
 
     {/* MODALS */}
     {big&&sel&&<ExpandMod file={sel} isDemo={isDemo} onClose={()=>setBig(false)} onOutlook={openInOutlook} outlookBusy={outlookBusy}/>}
-    {indexFile&&<IndexMod file={indexFile.file} mode={indexFile.mode} isDemo={isDemo} folders={allFolders} onClose={()=>setIndexFile(null)} onDone={onIndexDone} onReloadFolders={async()=>{const f=await DR.allFolders();setAllFolders(f);return f;}}/>}
+    {indexFile&&<IndexMod file={indexFile.file} mode={indexFile.mode} isDemo={isDemo} onClose={()=>setIndexFile(null)} onDone={onIndexDone}/>}
     {modal==='up'&&<UpMod fid={nav==='inbox'?POSTEINGANG:cur.id} onClose={()=>setModal(null)} onDone={()=>{rf();loadInbox();}} isDemo={isDemo}/>}
     {modal==='mk'&&<MkMod par={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
     {modal==='ren'&&sel&&<RenMod file={sel} onClose={()=>setModal(null)} onDone={()=>{rf();setModal(null);}} isDemo={isDemo}/>}
     {modal==='mail'&&sel&&<MailMod file={sel} onClose={()=>{setModal(null);setMailPrefill(null);}} isDemo={isDemo} prefill={mailPrefill}/>}
-    {moveFile&&<MoveMod file={moveFile} curFolderId={cur.id} onClose={()=>setMoveFile(null)} onDone={onMoveDone} isDemo={isDemo} folders={allFolders} onReloadFolders={async()=>{const f=await DR.allFolders();console.log('reload:',f.length);setAllFolders(f);return f;}}/>}
+    {moveFile&&<MoveMod file={moveFile} curFolderId={cur.id} onClose={()=>setMoveFile(null)} onDone={onMoveDone} isDemo={isDemo}/>}
   </div>);
 }
 
