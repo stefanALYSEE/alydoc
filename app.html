@@ -225,7 +225,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version">v4.8</div>
+    <div class="nav-version">v4.9</div>
   </div>
 </nav>
 
@@ -1034,6 +1034,41 @@ async function confirmRenameFolder(){
   }
 }
 
+// ── VERIFY-ON-WRITE ──────────────────────────────────────────────────────────
+// Dropbox content_hash = SHA256 der 4-MB-Bloecke, davon nochmal SHA256.
+// Stimmt der von Dropbox zurueckgemeldete Hash mit dem lokal berechneten ueberein,
+// ist die Datei nachweislich byte-identisch angekommen.
+async function dbxContentHashLocal(blobOrString){
+  const blob=new Blob([blobOrString]);
+  const buf=await new Response(blob).arrayBuffer();
+  const BS=4*1024*1024;
+  const blockHashes=[];
+  for(let o=0;o<buf.byteLength;o+=BS){
+    const h=await crypto.subtle.digest('SHA-256',buf.slice(o,Math.min(o+BS,buf.byteLength)));
+    blockHashes.push(new Uint8Array(h));
+  }
+  const cat=new Uint8Array(blockHashes.length*32);
+  blockHashes.forEach((h,i)=>cat.set(h,i*32));
+  const fin=await crypto.subtle.digest('SHA-256',cat);
+  return Array.from(new Uint8Array(fin)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+// Inhaltliche Pruefung VOR dem Upload: sind alle erwarteten Anhaenge im EML enthalten?
+async function checkEmlContent(blobOrString){
+  const res={attFound:0,attExpected:0,ok:true,detail:''};
+  try{
+    res.attExpected=(mailItem.attachments||[]).filter(a=>!a.isInline).length;
+    if(!window.TextDecoder){return res;} // alte WebViews: nur Hash-Verifikation
+    const buf=await new Response(new Blob([blobOrString])).arrayBuffer();
+    const text=new TextDecoder('utf-8').decode(new Uint8Array(buf));
+    res.attFound=(text.match(/Content-Disposition:\s*attachment/gi)||[]).length;
+    if(res.attFound<res.attExpected){
+      res.ok=false;
+      res.detail=res.attFound+' von '+res.attExpected+' Anhaengen im EML enthalten';
+    }
+  }catch(e){console.warn('checkEmlContent:',e);}
+  return res;
+}
+
 // ── ABLEGEN ───────────────────────────────────────────────────────────────────
 async function ablegen(){
   if(selectedFolderPath===null||!mailItem)return;
@@ -1063,9 +1098,24 @@ async function ablegen(){
     const fileName=dateStr+'_'+safeSubject+'.eml';
     const targetPath=(selectedFolderPath||'')+'/'+fileName;
 
+    _step='Inhalts-Pruefung';
+    setProgress(55,'Inhalt wird geprueft…');
+    const contentCheck=await checkEmlContent(emlContent);
+    if(!contentCheck.ok)emlWarnings.push('Unvollstaendig: '+contentCheck.detail+' – Original in Outlook NICHT loeschen!');
+    const localHash=await dbxContentHashLocal(emlContent).catch(e=>{console.warn('Hash:',e);return null;});
+
     _step='Dropbox Upload';
     const uploadResult=await dbxUpload(targetPath,emlContent);
     setProgress(70,'EML gespeichert: '+(uploadResult.path_display||targetPath));
+
+    _step='Verifikation';
+    setProgress(80,'Ablage wird verifiziert…');
+    // Byte-Identitaet: Dropbox' content_hash muss dem lokal berechneten entsprechen.
+    if(localHash&&uploadResult.content_hash&&uploadResult.content_hash!==localHash){
+      throw new Error('VERIFIKATION FEHLGESCHLAGEN: Datei in Dropbox weicht vom Original ab ('+(uploadResult.path_display||targetPath)+'). Bitte erneut ablegen, Original NICHT loeschen!');
+    }
+    const verified=!!(localHash&&uploadResult.content_hash===localHash)&&contentCheck.ok;
+    if(!localHash)emlWarnings.push('Hash-Verifikation in dieser Outlook-Version nicht moeglich – Ablage stichprobenartig pruefen.');
 
     if(saveAtts&&mailItem.attachments&&mailItem.attachments.length>0){
       setProgress(72,'Anhänge werden separat gespeichert…');
@@ -1080,14 +1130,16 @@ async function ablegen(){
     setProgress(100,'Fertig!');
 
     const attCount=mailItem.attachments?mailItem.attachments.length:0;
-    let msg='✓ Abgelegt in: '+selectedFolderName;
+    let msg=verified?'✓ Abgelegt &amp; verifiziert (byte-identisch geprueft)':'✓ Abgelegt';
+    msg+='<br><small>Ziel: '+selectedFolderName+'</small>';
     msg+='<br><small>Datei: '+(uploadResult.name||fileName)+'</small>';
     msg+='<br><small>Pfad: '+(uploadResult.path_display||targetPath)+'</small>';
-    if(attCount)msg+='<br>'+attCount+' Anhang/Anhänge';
+    if(contentCheck.attFound)msg+='<br><small>'+contentCheck.attFound+' Anhang/Anhaenge eingebettet</small>';
+    else if(attCount)msg+='<br>'+attCount+' Anhang/Anhänge';
     if(emlWarnings.length){
       showStatus(msg+'<br><b>⚠ '+emlWarnings.join('<br>⚠ ')+'</b>','warn');
     }else{
-      showStatus(msg,'success');
+      showStatus(msg,verified?'success':'warn');
     }
 
     document.getElementById('btn-ablegen').disabled=false;
