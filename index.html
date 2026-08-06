@@ -312,7 +312,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v3.0 · 2026-07-18';
+const APP_BUILD='v3.1 · 2026-08-06';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -1482,7 +1482,7 @@ function useMsgPreview(file,isDemo){
   },[file?.id,isDemo]);
   return{html,loading,err};
 }
-function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower,onIndex,onOutlook,outlookBusy}){
+function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower,onIndex,onOutlook,onForward,outlookBusy}){
   const [tab,setTab]=useState('prev');
   const isPdf=file&&(file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf')));
   const isImg=file&&file.mimeType&&file.mimeType.startsWith('image/');
@@ -1497,7 +1497,11 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower,onIndex,onOutl
   useEffect(()=>setTab('prev'),[file?.id]);
   const ps={width:width||310,minWidth:150};
   const rsBtn={background:'none',border:'1px solid var(--bdr)',cursor:'pointer',color:'var(--mut)',padding:'2px 8px',borderRadius:4,fontSize:13,lineHeight:1,fontWeight:700};
-  const printPdf=()=>{if(!pUrl)return;const f=document.createElement('iframe');f.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';f.src=pUrl;document.body.appendChild(f);f.onload=()=>{f.contentWindow.focus();f.contentWindow.print();setTimeout(()=>document.body.removeChild(f),60000);};}
+  // Druckbar ist alles, was schon als Blob-URL vorliegt - PDF, gerenderte
+  // Mail (.eml/.msg) und die Office-PDF-Rendition. Vorher hing der Button
+  // an isPdf, dadurch liessen sich ausgerechnet Mails nicht drucken.
+  const printUrl=isPdf?pUrl:isEml?emlHtml:isMsg?msgHtml:isOffice?offUrl:null;
+  const printDoc=()=>{if(!printUrl)return;const f=document.createElement('iframe');f.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';f.src=printUrl;document.body.appendChild(f);f.onload=()=>{f.contentWindow.focus();f.contentWindow.print();setTimeout(()=>document.body.removeChild(f),60000);};}
   if(!file)return(<div className="prev-panel" style={ps}><div className="prev-head"><span>Vorschau</span><div style={{display:'flex',gap:3}}>{onWider&&<button style={rsBtn} onClick={onWider} title="Breiter">◀</button>}{onNarrower&&<button style={rsBtn} onClick={onNarrower} title="Schmaler">▶</button>}</div></div><div className="ctr"><i className="fas fa-file-alt" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13,textAlign:'center'}}>Datei anklicken<br/>fuer Vorschau</p></div></div>);
   const {i,c}=mi(file.mimeType,file.name);
   const isDir=file.mimeType==='application/vnd.dropbox.folder';
@@ -1512,8 +1516,9 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower,onIndex,onOutl
             <button className={`prev-tab ${tab==='prev'?'active':''}`} onClick={()=>setTab('prev')}>Vorschau</button>
             <button className={`prev-tab ${tab==='meta'?'active':''}`} onClick={()=>setTab('meta')}>Details</button>
           </div>
-          {isPdf&&pUrl&&<button onClick={printPdf} style={{background:'none',border:'none',cursor:'pointer',color:'var(--mut)',padding:'2px 6px',borderRadius:4,fontSize:12}} title="Drucken"><i className="fas fa-print"/></button>}
-          {isEml&&onOutlook&&<button onClick={()=>onOutlook(file)} disabled={outlookBusy} style={{background:'none',border:'none',cursor:'pointer',color:'var(--mut)',padding:'2px 6px',borderRadius:4,fontSize:12}} title="In Outlook öffnen (antworten/bearbeiten)">{outlookBusy?<i className="fas fa-spinner fa-spin"/>:<i className="fab fa-microsoft"/>}</button>}
+          {printUrl&&<button onClick={printDoc} style={{background:'none',border:'none',cursor:'pointer',color:'var(--mut)',padding:'2px 6px',borderRadius:4,fontSize:12}} title="Drucken – im Dialog „Als PDF speichern“ wählen, um die Mail als PDF abzulegen"><i className="fas fa-print"/></button>}
+          {isEml&&onForward&&<button onClick={()=>onForward(file)} disabled={outlookBusy} style={{background:'none',border:'none',cursor:'pointer',color:'var(--mut)',padding:'2px 6px',borderRadius:4,fontSize:12}} title="Weiterleiten (Empfänger frei, Anhänge kommen mit)"><i className="fas fa-share"/></button>}
+          {isEml&&onOutlook&&<button onClick={()=>onOutlook(file)} disabled={outlookBusy} style={{background:'none',border:'none',cursor:'pointer',color:'var(--mut)',padding:'2px 6px',borderRadius:4,fontSize:12}} title="Antworten / in Outlook öffnen">{outlookBusy?<i className="fas fa-spinner fa-spin"/>:<i className="fab fa-microsoft"/>}</button>}
           <button onClick={onExpand} style={{background:'none',border:'none',cursor:'pointer',color:'var(--mut)',padding:'2px 6px',borderRadius:4,fontSize:12}}><i className="fas fa-expand-alt"/></button>
         </div>
       </div>
@@ -1568,7 +1573,7 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower,onIndex,onOutl
   );
 }
 
-function ExpandMod({file,isDemo,onClose,onOutlook,outlookBusy}){
+function ExpandMod({file,isDemo,onClose,onOutlook,onForward,outlookBusy}){
   const {i,c}=mi(file.mimeType,file.name);
   const isPdf=file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf'));
   const isEml=isEmlFile(file);
@@ -1580,8 +1585,10 @@ function ExpandMod({file,isDemo,onClose,onOutlook,outlookBusy}){
   const {url:offUrl,loading:offLoading,err:offErr}=useOfficePreview(isOffice?file:null,isDemo);
   const {html:msgHtml,loading:msgLoading,err:msgErr}=useMsgPreview(isMsg?file:null,isDemo);
   const is3d=isCad3d(file.name);
-  const printPdf=()=>{if(!pUrl)return;const f=document.createElement('iframe');f.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';f.src=pUrl;document.body.appendChild(f);f.onload=()=>{f.contentWindow.focus();f.contentWindow.print();setTimeout(()=>document.body.removeChild(f),60000);};};
-  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span>{isPdf&&pUrl&&<button className="btn bs" style={{padding:'5px 12px'}} onClick={printPdf}><i className="fas fa-print"/>Drucken</button>}{isEml&&onOutlook&&<button className="btn bs" style={{padding:'5px 12px'}} onClick={()=>onOutlook(file)} disabled={outlookBusy}>{outlookBusy?<i className="fas fa-spinner fa-spin"/>:<i className="fab fa-microsoft"/>}In Outlook öffnen</button>}<button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{isPdf?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>PDF wird geladen…</p></div>:pUrl?<PdfViewer blobUrl={pUrl}/>:<div className="ctr"><i className="fas fa-file-pdf" style={{fontSize:64,color:'#CC0000'}}/></div>):isEml?(emlLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>E-Mail wird geladen…</p></div>:emlHtml?<iframe src={emlHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="E-Mail Vorschau" sandbox="allow-same-origin allow-downloads"/>:<div className="ctr"><i className="fas fa-envelope" style={{fontSize:64,color:'#3498DB'}}/><p style={{fontSize:14}}>{file.name}</p></div>):isMsg?(msgLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Outlook-Nachricht wird gelesen…</p></div>:msgHtml?<iframe src={msgHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Outlook-Nachricht" sandbox="allow-same-origin allow-downloads"/>:<div className="ctr"><i className="fas fa-envelope" style={{fontSize:64,color:'#3498DB'}}/><p style={{fontSize:14,textAlign:'center',padding:'0 16px'}}>{msgErr||file.name}</p></div>):isOffice?(offLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Office-Vorschau wird erstellt…</p></div>:offUrl?<PdfViewer blobUrl={offUrl}/>:<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p><p style={{fontSize:12,color:offErr?'var(--red)':'var(--mut)'}}>{offErr?'Office-Vorschau nicht verfügbar':''}</p></div>):loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?(is3d?<Cad3DViewer url={pUrl} fileName={file.name}/>:isImg?<div style={{flex:1,overflow:'auto',display:'flex',alignItems:'center',justifyContent:'center',padding:20,minHeight:0,background:'#f5f5f5'}}><img src={pUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}} alt={file.name}/></div>:<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>):<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
+  // siehe PrevPanel: druckbar ist jede vorhandene Blob-URL, nicht nur PDF
+  const printUrl=isPdf?pUrl:isEml?emlHtml:isMsg?msgHtml:isOffice?offUrl:null;
+  const printDoc=()=>{if(!printUrl)return;const f=document.createElement('iframe');f.style.cssText='position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';f.src=printUrl;document.body.appendChild(f);f.onload=()=>{f.contentWindow.focus();f.contentWindow.print();setTimeout(()=>document.body.removeChild(f),60000);};};
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal modal-xl"><div style={{display:'flex',alignItems:'center',gap:10,marginBottom:14,flexShrink:0}}><i className={`fas ${i}`} style={{color:c,fontSize:20}}/><span style={{fontWeight:600,fontSize:15,flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{file.name}</span>{printUrl&&<button className="btn bs" style={{padding:'5px 12px'}} onClick={printDoc} title="Im Druckdialog „Als PDF speichern“ wählen, um die Mail als PDF abzulegen"><i className="fas fa-print"/>Drucken</button>}{isEml&&onForward&&<button className="btn bs" style={{padding:'5px 12px'}} onClick={()=>onForward(file)} disabled={outlookBusy}><i className="fas fa-share"/>Weiterleiten</button>}{isEml&&onOutlook&&<button className="btn bs" style={{padding:'5px 12px'}} onClick={()=>onOutlook(file)} disabled={outlookBusy}>{outlookBusy?<i className="fas fa-spinner fa-spin"/>:<i className="fab fa-microsoft"/>}Antworten</button>}<button className="btn bs" style={{padding:'5px 12px'}} onClick={onClose}><i className="fas fa-times"/>Schliessen</button></div><div style={{flex:1,display:'flex',flexDirection:'column',overflow:'hidden',border:'1px solid var(--bdr)',borderRadius:8,minHeight:0}}>{isPdf?(loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>PDF wird geladen…</p></div>:pUrl?<PdfViewer blobUrl={pUrl}/>:<div className="ctr"><i className="fas fa-file-pdf" style={{fontSize:64,color:'#CC0000'}}/></div>):isEml?(emlLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>E-Mail wird geladen…</p></div>:emlHtml?<iframe src={emlHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="E-Mail Vorschau" sandbox="allow-same-origin allow-downloads"/>:<div className="ctr"><i className="fas fa-envelope" style={{fontSize:64,color:'#3498DB'}}/><p style={{fontSize:14}}>{file.name}</p></div>):isMsg?(msgLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Outlook-Nachricht wird gelesen…</p></div>:msgHtml?<iframe src={msgHtml} style={{flex:1,border:'none',width:'100%',height:'100%',display:'block'}} title="Outlook-Nachricht" sandbox="allow-same-origin allow-downloads"/>:<div className="ctr"><i className="fas fa-envelope" style={{fontSize:64,color:'#3498DB'}}/><p style={{fontSize:14,textAlign:'center',padding:'0 16px'}}>{msgErr||file.name}</p></div>):isOffice?(offLoading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Office-Vorschau wird erstellt…</p></div>:offUrl?<PdfViewer blobUrl={offUrl}/>:<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p><p style={{fontSize:12,color:offErr?'var(--red)':'var(--mut)'}}>{offErr?'Office-Vorschau nicht verfügbar':''}</p></div>):loading?<div className="ctr"><div className="spin"/><p style={{fontSize:13,color:'var(--mut)'}}>Vorschau wird geladen…</p></div>:err?<div className="ctr"><i className="fas fa-exclamation-triangle" style={{fontSize:36,color:'var(--org)'}}/><p style={{fontSize:13,color:'var(--red)'}}>{err}</p></div>:pUrl?(is3d?<Cad3DViewer url={pUrl} fileName={file.name}/>:isImg?<div style={{flex:1,overflow:'auto',display:'flex',alignItems:'center',justifyContent:'center',padding:20,minHeight:0,background:'#f5f5f5'}}><img src={pUrl} style={{maxWidth:'100%',maxHeight:'100%',objectFit:'contain'}} alt={file.name}/></div>:<iframe src={pUrl} style={{flex:1,border:'none'}} title="Vorschau"/>):<div className="ctr"><i className={`fas ${i}`} style={{fontSize:64,color:c}}/><p style={{fontSize:14}}>{file.name}</p></div>}</div></div></div>);
 }
 
 function UpMod({fid,onClose,onDone,isDemo}){
@@ -2007,6 +2014,30 @@ function Main({onOut,isDemo}){
         });
         setModal('mail');
       }
+    }catch(e){
+      toast('Fehler: '+e.message,'e');
+    }
+    setOutlookBusy(false);
+  };
+  // Weiterleiten statt Antworten. openInOutlook baut bewusst eine ANTWORT
+  // (AW:, Empfaenger = Absender) - fuer den haeufigsten Fall hier, eine
+  // Lieferantenrechnung an die Steuerberatung zu schicken, ist genau das
+  // falsch herum. Deshalb ein eigener Weg: Empfaenger leer, WG: im Betreff,
+  // Anhaenge einzeln (nicht die .eml als Blob), damit der Empfaenger die
+  // Rechnung direkt oeffnen kann.
+  const forwardMail=async(file)=>{
+    if(!file||isDemo){toast('Im Demo-Modus nicht verfügbar','e');return;}
+    setOutlookBusy(true);
+    try{
+      const fwd=parseEmlForForward(await fetchEmlText(file));
+      const subj=fwd.subject||file.name;
+      setMailPrefill({
+        to:'',
+        subject:/^(FW|WG):/i.test(subj)?subj:'WG: '+subj,
+        body:'\n\n---------- Weitergeleitete Nachricht ----------\nVon: '+fwd.from+'\nDatum: '+fwd.date+'\nAn: '+fwd.to+'\nBetreff: '+fwd.subject+'\n\n'+fwd.bodyText,
+        attachments:fwd.attachments
+      });
+      setModal('mail');
     }catch(e){
       toast('Fehler: '+e.message,'e');
     }
@@ -2526,7 +2557,7 @@ function Main({onOut,isDemo}){
         </div>
 
         <div className={`resizer ${resizing?'drag':''}`} onMouseDown={startResize} onTouchStart={startResize}/>
-        <PrevPanel file={sel} isDemo={isDemo} onExpand={()=>sel&&setBig(true)} width={prevW} onWider={()=>setPrevW(w=>Math.min(window.innerWidth*0.7,w+80))} onNarrower={()=>setPrevW(w=>Math.max(150,w-80))} onIndex={f=>openIndex(f,'index')} onOutlook={openInOutlook} outlookBusy={outlookBusy}/>
+        <PrevPanel file={sel} isDemo={isDemo} onExpand={()=>sel&&setBig(true)} width={prevW} onWider={()=>setPrevW(w=>Math.min(window.innerWidth*0.7,w+80))} onNarrower={()=>setPrevW(w=>Math.max(150,w-80))} onIndex={f=>openIndex(f,'index')} onOutlook={openInOutlook} onForward={forwardMail} outlookBusy={outlookBusy}/>
       </>)}
     </div>
 
@@ -2584,7 +2615,7 @@ function Main({onOut,isDemo}){
     )}
 
     {/* MODALS */}
-    {big&&sel&&<ExpandMod file={sel} isDemo={isDemo} onClose={()=>setBig(false)} onOutlook={openInOutlook} outlookBusy={outlookBusy}/>}
+    {big&&sel&&<ExpandMod file={sel} isDemo={isDemo} onClose={()=>setBig(false)} onOutlook={openInOutlook} onForward={forwardMail} outlookBusy={outlookBusy}/>}
     {indexFile&&<IndexMod file={indexFile.file} mode={indexFile.mode} isDemo={isDemo} onClose={()=>setIndexFile(null)} onDone={onIndexDone}/>}
     {modal==='up'&&<UpMod fid={nav==='inbox'?POSTEINGANG:cur.id} onClose={()=>setModal(null)} onDone={()=>{rf();loadInbox();}} isDemo={isDemo}/>}
     {modal==='mk'&&<MkMod par={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
