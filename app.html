@@ -225,7 +225,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version">v4.9</div>
+    <div class="nav-version" id="nav-version">v5.0</div>
   </div>
 </nav>
 
@@ -252,7 +252,7 @@
 <!-- SCREEN: Main -->
 <div class="screen" id="scr-main">
 
-  <div class="section-label">Aktuelle Mail</div>
+  <div class="section-label" id="lbl-mail">Aktuelle Mail</div>
   <div class="card" id="mail-card">
     <div class="mail-subject-row">
       <div class="mail-subject" id="mail-subject">–</div>
@@ -288,7 +288,7 @@
 
   <div id="status-box" style="display:none"></div>
 
-  <div class="section-label">Zielordner</div>
+  <div class="section-label" id="lbl-folder">Zielordner</div>
   <div class="search-wrap">
     <i class="fas fa-magnifying-glass search-icon"></i>
     <input type="text" id="folder-search" placeholder="Ordner suchen…" oninput="filterFolders(this.value)">
@@ -299,6 +299,25 @@
     <div style="padding:28px;text-align:center;color:var(--secondary);font-size:13px">
       <i class="fas fa-circle-notch spin" style="color:var(--pri)"></i> Ordner werden geladen…
     </div>
+  </div>
+
+  <!-- ══ COMPOSE-MODUS: Dateien aus Dropbox an die offene Mail haengen ══ -->
+  <div id="compose-wrap" style="display:none">
+    <div class="section-label" id="lbl-files">Dateien im Ordner</div>
+    <div class="search-wrap">
+      <i class="fas fa-magnifying-glass search-icon"></i>
+      <input type="text" id="file-search" placeholder="Datei suchen…" oninput="renderFileList(this.value)">
+      <button class="clear-search" onclick="clearFileSearch()" style="display:none" id="clear-file-btn">&#10005;</button>
+    </div>
+    <div class="tree-wrap" id="file-list" style="max-height:230px">
+      <div style="padding:22px;text-align:center;color:var(--secondary);font-size:12px">
+        Ordner links wählen
+      </div>
+    </div>
+    <button class="btn btn-success" id="btn-attach" onclick="attachSelected()" disabled
+            style="margin-top:10px">
+      <i class="fas fa-paperclip"></i> <span id="btn-attach-label">An Mail anhängen</span>
+    </button>
   </div>
 
   <div id="new-folder-wrap">
@@ -328,7 +347,7 @@
     </button>
   </div>
 
-  <div class="card" style="margin-bottom:16px">
+  <div class="card" id="card-opts" style="margin-bottom:16px">
     <div class="opt">
       <input type="checkbox" id="opt-attachments">
       <label for="opt-attachments">Anhänge separat ablegen</label>
@@ -396,6 +415,7 @@ async function refreshMsToken(){
 // (index.html) ist hier NICHT sichtbar. Ohne eigenen Login lief die Ablage immer
 // im anhanglosen Fallback (Ursache: 0 von 300 abgelegten Mails hatten Anhänge).
 async function updateMsBanner(){
+  if(isCompose){const b=document.getElementById('ms-banner');if(b)b.style.display='none';return;}
   const banner=document.getElementById('ms-banner');
   if(!banner)return;
   const token=await getValidMsToken();
@@ -488,6 +508,7 @@ const CONTENT_BASE='https://content.dropboxapi.com/2';
 let folders=[], expandedIds={'':true}, selectedFolderPath=null, selectedFolderName='';
 let mailItem=null;
 let accessToken=null, refreshToken=null, tokenExpiresAt=0;
+let isCompose=false;   // true, wenn das Taskpane beim Verfassen einer Mail laeuft
 // Bei Dropbox-Business: Team-Namespace-ID, damit list_folder/upload Team-Root statt Member-Folder sehen
 let rootNsId=null;
 
@@ -495,11 +516,14 @@ let rootNsId=null;
 Office.onReady(info=>{
   if(info.host===Office.HostType.Outlook){
     mailItem=Office.context.mailbox.item;
-    loadMailInfo();
+    // Compose vs. Read: addFileAttachmentAsync existiert nur beim Verfassen
+    isCompose=!!(mailItem&&typeof mailItem.addFileAttachmentAsync==='function');
+    if(isCompose)applyComposeMode(); else loadMailInfo();
     try{
       Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged,()=>{
         mailItem=Office.context.mailbox.item;
-        refreshMailInfo();
+        isCompose=!!(mailItem&&typeof mailItem.addFileAttachmentAsync==='function');
+        if(isCompose)applyComposeMode(); else refreshMailInfo();
       });
     }catch(e){console.warn('ItemChanged handler not supported:',e);}
   }
@@ -925,6 +949,7 @@ async function folderClick(path,name){
     if(!loadedParents.has(path))await loadChildren(path);
   }
   renderTree();
+  if(isCompose)loadFileList(path);
 }
 
 async function toggleExpand(path){
@@ -941,6 +966,7 @@ function selectFolder(path,name){
   document.getElementById('sel-folder-name').textContent=name;
   document.getElementById('btn-ablegen').disabled=false;
   renderTree();
+  if(isCompose)loadFileList(path);
 }
 
 function filterFolders(val){
@@ -1359,6 +1385,215 @@ function setProgress(pct,label){
   document.getElementById('progress-bar').style.width=pct+'%';
   document.getElementById('progress-label').textContent=label;
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// COMPOSE-MODUS  (v5.0)
+// Taskpane beim Verfassen einer Mail: Dropbox-Datei auswählen -> anhängen.
+//
+// Weg 1 (Standard): /files/get_temporary_link gibt eine 4h gueltige URL ohne
+//   Auth zurueck; addFileAttachmentAsync laesst Exchange die Datei selbst laden.
+//   Kein Base64-Transfer durch WebView2 -> kein "Failed to fetch" bei grossen
+//   Dateien (siehe Upload-Historie v4.5–v4.7).
+// Weg 2 (Fallback): Datei herunterladen, Base64, addFileAttachmentFromBase64Async
+//   (Requirement Set Mailbox 1.8). Greift, wenn Exchange die URL nicht erreicht.
+// ══════════════════════════════════════════════════════════════════════════════
+
+let filesInFolder=[];              // Dateien des aktuell gewaehlten Ordners
+let selectedFiles=new Set();       // path_lower der angehakten Dateien
+const ATT_LIMIT=25*1024*1024;      // Exchange-Anhangslimit
+
+function applyComposeMode(){
+  const hide=id=>{const e=document.getElementById(id);if(e)e.style.display='none';};
+  hide('lbl-mail'); hide('mail-card'); hide('btn-ablegen');
+  hide('card-opts'); hide('ms-banner');
+  const lbl=document.getElementById('lbl-folder');
+  if(lbl)lbl.textContent='Ordner';
+  const cw=document.getElementById('compose-wrap');
+  if(cw)cw.style.display='block';
+  // Zuletzt benutzten Ordner direkt oeffnen – spart bei jeder Mail das Suchen
+  try{
+    const last=localStorage.getItem('alydoc_lastFolder');
+    if(last!==null)setTimeout(()=>loadFileList(last),400);
+  }catch{}
+}
+
+function fileIcon(name){
+  const e=(name.split('.').pop()||'').toLowerCase();
+  if(e==='pdf')return['fa-file-pdf','#ff3b30'];
+  if(['doc','docx','odt'].includes(e))return['fa-file-word','#2b579a'];
+  if(['xls','xlsx','csv','ods'].includes(e))return['fa-file-excel','#217346'];
+  if(['ppt','pptx'].includes(e))return['fa-file-powerpoint','#d24726'];
+  if(['png','jpg','jpeg','gif','webp','heic','bmp','tif','tiff'].includes(e))return['fa-file-image','#ff9500'];
+  if(['eml','msg'].includes(e))return['fa-envelope','#007aff'];
+  if(['zip','rar','7z'].includes(e))return['fa-file-zipper','#8e8e93'];
+  if(['dwg','dxf','stp','step','stl','3dm','obj','glb'].includes(e))return['fa-cube','#5856d6'];
+  return['fa-file','#8e8e93'];
+}
+
+async function loadFileList(path){
+  const box=document.getElementById('file-list');
+  if(!box)return;
+  selectedFiles.clear();
+  updateAttachButton();
+  box.innerHTML='<div style="padding:22px;text-align:center;color:var(--secondary);font-size:12px">'+
+    '<i class="fas fa-circle-notch spin" style="color:var(--pri)"></i> Dateien werden geladen…</div>';
+  try{
+    filesInFolder=await listFilesIn(path);
+    renderFileList();
+  }catch(e){
+    filesInFolder=[];
+    box.innerHTML='<div style="padding:12px;color:var(--red);font-size:12px">'+
+      '<i class="fas fa-exclamation-triangle"></i> '+esc(e.message)+'</div>';
+  }
+}
+
+async function listFilesIn(path){
+  const out=[];
+  let res=await dbxRpc('/files/list_folder',{path:path,recursive:false,include_non_downloadable_files:false});
+  while(true){
+    for(const e of (res.entries||[])) if(e['.tag']==='file') out.push(e);
+    if(!res.has_more)break;
+    res=await dbxRpc('/files/list_folder/continue',{cursor:res.cursor});
+  }
+  // Neueste zuerst – die gesuchte Datei ist fast immer eine frische
+  out.sort((a,b)=>String(b.server_modified||'').localeCompare(String(a.server_modified||'')));
+  return out;
+}
+
+function esc(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function renderFileList(search){
+  const box=document.getElementById('file-list');
+  if(!box)return;
+  if(search===undefined){
+    const inp=document.getElementById('file-search');
+    search=inp?inp.value:'';
+  }
+  const btn=document.getElementById('clear-file-btn');
+  if(btn)btn.style.display=search?'block':'none';
+  const q=search.toLowerCase().trim();
+  const list=filesInFolder.filter(f=>!q||f.name.toLowerCase().includes(q));
+  if(!list.length){
+    box.innerHTML='<div style="padding:22px;text-align:center;color:var(--secondary);font-size:12px">'+
+      (filesInFolder.length?'Keine Treffer':'Keine Dateien in diesem Ordner')+'</div>';
+    return;
+  }
+  let html='';
+  list.forEach(f=>{
+    const [ic,col]=fileIcon(f.name);
+    const on=selectedFiles.has(f.path_lower);
+    const big=f.size>ATT_LIMIT;
+    const key=f.path_lower.replace(/'/g,"\\'");
+    html+='<div class="tree-item'+(on?' selected':'')+'" style="cursor:pointer'+(big?';opacity:.5':'')+'"'+
+      ' onclick="toggleFile(\''+key+'\')" title="'+esc(f.name)+(big?' – zu groß für eine Mail':'')+'">'+
+      '<i class="fas '+(on?'fa-square-check':'fa-square')+'" style="width:14px;font-size:12px;flex-shrink:0;color:'+(on?'var(--blue)':'#c7c7cc')+'"></i>'+
+      '<i class="fas '+ic+'" style="color:'+col+'"></i>'+
+      '<span class="name">'+esc(f.name)+'</span>'+
+      '<span style="font-size:10px;color:#aaa;flex-shrink:0">'+formatSize(f.size)+'</span>'+
+      '</div>';
+  });
+  box.innerHTML=html;
+}
+
+function clearFileSearch(){
+  const inp=document.getElementById('file-search');
+  if(inp)inp.value='';
+  renderFileList('');
+}
+
+function toggleFile(key){
+  const f=filesInFolder.find(x=>x.path_lower===key);
+  if(!f)return;
+  if(f.size>ATT_LIMIT){
+    showStatus('"'+f.name+'" ist '+formatSize(f.size)+' groß – Exchange erlaubt maximal 25 MB pro Mail.','warn');
+    return;
+  }
+  if(selectedFiles.has(key))selectedFiles.delete(key); else selectedFiles.add(key);
+  renderFileList();
+  updateAttachButton();
+}
+
+function updateAttachButton(){
+  const btn=document.getElementById('btn-attach');
+  const lbl=document.getElementById('btn-attach-label');
+  if(!btn||!lbl)return;
+  const n=selectedFiles.size;
+  btn.disabled=n===0;
+  lbl.textContent=n===0?'An Mail anhängen'
+    :(n===1?'1 Datei anhängen':n+' Dateien anhängen');
+}
+
+// Datei als Base64 holen (Fallback-Weg)
+async function dbxDownloadBase64(path){
+  await ensureToken();
+  const headers={'Authorization':'Bearer '+accessToken,'Dropbox-API-Arg':jsonHeaderSafe({path:path})};
+  const prh=pathRootHeader();
+  if(prh['Dropbox-API-Path-Root'])headers['Dropbox-API-Path-Root']=prh['Dropbox-API-Path-Root'];
+  let r=await fetch(CONTENT_BASE+'/files/download',{method:'POST',headers:headers});
+  if(r.status===401&&await tryRefreshToken()){
+    headers['Authorization']='Bearer '+accessToken;
+    r=await fetch(CONTENT_BASE+'/files/download',{method:'POST',headers:headers});
+  }
+  if(!r.ok)throw new Error('Download '+r.status);
+  return arrayBufferToBase64(await r.arrayBuffer());
+}
+
+function officeAttach(fn,arg,name){
+  return new Promise((resolve,reject)=>{
+    fn.call(mailItem,arg,name,{},res=>{
+      if(res.status===Office.AsyncResultStatus.Succeeded)resolve();
+      else reject(new Error((res.error&&res.error.message)||'Outlook lehnte den Anhang ab'));
+    });
+  });
+}
+
+async function attachSelected(){
+  const picks=filesInFolder.filter(f=>selectedFiles.has(f.path_lower));
+  if(!picks.length)return;
+  const btn=document.getElementById('btn-attach');
+  btn.disabled=true;
+  document.getElementById('progress-wrap').style.display='block';
+
+  const ok=[],failed=[];
+  for(let i=0;i<picks.length;i++){
+    const f=picks[i];
+    setProgress(Math.round(i/picks.length*100),'Hänge an: '+f.name);
+    let done=false,err=null;
+    // Weg 1: temporaerer Link, Exchange laedt selbst
+    try{
+      const tl=await dbxRpc('/files/get_temporary_link',{path:f.path_lower});
+      await officeAttach(mailItem.addFileAttachmentAsync,tl.link,f.name);
+      done=true;
+    }catch(e){err=e;}
+    // Weg 2: Bytes direkt uebergeben
+    if(!done&&typeof mailItem.addFileAttachmentFromBase64Async==='function'){
+      try{
+        const b64=await dbxDownloadBase64(f.path_lower);
+        await officeAttach(mailItem.addFileAttachmentFromBase64Async,b64,f.name);
+        done=true;
+      }catch(e2){err=e2;}
+    }
+    if(done)ok.push(f.name); else failed.push(f.name+' ('+((err&&err.message)||'unbekannt')+')');
+  }
+
+  setProgress(100,'Fertig');
+  setTimeout(()=>{document.getElementById('progress-wrap').style.display='none';},900);
+  selectedFiles.clear();
+  renderFileList();
+  updateAttachButton();
+
+  if(failed.length===0){
+    showStatus(ok.length===1?'"'+ok[0]+'" angehängt.':ok.length+' Dateien angehängt.','success');
+  }else if(ok.length===0){
+    showStatus('Nicht angehängt: '+failed.join(', '),'error');
+  }else{
+    showStatus(ok.length+' angehängt, fehlgeschlagen: '+failed.join(', '),'warn');
+  }
+}
+
 </script>
 </body>
 </html>

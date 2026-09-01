@@ -6,11 +6,11 @@
            xsi:type="MailApp">
 
   <Id>c452072a-128e-4ecf-a220-6e43d6072d72</Id>
-  <Version>4.4.0.0</Version>
+  <Version>5.0.0.0</Version>
   <ProviderName>alysee GmbH</ProviderName>
   <DefaultLocale>de-DE</DefaultLocale>
   <DisplayName DefaultValue="alyDoc"/>
-  <Description DefaultValue="Save emails to Dropbox"/>
+  <Description DefaultValue="E-Mails in Dropbox ablegen und Dropbox-Dateien an Mails anhängen"/>
 
   <IconUrl DefaultValue="https://alydoc.alysee.de/icon-80.png"/>
   <HighResolutionIconUrl DefaultValue="https://alydoc.alysee.de/icon-192.png"/>
@@ -36,8 +36,13 @@
   <FormSettings>
     <Form xsi:type="ItemRead">
       <DesktopSettings>
-        <SourceLocation DefaultValue="https://alydoc.alysee.de/panel.html?v=44"/>
+        <SourceLocation DefaultValue="https://alydoc.alysee.de/panel.html?v=50"/>
         <RequestedHeight>450</RequestedHeight>
+      </DesktopSettings>
+    </Form>
+    <Form xsi:type="ItemEdit">
+      <DesktopSettings>
+        <SourceLocation DefaultValue="https://alydoc.alysee.de/panel.html?v=50"/>
       </DesktopSettings>
     </Form>
   </FormSettings>
@@ -46,6 +51,7 @@
 
   <Rule xsi:type="RuleCollection" Mode="Or">
     <Rule xsi:type="ItemIs" ItemType="Message" FormType="Read"/>
+    <Rule xsi:type="ItemIs" ItemType="Message" FormType="Edit"/>
   </Rule>
 
   <DisableEntityHighlighting>true</DisableEntityHighlighting>
@@ -83,6 +89,28 @@
               </Group>
             </OfficeTab>
           </ExtensionPoint>
+          <ExtensionPoint xsi:type="MessageComposeCommandSurface">
+            <OfficeTab id="TabDefault">
+              <Group id="grpAlyDocCompose">
+                <Label resid="grpLabel"/>
+                <Control xsi:type="Button" id="btnAlyDocAttach">
+                  <Label resid="btnLabelC"/>
+                  <Supertip>
+                    <Title resid="btnLabelC"/>
+                    <Description resid="btnDescC"/>
+                  </Supertip>
+                  <Icon>
+                    <bt:Image size="16" resid="icon16"/>
+                    <bt:Image size="32" resid="icon32"/>
+                    <bt:Image size="80" resid="icon80"/>
+                  </Icon>
+                  <Action xsi:type="ShowTaskpane">
+                    <SourceLocation resid="residTaskpaneUrl"/>
+                  </Action>
+                </Control>
+              </Group>
+            </OfficeTab>
+          </ExtensionPoint>
         </DesktopFormFactor>
       </Host>
     </Hosts>
@@ -94,15 +122,17 @@
         <bt:Image id="icon80" DefaultValue="https://alydoc.alysee.de/icon-80.png"/>
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="residFunctionUrl" DefaultValue="https://alydoc.alysee.de/panel.html?v=44"/>
-        <bt:Url id="residTaskpaneUrl" DefaultValue="https://alydoc.alysee.de/panel.html?v=44"/>
+        <bt:Url id="residFunctionUrl" DefaultValue="https://alydoc.alysee.de/panel.html?v=50"/>
+        <bt:Url id="residTaskpaneUrl" DefaultValue="https://alydoc.alysee.de/panel.html?v=50"/>
       </bt:Urls>
       <bt:ShortStrings>
         <bt:String id="grpLabel" DefaultValue="alyDoc"/>
         <bt:String id="btnLabel" DefaultValue="Mail ablegen"/>
+        <bt:String id="btnLabelC" DefaultValue="Aus alyDoc anhängen"/>
       </bt:ShortStrings>
       <bt:LongStrings>
         <bt:String id="btnDesc" DefaultValue="Aktuelle E-Mail in Dropbox ablegen"/>
+        <bt:String id="btnDescC" DefaultValue="Dokument oder Mail aus Dropbox an diese Nachricht anhängen"/>
       </bt:LongStrings>
     </Resources>
 
@@ -140,6 +170,28 @@
                 </Group>
               </OfficeTab>
             </ExtensionPoint>
+            <ExtensionPoint xsi:type="MessageComposeCommandSurface">
+              <OfficeTab id="TabDefault">
+                <Group id="grpAlyDocCompose">
+                  <Label resid="grpLabel"/>
+                  <Control xsi:type="Button" id="btnAlyDocAttach">
+                    <Label resid="btnLabelC"/>
+                    <Supertip>
+                      <Title resid="btnLabelC"/>
+                      <Description resid="btnDescC"/>
+                    </Supertip>
+                    <Icon>
+                      <bt:Image size="16" resid="icon16"/>
+                      <bt:Image size="32" resid="icon32"/>
+                      <bt:Image size="80" resid="icon80"/>
+                    </Icon>
+                    <Action xsi:type="ShowTaskpane">
+                      <SourceLocation resid="residTaskpaneUrl"/>
+                    </Action>
+                  </Control>
+                </Group>
+              </OfficeTab>
+            </ExtensionPoint>
           </DesktopFormFactor>
         </Host>
       </Hosts>
@@ -150,15 +202,17 @@
           <bt:Image id="icon80" DefaultValue="https://alydoc.alysee.de/icon-80.png"/>
         </bt:Images>
         <bt:Urls>
-          <bt:Url id="residFunctionUrl" DefaultValue="https://alydoc.alysee.de/panel.html?v=44"/>
-          <bt:Url id="residTaskpaneUrl" DefaultValue="https://alydoc.alysee.de/panel.html?v=44"/>
+          <bt:Url id="residFunctionUrl" DefaultValue="https://alydoc.alysee.de/panel.html?v=50"/>
+          <bt:Url id="residTaskpaneUrl" DefaultValue="https://alydoc.alysee.de/panel.html?v=50"/>
         </bt:Urls>
         <bt:ShortStrings>
           <bt:String id="grpLabel" DefaultValue="alyDoc"/>
           <bt:String id="btnLabel" DefaultValue="Mail ablegen"/>
+        <bt:String id="btnLabelC" DefaultValue="Aus alyDoc anhängen"/>
         </bt:ShortStrings>
         <bt:LongStrings>
           <bt:String id="btnDesc" DefaultValue="Aktuelle E-Mail in Dropbox ablegen"/>
+        <bt:String id="btnDescC" DefaultValue="Dokument oder Mail aus Dropbox an diese Nachricht anhängen"/>
         </bt:LongStrings>
       </Resources>
     </VersionOverrides>
