@@ -150,7 +150,8 @@ else{
         +'&response_type=code'
         +'&scope='+encodeURIComponent('Mail.Send Mail.Read User.Read offline_access')
         +'&code_challenge='+encodeURIComponent(challenge)
-        +'&code_challenge_method=S256';
+        +'&code_challenge_method=S256'
+        +'&prompt=select_account';
 
       window.location.href=authUrl;
     }catch(e){
