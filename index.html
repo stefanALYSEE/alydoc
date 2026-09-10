@@ -32,7 +32,29 @@
     function _dbxPathRootHeader(){return _dbxRootNs?{'Dropbox-API-Path-Root':jsonHeaderSafe({'.tag':'namespace_id','namespace_id':_dbxRootNs})}:{};}
     async function _dbxEnsureToken(){if(_dbxExpires&&_dbxExpires-Date.now()<60000){await _dbxTryRefresh();}return _dbxToken;}
     async function _dbxTryRefresh(){if(!_dbxRefresh)return false;try{const b=new URLSearchParams();b.set('grant_type','refresh_token');b.set('refresh_token',_dbxRefresh);b.set('client_id',DROPBOX_APP_KEY);const r=await fetch('https://api.dropboxapi.com/oauth2/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:b.toString()});if(!r.ok)return false;const d=await r.json();if(!d.access_token)return false;_dbxToken=d.access_token;_dbxExpires=Date.now()+(d.expires_in||14400)*1000;try{localStorage.setItem('alydoc_dbx_token',_dbxToken);localStorage.setItem('alydoc_dbx_expires',_dbxExpires.toString());}catch{}return true;}catch{return false;}}
-    async function dbxRpc(path,arg){await _dbxEnsureToken();const r=await fetch(DBX_API+path,{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Content-Type':'application/json',..._dbxPathRootHeader()},body:JSON.stringify(arg||null)});if(r.status===401){if(await _dbxTryRefresh())return dbxRpc(path,arg);throw new Error('401');}const t=await r.text();let d;try{d=t?JSON.parse(t):{};}catch{d={raw:t};}if(!r.ok)throw new Error('Dropbox '+path+' '+r.status+': '+(d.error_summary||t));return d;}
+    // Erkennt einen ungueltigen Path-Root (z.B. Namespace-ID eines aufgeloesten Teams).
+    // HTTP 422 nutzt Dropbox ausschliesslich fuer Path-Root-Fehler (invalid_root / no_permission).
+    function _isPathRootErr(status,text){return status===422||((status===409||status===400)&&/path_root|invalid_root/i.test(text||''));}
+    // Selbstheilung: Path-Root verwerfen und ohne Header frisch vom Konto holen.
+    let _rootNsHealing=null;
+    function _dbxHealRootNs(){
+      if(_rootNsHealing)return _rootNsHealing;
+      const prev=_dbxRootNs;
+      _dbxRootNs=null;try{localStorage.removeItem('alydoc_dbx_root_ns');}catch{}
+      const p=(async()=>{
+        try{
+          const r=await dbxRpc('/users/get_current_account',null,{noPathRoot:true});
+          const ns=(r&&r.root_info&&r.root_info.root_namespace_id)?String(r.root_info.root_namespace_id):null;
+          if(ns){_dbxRootNs=ns;try{localStorage.setItem('alydoc_dbx_root_ns',ns);}catch{}}
+          if(ns!==prev)console.warn('alyDoc: Path-Root korrigiert',prev,'->',ns);
+          return ns!==prev;
+        }catch(e){console.warn('alyDoc: Path-Root-Heilung fehlgeschlagen',e);return false;}
+      })();
+      _rootNsHealing=p;
+      p.catch(()=>{}).then(()=>{if(_rootNsHealing===p)_rootNsHealing=null;});
+      return p;
+    }
+    async function dbxRpc(path,arg,opts){await _dbxEnsureToken();const noPR=!!(opts&&opts.noPathRoot);const r=await fetch(DBX_API+path,{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Content-Type':'application/json',...(noPR?{}:_dbxPathRootHeader())},body:JSON.stringify(arg||null)});if(r.status===401){if(await _dbxTryRefresh())return dbxRpc(path,arg,opts);throw new Error('401');}const t=await r.text();let d;try{d=t?JSON.parse(t):{};}catch{d={raw:t};}if(!r.ok){if(!noPR&&_isPathRootErr(r.status,t)&&await _dbxHealRootNs())return dbxRpc(path,arg,opts);throw new Error('Dropbox '+path+' '+r.status+': '+(d.error_summary||t));}return d;}
     async function dbxUploadRaw(dropboxPath,data,mode){await _dbxEnsureToken();const arg={path:dropboxPath,mode:mode||'add',autorename:true,mute:false};let body=data;if(typeof body==='string')body=new TextEncoder().encode(body);const r=await fetch(DBX_CONTENT+'/files/upload',{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Dropbox-API-Arg':jsonHeaderSafe(arg),'Content-Type':'application/octet-stream',..._dbxPathRootHeader()},body});if(r.status===401){if(await _dbxTryRefresh())return dbxUploadRaw(dropboxPath,data,mode);throw new Error('401');}const t=await r.text();let d;try{d=t?JSON.parse(t):{};}catch{d={raw:t};}if(!r.ok)throw new Error('Upload '+r.status+': '+(d.error_summary||t));return d;}
     async function dbxDownloadBlob(dropboxPath){await _dbxEnsureToken();const r=await fetch(DBX_CONTENT+'/files/download',{method:'POST',headers:{'Authorization':'Bearer '+_dbxToken,'Dropbox-API-Arg':jsonHeaderSafe({path:dropboxPath}),..._dbxPathRootHeader()}});if(r.status===401){if(await _dbxTryRefresh())return dbxDownloadBlob(dropboxPath);throw new Error('401 – bitte neu anmelden');}if(!r.ok)throw new Error('Download '+r.status);return r.blob();}
     // Vorschau-Cache: gleiche Datei nicht mehrfach herunterladen (PrevPanel + Vollbild = 2x, erneutes Anklicken = jedes Mal).
@@ -471,7 +493,9 @@ const DR={
   },
   async me(){
     try{
-      const r=await dbxRpc('/users/get_current_account',null);
+      // OHNE Path-Root-Header: eine tote Namespace-ID wuerde sonst genau den Call
+      // blockieren, der sie korrigieren soll (Deadlock nach Team-Wechsel 09/2026).
+      const r=await dbxRpc('/users/get_current_account',null,{noPathRoot:true});
       const name=(r.name&&r.name.display_name)||r.email||'';
       // Team-Account-Erkennung
       if(r.root_info&&r.root_info.root_namespace_id){
@@ -482,7 +506,7 @@ const DR={
         try{localStorage.removeItem('alydoc_dbx_root_ns');}catch{}
       }
       return{name,email:r.email};
-    }catch{return null;}
+    }catch(e){console.error('alyDoc: Kontoabfrage fehlgeschlagen:',e);return null;}
   },
   WF:'/.alysee_wf.json',
   async loadWF(){
