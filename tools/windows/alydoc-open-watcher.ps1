@@ -13,7 +13,9 @@
 $ErrorActionPreference = 'Continue'
 
 $Root       = 'D:\alysee Dropbox'
-$QueueDir   = Join-Path $Root 'APPS\alyDoc\open-requests'
+# Normaler Ordner, KEIN geteilter Mount: /APPS/alyDOC ist ein eingehaengter geteilter Ordner, der auf dem
+# Precision nicht synchronisiert (Test 2026-09-15: Cloud-Datei kam nach 60 s nicht an).
+$QueueDir   = Join-Path $Root 'APPS\alydoc-open-requests'
 $Handler    = Join-Path $PSScriptRoot 'alydoc-open.ps1'
 $MaxAgeSec  = 120      # aeltere Auftraege (z. B. nach Neustart) nicht mehr ausfuehren
 $PollMs     = 700

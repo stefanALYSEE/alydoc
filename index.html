@@ -334,7 +334,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v3.4 · 2026-09-15';
+const APP_BUILD='v3.4.1 · 2026-09-15';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -1303,7 +1303,7 @@ async function fetchEmlText(file){
 // Aktiviert wird das pro Browser über ?nativeopen=1 (macht der Installer), abgeschaltet über ?nativeopen=0.
 // Ohne Öffner (Mac, iPad, fremder Rechner): Datei wird heruntergeladen und vom Mailprogramm geöffnet.
 const NATIVE_OPEN_KEY='alydoc_native_open';
-const OPEN_QUEUE='/APPS/alyDOC/open-requests'; // Auftragsordner für den Outlook-Wächter auf dem Precision
+const OPEN_QUEUE='/APPS/alydoc-open-requests'; // Auftragsordner für den Outlook-Wächter auf dem Precision (eigener Ordner, getrennt vom Code-Ordner /APPS/alyDOC)
 function nativeOpenEnabled(){try{return localStorage.getItem(NATIVE_OPEN_KEY)==='1';}catch{return false;}}
 function isMailFile(f){return isEmlFile(f)||isMsgFile(f);}
 function findStoredGraphId(text){
