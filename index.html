@@ -334,7 +334,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v3.3 · 2026-09-15';
+const APP_BUILD='v3.4 · 2026-09-15';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -1303,6 +1303,7 @@ async function fetchEmlText(file){
 // Aktiviert wird das pro Browser über ?nativeopen=1 (macht der Installer), abgeschaltet über ?nativeopen=0.
 // Ohne Öffner (Mac, iPad, fremder Rechner): Datei wird heruntergeladen und vom Mailprogramm geöffnet.
 const NATIVE_OPEN_KEY='alydoc_native_open';
+const OPEN_QUEUE='/APPS/alyDOC/open-requests'; // Auftragsordner für den Outlook-Wächter auf dem Precision
 function nativeOpenEnabled(){try{return localStorage.getItem(NATIVE_OPEN_KEY)==='1';}catch{return false;}}
 function isMailFile(f){return isEmlFile(f)||isMsgFile(f);}
 function findStoredGraphId(text){
@@ -2029,14 +2030,19 @@ function Main({onOut,isDemo}){
     if(!file||isDemo){toast('Im Demo-Modus nicht verfügbar','e');return;}
     if(!isMailFile(file)){toast('Nur E-Mails (.eml/.msg) lassen sich in Outlook öffnen','e');return;}
     if(nativeOpenEnabled()){
-      // Echter Link-Klick statt location.href: in installierten Web-App-Fenstern der zuverlässigste Weg,
-      // ein externes Protokoll an Windows zu übergeben.
-      const href='alydoc-open:?p='+encodeURIComponent(file.path_display||file.path_lower||file.id);
-      console.info('[alyDoc] Outlook-Öffner:',href);
-      const a=document.createElement('a');
-      a.href=href;a.rel='noopener';a.style.display='none';
-      document.body.appendChild(a);a.click();a.remove();
-      toast('An Outlook übergeben – beim ersten Mal fragt Chrome „alydoc-open öffnen?“','i');
+      // Auftrag per Dropbox statt Link: Chrome gab alydoc-open: auf dem Precision nicht an Windows weiter.
+      // Der Wächter (tools/windows/alydoc-open-watcher.ps1) sieht die Datei nach dem Sync und öffnet Outlook.
+      setOutlookBusy(true);
+      try{
+        const path=file.path_display||file.path_lower||file.id;
+        const name=Date.now()+'-'+Math.random().toString(36).slice(2,8)+'.json';
+        await dbxUploadRaw(OPEN_QUEUE+'/'+name,JSON.stringify({path,ts:Date.now()}));
+        console.info('[alyDoc] Outlook-Auftrag:',OPEN_QUEUE+'/'+name,path);
+        toast('Wird in Outlook geöffnet … (wenige Sekunden)','i');
+      }catch(e){
+        toast('Outlook-Auftrag fehlgeschlagen: '+e.message,'e');
+      }
+      setOutlookBusy(false);
       return;
     }
     setOutlookBusy(true);
