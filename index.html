@@ -334,7 +334,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v3.4.1 · 2026-09-15';
+const APP_BUILD='v3.4.2 · 2026-09-15';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -2036,8 +2036,11 @@ function Main({onOut,isDemo}){
       try{
         const path=file.path_display||file.path_lower||file.id;
         const name=Date.now()+'-'+Math.random().toString(36).slice(2,8)+'.json';
-        await dbxUploadRaw(OPEN_QUEUE+'/'+name,JSON.stringify({path,ts:Date.now()}));
-        console.info('[alyDoc] Outlook-Auftrag:',OPEN_QUEUE+'/'+name,path);
+        // Zielgerät: jeder Wächter (Precision/Mac) öffnet nur Aufträge für sich. iPad meldet sich als Macintosh,
+        // hat aber kein Flag gesetzt und landet nie hier.
+        const target=/Macintosh|Mac OS X/.test(navigator.userAgent)?'mac':'win';
+        await dbxUploadRaw(OPEN_QUEUE+'/'+name,JSON.stringify({path,ts:Date.now(),target}));
+        console.info('[alyDoc] Outlook-Auftrag:',OPEN_QUEUE+'/'+name,path,target);
         toast('Wird in Outlook geöffnet … (wenige Sekunden)','i');
       }catch(e){
         toast('Outlook-Auftrag fehlgeschlagen: '+e.message,'e');

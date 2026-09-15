@@ -18,6 +18,7 @@ $Root       = 'D:\alysee Dropbox'
 $QueueDir   = Join-Path $Root 'APPS\alydoc-open-requests'
 $Handler    = Join-Path $PSScriptRoot 'alydoc-open.ps1'
 $MaxAgeSec  = 120      # aeltere Auftraege (z. B. nach Neustart) nicht mehr ausfuehren
+$GarbageSec = 3600     # Auftraege egal welchen Ziels (auch Mac) nach 1 h entfernen
 $PollMs     = 700
 $LogDir     = Join-Path $env:LOCALAPPDATA 'alyDoc'
 $LogFile    = Join-Path $LogDir 'alydoc-open.log'
@@ -36,23 +37,39 @@ if (-not $mutex.WaitOne(0)) { exit 0 }
 if (-not (Test-Path $QueueDir)) { New-Item -ItemType Directory -Path $QueueDir -Force | Out-Null }
 Write-Log ('gestartet, beobachte ' + $QueueDir)
 
+function Remove-Request([System.IO.FileInfo]$file, [string]$why) {
+    try {
+        Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop
+        if ($why) { Write-Log ('entfernt (' + $why + '): ' + $file.Name) }
+        return $true
+    } catch { return $false }
+}
+
 function Invoke-Request([System.IO.FileInfo]$file) {
     # Dropbox legt Dateien waehrend des Syncs ggf. unter temporaerem Namen an - nur fertige .json
     if ($file.Extension -ne '.json') { return }
+    $ageFile = ((Get-Date) - $file.LastWriteTime).TotalSeconds
+
+    # Erst lesen und pruefen, dann loeschen: Auftraege fuer den Mac muessen liegen bleiben.
     $raw = $null
-    for ($i = 0; $i -lt 10; $i++) {
-        try { $raw = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8); break } catch { Start-Sleep -Milliseconds 200 }
+    try { $raw = [System.IO.File]::ReadAllText($file.FullName, [System.Text.Encoding]::UTF8) } catch { return }
+    $req = $null
+    try { $req = $raw | ConvertFrom-Json } catch {}
+    if (-not $req -or -not $req.path) {
+        if ($ageFile -gt $GarbageSec) { Remove-Request $file 'unlesbar/alt' | Out-Null }   # evtl. noch im Sync
+        return
     }
-    try { Remove-Item -LiteralPath $file.FullName -Force -ErrorAction Stop } catch { return }   # erst entfernen = nie doppelt oeffnen
-    if (-not $raw) { Write-Log ('unlesbar: ' + $file.Name); return }
 
-    try { $req = $raw | ConvertFrom-Json } catch { Write-Log ('kein JSON: ' + $file.Name); return }
-    if (-not $req.path) { Write-Log ('ohne path: ' + $file.Name); return }
+    $target = if ($req.target) { [string]$req.target } else { 'win' }   # Altauftraege ohne Ziel = Precision
+    $ageSec = if ($req.ts) { ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - [double]$req.ts) / 1000 } else { $ageFile }
 
-    if ($req.ts) {
-        $ageSec = ([DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() - [double]$req.ts) / 1000
-        if ($ageSec -gt $MaxAgeSec) { Write-Log ('verworfen (' + [int]$ageSec + ' s alt): ' + $req.path); return }
+    if ($target -ne 'win') {
+        if ($ageSec -gt $GarbageSec) { Remove-Request $file ('fremd+alt, ' + $target) | Out-Null }
+        return
     }
+
+    if (-not (Remove-Request $file '')) { return }   # erst entfernen = nie doppelt oeffnen
+    if ($ageSec -gt $MaxAgeSec) { Write-Log ('verworfen (' + [int]$ageSec + ' s alt): ' + $req.path); return }
 
     $url = 'alydoc-open:?p=' + [uri]::EscapeDataString([string]$req.path)
     Write-Log ('Auftrag: ' + $req.path)
