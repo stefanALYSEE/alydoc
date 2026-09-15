@@ -334,7 +334,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v3.2 · 2026-09-15';
+const APP_BUILD='v3.3 · 2026-09-15';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -2029,8 +2029,14 @@ function Main({onOut,isDemo}){
     if(!file||isDemo){toast('Im Demo-Modus nicht verfügbar','e');return;}
     if(!isMailFile(file)){toast('Nur E-Mails (.eml/.msg) lassen sich in Outlook öffnen','e');return;}
     if(nativeOpenEnabled()){
-      window.location.href='alydoc-open:?p='+encodeURIComponent(file.path_display||file.path_lower||file.id);
-      toast('Wird in Outlook geöffnet …','i');
+      // Echter Link-Klick statt location.href: in installierten Web-App-Fenstern der zuverlässigste Weg,
+      // ein externes Protokoll an Windows zu übergeben.
+      const href='alydoc-open:?p='+encodeURIComponent(file.path_display||file.path_lower||file.id);
+      console.info('[alyDoc] Outlook-Öffner:',href);
+      const a=document.createElement('a');
+      a.href=href;a.rel='noopener';a.style.display='none';
+      document.body.appendChild(a);a.click();a.remove();
+      toast('An Outlook übergeben – beim ersten Mal fragt Chrome „alydoc-open öffnen?“','i');
       return;
     }
     setOutlookBusy(true);
@@ -2641,6 +2647,7 @@ function Main({onOut,isDemo}){
           <div className="as-handle"/>
           <div className="as-title"><i className={`fas ${mi(sel.mimeType,sel.name).i}`} style={{marginRight:6,color:mi(sel.mimeType,sel.name).c}}/>{sel.name}</div>
           <div className="as-item" onClick={()=>{setBig(true);setShowActionSheet(false);}}><i className="fas fa-eye"/>Vorschau</div>
+          {isMailFile(sel)&&<div className="as-item" onClick={()=>{openInOutlook(sel);setShowActionSheet(false);}}><i className="fab fa-microsoft" style={{color:'#0078D4'}}/>In Outlook öffnen</div>}
           {sel.mimeType!=='application/vnd.dropbox.folder'&&<div className="as-item" onClick={()=>{openIndex(sel,'index');setShowActionSheet(false);}}><i className="fas fa-tags"/>Verschlagworten</div>}
           <div className="as-item grn" onClick={()=>{doMove(sel);setShowActionSheet(false);}}><i className="fas fa-share-square"/>Verschieben nach…</div>
           <div className="as-item" onClick={()=>{setModal('ren');setShowActionSheet(false);}}><i className="fas fa-pencil"/>Umbenennen</div>
