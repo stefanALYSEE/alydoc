@@ -225,7 +225,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version" id="nav-version">v5.0</div>
+    <div class="nav-version" id="nav-version">v5.1</div>
   </div>
 </nav>
 
@@ -318,6 +318,22 @@
             style="margin-top:10px">
       <i class="fas fa-paperclip"></i> <span id="btn-attach-label">An Mail anhängen</span>
     </button>
+  </div>
+
+  <!-- ══ VORSCHAU (Compose): sehen, was man anhaengt - wie die Dateivorschau in ELOoffice ══ -->
+  <div id="prev-ov" style="display:none;position:fixed;inset:0;background:#fff;z-index:9999;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid #e5e5ea;background:var(--surface);flex-shrink:0">
+      <i class="fas fa-eye" style="color:var(--pri);flex-shrink:0"></i>
+      <span id="prev-name" style="flex:1;font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+      <button onclick="closePreview()" title="Schliessen" style="background:none;border:none;cursor:pointer;color:var(--secondary);font-size:16px;padding:0 4px;flex-shrink:0"><i class="fas fa-xmark"></i></button>
+    </div>
+    <div id="prev-body" style="flex:1;overflow:auto;background:#f2f2f7;padding:8px;text-align:center"></div>
+    <div style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-top:1px solid #e5e5ea;flex-shrink:0">
+      <button id="prev-back" onclick="pdfStep(-1)" title="Seite zurueck" style="background:none;border:none;cursor:pointer;color:var(--pri);font-size:14px;padding:0 4px;display:none"><i class="fas fa-chevron-left"></i></button>
+      <span id="prev-page" style="font-size:11px;color:var(--secondary);min-width:52px;text-align:center"></span>
+      <button id="prev-fwd" onclick="pdfStep(1)" title="Seite vor" style="background:none;border:none;cursor:pointer;color:var(--pri);font-size:14px;padding:0 4px;display:none"><i class="fas fa-chevron-right"></i></button>
+      <button class="btn btn-success" id="prev-attach" style="flex:1;margin:0" onclick="attachFromPreview()"><i class="fas fa-paperclip"></i> Anhängen</button>
+    </div>
   </div>
 
   <div id="new-folder-wrap">
@@ -1387,7 +1403,7 @@ function setProgress(pct,label){
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// COMPOSE-MODUS  (v5.0)
+// COMPOSE-MODUS  (v5.0, Vorschau v5.1)
 // Taskpane beim Verfassen einer Mail: Dropbox-Datei auswählen -> anhängen.
 //
 // Weg 1 (Standard): /files/get_temporary_link gibt eine 4h gueltige URL ohne
@@ -1493,6 +1509,7 @@ function renderFileList(search){
       '<i class="fas '+ic+'" style="color:'+col+'"></i>'+
       '<span class="name">'+esc(f.name)+'</span>'+
       '<span style="font-size:10px;color:#aaa;flex-shrink:0">'+formatSize(f.size)+'</span>'+
+      '<button onclick="event.stopPropagation();openPreview('+filesInFolder.indexOf(f)+')" title="Vorschau" style="background:none;border:none;cursor:pointer;color:var(--pri);padding:0 2px;font-size:12px;flex-shrink:0"><i class="fas fa-eye"></i></button>'+
       '</div>';
   });
   box.innerHTML=html;
@@ -1551,8 +1568,13 @@ function officeAttach(fn,arg,name){
 }
 
 async function attachSelected(){
-  const picks=filesInFolder.filter(f=>selectedFiles.has(f.path_lower));
-  if(!picks.length)return;
+  await attachFiles(filesInFolder.filter(f=>selectedFiles.has(f.path_lower)));
+}
+
+// Haengt eine konkrete Dateiliste an - genutzt von der Auswahl UND aus der Vorschau
+// (die Vorschau haengt nur die gezeigte Datei an, ohne die Haken zu veraendern).
+async function attachFiles(picks){
+  if(!picks||!picks.length)return;
   const btn=document.getElementById('btn-attach');
   btn.disabled=true;
   document.getElementById('progress-wrap').style.display='block';
@@ -1592,6 +1614,173 @@ async function attachSelected(){
   }else{
     showStatus(ok.length+' angehängt, fehlgeschlagen: '+failed.join(', '),'warn');
   }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// VORSCHAU (v5.1) - sehen, was man anhaengt. Vorbild: Dateivorschau in ELOoffice.
+//   Bilder   -> direkt aus /files/download
+//   PDF      -> pdf.js (vendor/, wird erst beim ersten Oeffnen geladen)
+//   Office   -> /files/get_preview liefert eine PDF-Fassung -> pdf.js
+//   HEIC/TIF -> /files/get_thumbnail_v2 (Browser kennt die Formate nicht)
+//   Text     -> als Text, gekuerzt
+// ══════════════════════════════════════════════════════════════════════════════
+
+let prevFile=null, pdfDoc=null, pdfPageNo=1, prevUrls=[], pdfLibPromise=null;
+
+function prevHint(txt){
+  return '<div style="padding:26px 14px;color:var(--secondary);font-size:12px;line-height:1.5">'+txt+'</div>';
+}
+function prevRevoke(){
+  prevUrls.forEach(u=>{try{URL.revokeObjectURL(u);}catch{}});
+  prevUrls=[];
+}
+function prevObjUrl(blob){const u=URL.createObjectURL(blob);prevUrls.push(u);return u;}
+
+// Inhalt eines Dropbox-Content-Endpunkts als Blob (mit 401-Retry wie ueberall sonst)
+async function dbxContentBlob(endpoint,arg){
+  await ensureToken();
+  const headers={'Authorization':'Bearer '+accessToken,'Dropbox-API-Arg':jsonHeaderSafe(arg)};
+  const prh=pathRootHeader();
+  if(prh['Dropbox-API-Path-Root'])headers['Dropbox-API-Path-Root']=prh['Dropbox-API-Path-Root'];
+  let r=await fetch(CONTENT_BASE+endpoint,{method:'POST',headers:headers});
+  if(r.status===401&&await tryRefreshToken()){
+    headers['Authorization']='Bearer '+accessToken;
+    r=await fetch(CONTENT_BASE+endpoint,{method:'POST',headers:headers});
+  }
+  if(!r.ok)throw new Error(endpoint.replace('/files/','')+' '+r.status);
+  return r.blob();
+}
+
+// pdf.js erst laden, wenn wirklich eine PDF-Vorschau gebraucht wird (~1 MB)
+function loadPdfLib(){
+  if(window.pdfjsLib)return Promise.resolve(window.pdfjsLib);
+  if(!pdfLibPromise)pdfLibPromise=new Promise((res,rej)=>{
+    const sc=document.createElement('script');
+    sc.src='vendor/pdf.min.js';
+    sc.onload=()=>{
+      if(!window.pdfjsLib){rej(new Error('pdf.js nicht verfuegbar'));return;}
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc='vendor/pdf.worker.min.js';
+      res(window.pdfjsLib);
+    };
+    sc.onerror=()=>{pdfLibPromise=null;rej(new Error('pdf.js konnte nicht geladen werden'));};
+    document.head.appendChild(sc);
+  });
+  return pdfLibPromise;
+}
+
+function setPdfPager(cur,total){
+  const p=document.getElementById('prev-page');
+  const b=document.getElementById('prev-back');
+  const f=document.getElementById('prev-fwd');
+  if(!p||!b||!f)return;
+  if(total>1){
+    p.textContent=cur+' / '+total;
+    b.style.display='';f.style.display='';
+    b.disabled=cur<=1;f.disabled=cur>=total;
+    b.style.opacity=cur<=1?.35:1;f.style.opacity=cur>=total?.35:1;
+  }else{
+    p.textContent='';b.style.display='none';f.style.display='none';
+  }
+}
+
+async function renderPdfPage(){
+  const body=document.getElementById('prev-body');
+  if(!body||!pdfDoc)return;
+  const page=await pdfDoc.getPage(pdfPageNo);
+  const base=page.getViewport({scale:1});
+  const avail=Math.max(200,body.clientWidth-16);
+  const vp=page.getViewport({scale:Math.min(3,(avail/base.width)*(window.devicePixelRatio||1))});
+  const c=document.createElement('canvas');
+  c.width=vp.width;c.height=vp.height;
+  c.style.cssText='width:100%;height:auto;border-radius:6px;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.15)';
+  body.innerHTML='';body.appendChild(c);
+  await page.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
+  setPdfPager(pdfPageNo,pdfDoc.numPages);
+}
+
+async function showPdfBlob(blob){
+  const lib=await loadPdfLib();
+  const buf=await blob.arrayBuffer();
+  pdfDoc=await lib.getDocument({data:new Uint8Array(buf)}).promise;
+  pdfPageNo=1;
+  await renderPdfPage();
+}
+
+async function pdfStep(delta){
+  if(!pdfDoc)return;
+  const n=pdfPageNo+delta;
+  if(n<1||n>pdfDoc.numPages)return;
+  pdfPageNo=n;
+  await renderPdfPage();
+}
+
+// Index statt Pfad: unabhaengig von Anfuehrungszeichen im Dateinamen
+async function openPreview(idx){
+  const f=filesInFolder[idx];
+  if(!f)return;
+  prevRevoke();pdfDoc=null;pdfPageNo=1;prevFile=f;
+  const ov=document.getElementById('prev-ov');
+  const body=document.getElementById('prev-body');
+  document.getElementById('prev-name').textContent=f.name;
+  setPdfPager(0,0);
+  ov.style.display='flex';
+  body.innerHTML='<div style="padding:26px;color:var(--secondary);font-size:12px">'+
+    '<i class="fas fa-circle-notch spin" style="color:var(--pri)"></i> Vorschau wird geladen…</div>';
+  const att=document.getElementById('prev-attach');
+  if(att){
+    const big=f.size>ATT_LIMIT;
+    att.disabled=big;
+    att.style.opacity=big?.5:1;
+    att.title=big?'Zu gross fuer eine Mail (max. 25 MB)':'';
+  }
+  const ext=(f.name.split('.').pop()||'').toLowerCase();
+  try{
+    if(['jpg','jpeg','png','gif','webp','bmp','svg'].includes(ext)){
+      const b=await dbxContentBlob('/files/download',{path:f.path_lower});
+      body.innerHTML='<img src="'+prevObjUrl(b)+'" style="max-width:100%;height:auto;border-radius:6px">';
+    }else if(ext==='pdf'){
+      await showPdfBlob(await dbxContentBlob('/files/download',{path:f.path_lower}));
+    }else if(['doc','docx','xls','xlsx','ppt','pptx','odt','ods','odp','rtf'].includes(ext)){
+      await showPdfBlob(await dbxContentBlob('/files/get_preview',{path:f.path_lower}));
+    }else if(['heic','heif','tif','tiff'].includes(ext)){
+      const b=await dbxContentBlob('/files/get_thumbnail_v2',{
+        resource:{'.tag':'path',path:f.path_lower},
+        format:{'.tag':'jpeg'},size:{'.tag':'w1024h768'},mode:{'.tag':'strict'}});
+      body.innerHTML='<img src="'+prevObjUrl(b)+'" style="max-width:100%;height:auto;border-radius:6px">';
+    }else if(['txt','csv','log','md','json','xml','ini','cfg'].includes(ext)){
+      const b=await dbxContentBlob('/files/download',{path:f.path_lower});
+      const t=await b.text();
+      body.innerHTML='<pre style="white-space:pre-wrap;word-break:break-word;text-align:left;font-size:11px;'+
+        'background:#fff;padding:10px;border-radius:6px">'+esc(t.slice(0,20000))+
+        (t.length>20000?'\n…':'')+'</pre>';
+    }else if(['eml','msg'].includes(ext)){
+      body.innerHTML=prevHint('Das ist eine abgelegte E-Mail. Zum Lesen in alyDoc öffnen – hier wird sie nicht dargestellt.');
+    }else{
+      body.innerHTML=prevHint('Für diesen Dateityp gibt es keine Vorschau.<br>Anhängen geht trotzdem.');
+    }
+  }catch(e){
+    body.innerHTML=prevHint('Vorschau nicht möglich: '+esc(e.message||'unbekannter Fehler'));
+  }
+}
+
+function closePreview(){
+  const ov=document.getElementById('prev-ov');
+  if(ov)ov.style.display='none';
+  const body=document.getElementById('prev-body');
+  if(body)body.innerHTML='';
+  prevRevoke();pdfDoc=null;prevFile=null;
+}
+
+// Aus der Vorschau heraus anhaengen: genau diese eine Datei, Haken bleiben unberuehrt
+async function attachFromPreview(){
+  const f=prevFile;
+  if(!f)return;
+  if(f.size>ATT_LIMIT){
+    showStatus('"'+f.name+'" ist '+formatSize(f.size)+' groß – Exchange erlaubt maximal 25 MB pro Mail.','warn');
+    return;
+  }
+  closePreview();
+  await attachFiles([f]);
 }
 
 </script>
