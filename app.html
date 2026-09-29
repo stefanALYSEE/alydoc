@@ -225,7 +225,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version" id="nav-version">v5.1</div>
+    <div class="nav-version" id="nav-version">v5.2</div>
   </div>
 </nav>
 
@@ -277,7 +277,7 @@
     <button onclick="msLogin()" style="background:#0067b8;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">Verbinden</button>
   </div>
 
-  <button class="btn btn-success" id="btn-ablegen" onclick="ablegen()" disabled>
+  <button class="btn btn-success" id="btn-ablegen" onclick="ablegen()">
     <i class="fas fa-inbox"></i> In alyDoc ablegen
   </button>
 
@@ -528,8 +528,57 @@ let isCompose=false;   // true, wenn das Taskpane beim Verfassen einer Mail laeu
 // Bei Dropbox-Business: Team-Namespace-ID, damit list_folder/upload Team-Root statt Member-Folder sehen
 let rootNsId=null;
 
+// ── PERSISTENZ-SPIEGEL (v5.2) ────────────────────────────────────────────────
+// Outlook-WebView2 speichert localStorage seit Ende 09/2026 nicht mehr dauerhaft
+// (neues Profil ohne Local-Storage-Datenbank) -> nach jedem Outlook-Start waren
+// Dropbox-Login und Zielordner weg, der Ablage-Button blieb grau.
+// Loesung: die alyDoc-Schluessel zusaetzlich in Office roamingSettings (liegen im
+// Exchange-Postfach) spiegeln und beim Start von dort zurueckholen.
+const ROAM_KEYS=['alydoc_dbx_token','alydoc_dbx_refresh','alydoc_dbx_expires','alydoc_dbx_user','alydoc_dbx_root_ns',
+  'alydoc_ms_token','alydoc_ms_expires','alydoc_ms_refresh','alydoc_lastFolder','alydoc_lastFolderName'];
+let _roam=null,_roamTimer=null;
+(function ensureLocalStorage(){
+  // Falls localStorage komplett gesperrt ist: In-Memory-Ersatz, damit der Rest laeuft
+  try{localStorage.setItem('alydoc_probe','1');localStorage.removeItem('alydoc_probe');}
+  catch(e){
+    const mem={};
+    const shim={getItem:k=>k in mem?mem[k]:null,setItem:(k,v)=>{mem[k]=String(v);},removeItem:k=>{delete mem[k];},clear:()=>{for(const k in mem)delete mem[k];}};
+    try{Object.defineProperty(window,'localStorage',{value:shim,configurable:true});}catch{}
+    console.warn('[alyDoc] localStorage nicht verfuegbar – In-Memory-Ersatz aktiv',e);
+  }
+})();
+function roamSave(){
+  if(!_roam)return;
+  clearTimeout(_roamTimer);
+  _roamTimer=setTimeout(()=>{
+    try{_roam.saveAsync(r=>{if(r.status!=='succeeded')console.warn('[alyDoc] roamingSettings.saveAsync:',r.error);});}catch(e){console.warn('[alyDoc] roamSave',e);}
+  },400);
+}
+function initRoaming(){
+  try{_roam=Office.context.roamingSettings||null;}catch{_roam=null;}
+  if(!_roam)return;
+  // 1) Zurueckholen: was im localStorage fehlt, aus roamingSettings uebernehmen
+  let restored=0;
+  ROAM_KEYS.forEach(k=>{
+    try{
+      const v=_roam.get(k);
+      if(v!==undefined&&v!==null&&localStorage.getItem(k)===null){localStorage.setItem(k,String(v));restored++;}
+    }catch{}
+  });
+  if(restored)console.info('[alyDoc] '+restored+' Einstellungen aus roamingSettings wiederhergestellt');
+  // 2) Spiegeln: jede kuenftige Aenderung dieser Schluessel auch in roamingSettings schreiben
+  const ls=localStorage, set0=ls.setItem.bind(ls), rem0=ls.removeItem.bind(ls);
+  ls.setItem=function(k,v){set0(k,v);if(ROAM_KEYS.includes(k)){try{_roam.set(k,String(v));roamSave();}catch{}}};
+  ls.removeItem=function(k){rem0(k);if(ROAM_KEYS.includes(k)){try{_roam.remove(k);roamSave();}catch{}}};
+  // Bestand einmalig mitnehmen (z.B. erster Start nach Update mit noch vorhandenem localStorage)
+  let changed=false;
+  ROAM_KEYS.forEach(k=>{try{const v=localStorage.getItem(k);if(v!==null&&_roam.get(k)!==v){_roam.set(k,v);changed=true;}}catch{}});
+  if(changed)roamSave();
+}
+
 // ── OFFICE.JS INIT ───────────────────────────────────────────────────────────
 Office.onReady(info=>{
+  initRoaming();
   if(info.host===Office.HostType.Outlook){
     mailItem=Office.context.mailbox.item;
     // Compose vs. Read: addFileAttachmentAsync existiert nur beim Verfassen
@@ -1113,7 +1162,12 @@ async function checkEmlContent(blobOrString){
 
 // ── ABLEGEN ───────────────────────────────────────────────────────────────────
 async function ablegen(){
-  if(selectedFolderPath===null||!mailItem)return;
+  if(!mailItem){showStatus('Keine Mail ausgewählt.','warn');return;}
+  if(selectedFolderPath===null){
+    showStatus('Bitte zuerst unten einen Zielordner anklicken.','warn');
+    try{document.getElementById('folder-tree').scrollIntoView({behavior:'smooth',block:'start'});}catch{}
+    return;
+  }
   const saveAtts=document.getElementById('opt-attachments').checked;
 
   document.getElementById('btn-ablegen').disabled=true;
@@ -1384,7 +1438,7 @@ function showScreen(id){
   if(id==='scr-main'){
     document.getElementById('status-box').style.display='none';
     document.getElementById('progress-wrap').style.display='none';
-    document.getElementById('btn-ablegen').disabled=(selectedFolderPath===null);
+    document.getElementById('btn-ablegen').disabled=false;
     updateMsBanner();
   }
 }
