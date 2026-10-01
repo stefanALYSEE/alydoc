@@ -184,6 +184,19 @@
     .tree-item i.fa-folder-open{color:#8E8E93;font-size:13px;width:15px;flex-shrink:0}
     .tree-item i.fa-dropbox{color:var(--dbx);font-size:13px;width:15px;flex-shrink:0}
     .tree-item .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    /* v5.4: Unterordner direkt im Baum anlegen (+ Knopf, Rechtsklick-Menue) */
+    .tree-add{opacity:0;background:none;border:none;cursor:pointer;color:var(--pri);font-size:12px;padding:2px 6px;flex-shrink:0;transition:opacity .15s}
+    .tree-item:hover .tree-add,.tree-item.selected .tree-add{opacity:1}
+    .tree-new{cursor:default;gap:6px}
+    .tree-new i.fa-folder-plus{color:var(--pri);font-size:13px;width:15px;flex-shrink:0}
+    .tree-new input{flex:1;min-width:0;padding:5px 8px;border:1px solid var(--pri);border-radius:7px;font-size:13px;outline:none;background:#fff;color:var(--label)}
+    .tree-new button{background:var(--pri);color:#fff;border:none;border-radius:7px;padding:5px 9px;cursor:pointer;font-size:12px;flex-shrink:0}
+    .tree-new button.cancel{background:rgba(255,59,48,.1);color:var(--red)}
+    #tree-ctx{position:fixed;display:none;z-index:9000;background:#fff;border-radius:10px;box-shadow:0 6px 24px rgba(0,0,0,.18);padding:4px 0;min-width:170px;font-size:13px}
+    #tree-ctx div{padding:8px 14px;cursor:pointer;display:flex;align-items:center;gap:9px;color:var(--label)}
+    #tree-ctx div:hover{background:rgba(0,122,255,.08)}
+    #tree-ctx i{width:14px;color:var(--secondary)}
+    #tree-ctx i.fa-folder-plus{color:var(--pri)}
 
     /* ── NEW FOLDER ────────────────────────────────────── */
     #new-folder-wrap{display:flex;gap:6px;margin-bottom:16px}
@@ -251,7 +264,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version" id="nav-version">v5.3</div>
+    <div class="nav-version" id="nav-version">v5.4</div>
   </div>
 </nav>
 
@@ -368,8 +381,13 @@
     </div>
   </div>
 
+  <div id="tree-ctx">
+    <div onclick="ctxNewFolder()"><i class="fas fa-folder-plus"></i>Neuer Unterordner</div>
+    <div id="tree-ctx-ren" onclick="ctxRename()"><i class="fas fa-pencil"></i>Umbenennen</div>
+  </div>
+
   <div id="new-folder-wrap">
-    <input type="text" id="new-folder-name" placeholder="Neuer Ordner…">
+    <input type="text" id="new-folder-name" placeholder="Neuer Ordner im gewählten Ordner…">
     <button class="btn-icon" onclick="createNewFolder()">
       <i class="fas fa-folder-plus"></i> Anlegen
     </button>
@@ -1021,13 +1039,23 @@ function renderTree(search){
   let html='';
   const rootExp=expandedIds['']!==false;
   const rootSel=selectedFolderPath==='';
-  html+=`<div class="tree-item ${rootSel?'selected':''}" onclick="folderClick('','Dropbox')" style="font-weight:500;cursor:pointer">
+  html+=`<div class="tree-item ${rootSel?'selected':''}" data-path="" onclick="folderClick('','Dropbox')" oncontextmenu="treeCtx(event,this.dataset.path)" style="font-weight:500;cursor:pointer">
     <span class="chevron"><i class="fas fa-chevron-${rootExp?'down':'right'}"></i></span>
     <i class="fab fa-dropbox"></i>
     <span class="name">Dropbox (Root)</span>
+    <button class="tree-add" title="Unterordner anlegen" onclick="event.stopPropagation();startNewFolder(this.parentNode.dataset.path)"><i class="fas fa-plus"></i></button>
   </div>`;
 
+  // v5.4: Eingabezeile fuer neuen Unterordner direkt unter dem Elternordner
+  const newRow=pl=>`<div class="tree-item tree-new" style="padding-left:${pl}px" onclick="event.stopPropagation()">
+      <i class="fas fa-folder-plus"></i>
+      <input id="tree-new-input" placeholder="Name des neuen Ordners…" onkeydown="if(event.key==='Enter')confirmNewFolder();if(event.key==='Escape')cancelNewFolder()">
+      <button onclick="confirmNewFolder()" title="Anlegen"><i class="fas fa-check"></i></button>
+      <button class="cancel" onclick="cancelNewFolder()" title="Abbrechen"><i class="fas fa-xmark"></i></button>
+    </div>`;
+
   function renderNode(parentPath, depth){
+    if(newFolderParent===parentPath)html+=newRow(10+depth*18);
     const kids=childrenOf(parentPath);
     kids.forEach(f=>{
       if(searchLow&&!hasMatchingDesc(f))return;
@@ -1039,11 +1067,12 @@ function renderTree(search){
       const pl=10+depth*18;
       const dn=f.displayName.replace(/'/g,"\\'");
       const pp=f.path.replace(/'/g,"\\'");
-      html+=`<div class="tree-item ${isSel?'selected':''}" style="padding-left:${pl}px" onclick="folderClick('${pp}','${dn}')">
+      html+=`<div class="tree-item ${isSel?'selected':''}" style="padding-left:${pl}px" data-path="${esc(f.path)}" onclick="folderClick('${pp}','${dn}')" oncontextmenu="treeCtx(event,this.dataset.path)">
         ${mayHaveKids?`<i class="fas fa-chevron-${isExp?'down':'right'}" style="width:14px;font-size:10px;flex-shrink:0"></i>`:'<span style="width:14px;flex-shrink:0"></span>'}
         <i class="fas fa-folder${isExp?'-open':''}"></i>
         <span class="name">${f.name}</span>
         ${isSel?'<i class="fas fa-check-circle" style="color:var(--blue);font-size:11px"></i>':''}
+        <button class="tree-add" title="Unterordner anlegen" onclick="event.stopPropagation();startNewFolder(this.parentNode.dataset.path)"><i class="fas fa-plus"></i></button>
       </div>`;
       if(isExp)renderNode(f.path,depth+1);
     });
@@ -1051,7 +1080,83 @@ function renderTree(search){
 
   if(rootExp)renderNode('',1);
   tree.innerHTML=html;
+  const ni=document.getElementById('tree-new-input');
+  if(ni){ni.value=newFolderDraft;ni.focus();ni.oninput=()=>{newFolderDraft=ni.value;};}
 }
+
+// ── v5.4: NEUER UNTERORDNER IM BAUM (+ Knopf / Rechtsklick) ──────────────────
+let newFolderParent=null, newFolderDraft='', newFolderBusy=false, ctxPath=null;
+
+async function startNewFolder(parentPath){
+  hideTreeCtx();
+  newFolderParent=parentPath||'';
+  newFolderDraft='';
+  expandedIds[newFolderParent]=true;
+  if(newFolderParent&&!loadedParents.has(newFolderParent))await loadChildren(newFolderParent);
+  if(document.getElementById('folder-search').value)clearSearch();else renderTree();
+  const ni=document.getElementById('tree-new-input');
+  if(ni)ni.scrollIntoView({block:'nearest'});
+}
+
+function cancelNewFolder(){
+  newFolderParent=null;newFolderDraft='';
+  renderTree();
+}
+
+async function confirmNewFolder(){
+  const ni=document.getElementById('tree-new-input');
+  const name=(ni?ni.value:newFolderDraft).trim();
+  if(!name){if(ni)ni.focus();return;}
+  if(/[\\/]/.test(name)){showStatus('Ordnername darf keinen / oder \\ enthalten','error');return;}
+  if(newFolderBusy)return;
+  newFolderBusy=true;
+  const parentPath=newFolderParent||'';
+  try{
+    await createFolderIn(parentPath,name);
+    newFolderParent=null;newFolderDraft='';
+    renderTree(document.getElementById('folder-search').value);
+  }catch(e){
+    showStatus('Ordner konnte nicht erstellt werden: '+e.message,'error');
+  }finally{newFolderBusy=false;}
+}
+
+// Legt den Ordner an, haengt ihn in den Baum und waehlt ihn als Zielordner
+async function createFolderIn(parentPath,name){
+  const r=await dbxRpc('/files/create_folder_v2',{path:parentPath+'/'+name,autorename:false});
+  const meta=r.metadata;
+  const parentFolder=folders.find(f=>f.path===parentPath);
+  const displayName=parentFolder?(parentFolder.displayName+' / '+meta.name):meta.name;
+  folders.push({path:meta.path_lower,displayPath:meta.path_display,name:meta.name,displayName,parentPath});
+  folders.sort((a,b)=>a.name.localeCompare(b.name,'de'));
+  loadedParents.add(meta.path_lower); // neu = leer, kein Nachladen noetig
+  expandedIds[parentPath]=true;
+  selectFolder(meta.path_lower,displayName);
+  showStatus('Ordner "'+meta.name+'" erstellt','success');
+  return meta;
+}
+
+function treeCtx(e,path){
+  e.preventDefault();e.stopPropagation();
+  ctxPath=path||'';
+  const m=document.getElementById('tree-ctx');
+  document.getElementById('tree-ctx-ren').style.display=ctxPath?'flex':'none';
+  m.style.display='block';
+  const w=m.offsetWidth,h=m.offsetHeight;
+  m.style.left=Math.max(4,Math.min(e.clientX,window.innerWidth-w-4))+'px';
+  m.style.top=Math.max(4,Math.min(e.clientY,window.innerHeight-h-4))+'px';
+}
+function hideTreeCtx(){const m=document.getElementById('tree-ctx');if(m)m.style.display='none';}
+function ctxNewFolder(){const p=ctxPath;hideTreeCtx();startNewFolder(p);}
+function ctxRename(){
+  const p=ctxPath;hideTreeCtx();
+  if(!p)return;
+  const f=folders.find(x=>x.path===p);
+  selectFolder(p,f?f.displayName:p);
+  startRenameFolder();
+}
+document.addEventListener('click',e=>{if(!e.target.closest('#tree-ctx'))hideTreeCtx();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')hideTreeCtx();});
+window.addEventListener('blur',hideTreeCtx);
 
 async function folderClick(path,name){
   selectedFolderPath=path;
@@ -1105,17 +1210,9 @@ async function createNewFolder(){
   if(!name){input.focus();return;}
   const parentPath=selectedFolderPath===null?'':selectedFolderPath;
   try{
-    const newPath=parentPath+'/'+name;
-    const r=await dbxRpc('/files/create_folder_v2',{path:newPath,autorename:false});
-    const meta=r.metadata;
-    const parentFolder=folders.find(f=>f.path===parentPath);
-    const displayName=parentFolder?(parentFolder.displayName+' / '+meta.name):meta.name;
-    folders.push({path:meta.path_lower,displayPath:meta.path_display,name:meta.name,displayName,parentPath});
-    expandedIds[parentPath]=true;
-    selectFolder(meta.path_lower,displayName);
+    await createFolderIn(parentPath,name);
     input.value='';
     renderTree(document.getElementById('folder-search').value);
-    showStatus('Ordner "'+meta.name+'" erstellt','success');
   }catch(e){
     showStatus('Ordner konnte nicht erstellt werden: '+e.message,'error');
   }
