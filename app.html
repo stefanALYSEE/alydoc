@@ -90,6 +90,32 @@
       border-top:.5px solid var(--sep);
     }
     .att-item i{color:var(--pri);width:14px;flex-shrink:0}
+    /* v5.3: Anhaenge nur als eine Zusammenfassungszeile, Liste auf Klick */
+    .att-summary{
+      display:flex;align-items:center;gap:7px;
+      padding:7px 14px;font-size:12px;color:var(--secondary);
+      border-top:.5px solid var(--sep);cursor:pointer;user-select:none;
+    }
+    .att-summary i.fa-paperclip{color:var(--tertiary);width:12px}
+    .att-summary .att-chev{margin-left:auto;font-size:10px;color:var(--tertiary);transition:transform .15s}
+    .att-summary.open .att-chev{transform:rotate(90deg)}
+
+    /* ── AKTIONSLEISTE (v5.3): Button bleibt beim Scrollen im Ordnerbaum sichtbar ── */
+    .action-bar{
+      position:sticky;top:51px;z-index:9;
+      background:var(--bg);
+      margin:0 -16px 12px;padding:8px 16px 4px;
+    }
+    .action-bar .btn{padding:12px 16px}
+    .bar-target{
+      display:flex;align-items:center;gap:6px;
+      font-size:11px;color:var(--secondary);margin:6px 4px 4px;
+      overflow:hidden;white-space:nowrap;
+    }
+    .bar-target span{overflow:hidden;text-overflow:ellipsis}
+    .action-bar .status{margin:6px 0 4px;padding:8px 12px;font-size:12px}
+    .action-bar .status details summary{cursor:pointer;color:inherit;opacity:.75;font-size:11px;margin-top:2px}
+    .action-bar .status details div{font-size:11px;word-break:break-all;margin-top:2px}
 
     /* ── BUTTONS ───────────────────────────────────────── */
     .btn{
@@ -225,7 +251,7 @@
   <div class="nav-title">alyDoc</div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version" id="nav-version">v5.2</div>
+    <div class="nav-version" id="nav-version">v5.3</div>
   </div>
 </nav>
 
@@ -252,19 +278,19 @@
 <!-- SCREEN: Main -->
 <div class="screen" id="scr-main">
 
-  <div class="section-label" id="lbl-mail">Aktuelle Mail</div>
-  <div class="card" id="mail-card">
+  <div class="card" id="mail-card" style="margin-bottom:0">
     <div class="mail-subject-row">
       <div class="mail-subject" id="mail-subject">–</div>
     </div>
     <div class="mail-meta-row">
-      <i class="fas fa-person"></i><span id="mail-from">–</span>
+      <i class="fas fa-person"></i><span id="mail-from" style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">–</span>
+      <span id="mail-date" style="flex-shrink:0">–</span>
     </div>
-    <div class="mail-meta-row" style="border-bottom:none">
-      <i class="fas fa-calendar"></i><span id="mail-date">–</span>
+    <div class="att-summary" id="att-summary" style="display:none" onclick="toggleAttList()">
+      <i class="fas fa-paperclip"></i><span id="att-summary-text"></span>
+      <i class="fas fa-chevron-right att-chev"></i>
     </div>
     <div class="att-list" id="att-list" style="display:none">
-      <div class="att-header-row">Anhänge</div>
       <div id="att-items"></div>
     </div>
   </div>
@@ -277,16 +303,22 @@
     <button onclick="msLogin()" style="background:#0067b8;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;flex-shrink:0">Verbinden</button>
   </div>
 
-  <button class="btn btn-success" id="btn-ablegen" onclick="ablegen()">
-    <i class="fas fa-inbox"></i> In alyDoc ablegen
-  </button>
+  <div class="action-bar" id="action-bar">
+    <button class="btn btn-success" id="btn-ablegen" onclick="ablegen()">
+      <i class="fas fa-inbox"></i> In alyDoc ablegen
+    </button>
+    <div class="bar-target" id="bar-target">
+      <i class="fas fa-folder-open" style="color:var(--tertiary)"></i>
+      <span id="bar-target-name">Kein Zielordner gewählt</span>
+    </div>
 
-  <div id="progress-wrap" style="display:none">
-    <div class="progress"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
-    <div style="font-size:11px;color:var(--secondary);text-align:center;margin-bottom:10px" id="progress-label"></div>
+    <div id="progress-wrap" style="display:none">
+      <div class="progress"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
+      <div style="font-size:11px;color:var(--secondary);text-align:center;margin-bottom:6px" id="progress-label"></div>
+    </div>
+
+    <div id="status-box" style="display:none"></div>
   </div>
-
-  <div id="status-box" style="display:none"></div>
 
   <div class="section-label" id="lbl-folder">Zielordner</div>
   <div class="search-wrap">
@@ -588,6 +620,8 @@ Office.onReady(info=>{
       Office.context.mailbox.addHandlerAsync(Office.EventType.ItemChanged,()=>{
         mailItem=Office.context.mailbox.item;
         isCompose=!!(mailItem&&typeof mailItem.addFileAttachmentAsync==='function');
+        // v5.3: Meldung der vorigen Mail ausblenden, sonst wirkt die neue schon abgelegt
+        const sb=document.getElementById('status-box');if(sb)sb.style.display='none';
         if(isCompose)applyComposeMode(); else refreshMailInfo();
       });
     }catch(e){console.warn('ItemChanged handler not supported:',e);}
@@ -604,15 +638,7 @@ function loadMailInfo(){
   const d=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
   document.getElementById('mail-date').textContent=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
 
-  const atts=mailItem.attachments||[];
-  if(atts.length>0){
-    const list=document.getElementById('att-items');
-    atts.forEach(a=>{
-      const icon=a.attachmentType==='item'?'fa-envelope':'fa-paperclip';
-      list.innerHTML+=`<div class="att-item"><i class="fas ${icon}"></i><span>${a.name}</span><span style="margin-left:auto;font-size:10px;color:#aaa">${formatSize(a.size)}</span></div>`;
-    });
-    document.getElementById('att-list').style.display='block';
-  }
+  renderAttSummary();
 }
 
 function refreshMailInfo(){
@@ -623,18 +649,45 @@ function refreshMailInfo(){
   document.getElementById('mail-from').textContent=from?(from.displayName||from.emailAddress):'–';
   const d=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
   document.getElementById('mail-date').textContent=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
-  const list=document.getElementById('att-items');
-  list.innerHTML='';
-  const atts=mailItem.attachments||[];
-  if(atts.length>0){
-    atts.forEach(a=>{
-      const icon=a.attachmentType==='item'?'fa-envelope':'fa-paperclip';
-      list.innerHTML+=`<div class="att-item"><i class="fas ${icon}"></i><span>${a.name}</span><span style="margin-left:auto;font-size:10px;color:#aaa">${formatSize(a.size)}</span></div>`;
-    });
-    document.getElementById('att-list').style.display='block';
-  } else {
-    document.getElementById('att-list').style.display='none';
-  }
+  renderAttSummary();
+}
+
+// v5.3: Anhaenge nur als eine Zeile ("16 Anhänge · 2,9 MB"), Einzelliste erst auf Klick.
+// Die lange Liste schob den Ablage-Button bisher aus dem Bild.
+function renderAttSummary(){
+  const atts=(mailItem&&mailItem.attachments)||[];
+  const sum=document.getElementById('att-summary');
+  const list=document.getElementById('att-list');
+  const items=document.getElementById('att-items');
+  items.innerHTML='';
+  list.style.display='none';
+  sum.classList.remove('open');
+  if(!atts.length){sum.style.display='none';return;}
+  const total=atts.reduce((s,a)=>s+(a.size||0),0);
+  document.getElementById('att-summary-text').textContent=
+    atts.length+(atts.length===1?' Anhang':' Anhänge')+(total?' · '+formatSize(total):'');
+  atts.forEach(a=>{
+    const icon=a.attachmentType==='item'?'fa-envelope':'fa-paperclip';
+    const row=document.createElement('div');
+    row.className='att-item';
+    row.innerHTML=`<i class="fas ${icon}"></i><span></span><span style="margin-left:auto;font-size:10px;color:#aaa">${formatSize(a.size)}</span>`;
+    row.children[1].textContent=a.name;
+    items.appendChild(row);
+  });
+  sum.style.display='flex';
+}
+
+function toggleAttList(){
+  const list=document.getElementById('att-list');
+  const open=list.style.display==='none';
+  list.style.display=open?'block':'none';
+  document.getElementById('att-summary').classList.toggle('open',open);
+}
+
+// v5.3: Zielordner in der Aktionsleiste neben dem Button anzeigen
+function setBarTarget(name){
+  const el=document.getElementById('bar-target-name');
+  if(el)el.textContent=name||'Kein Zielordner gewählt';
 }
 
 function formatSize(bytes){
@@ -1006,6 +1059,7 @@ async function folderClick(path,name){
   try{localStorage.setItem('alydoc_lastFolder',path);localStorage.setItem('alydoc_lastFolderName',name);}catch{}
   document.getElementById('sel-folder').style.display='flex';
   document.getElementById('sel-folder-name').textContent=name;
+  setBarTarget(name);
   document.getElementById('btn-ablegen').disabled=false;
   if(expandedIds[path]){
     expandedIds[path]=false;
@@ -1029,6 +1083,7 @@ function selectFolder(path,name){
   try{localStorage.setItem('alydoc_lastFolder',path);localStorage.setItem('alydoc_lastFolderName',name);}catch{}
   document.getElementById('sel-folder').style.display='flex';
   document.getElementById('sel-folder-name').textContent=name;
+  setBarTarget(name);
   document.getElementById('btn-ablegen').disabled=false;
   renderTree();
   if(isCompose)loadFileList(path);
@@ -1116,6 +1171,7 @@ async function confirmRenameFolder(){
     selectedFolderPath=meta.path_lower;
     selectedFolderName=newDisplayName;
     document.getElementById('sel-folder-name').textContent=newDisplayName;
+    setBarTarget(newDisplayName);
     cancelRenameFolder();
     renderTree(document.getElementById('folder-search').value);
     showStatus('Ordner umbenannt in "'+meta.name+'"','success');
@@ -1226,12 +1282,13 @@ async function ablegen(){
     setProgress(100,'Fertig!');
 
     const attCount=mailItem.attachments?mailItem.attachments.length:0;
-    let msg=verified?'✓ Abgelegt &amp; verifiziert (byte-identisch geprueft)':'✓ Abgelegt';
-    msg+='<br><small>Ziel: '+selectedFolderName+'</small>';
-    msg+='<br><small>Datei: '+(uploadResult.name||fileName)+'</small>';
-    msg+='<br><small>Pfad: '+(uploadResult.path_display||targetPath)+'</small>';
-    if(contentCheck.attFound)msg+='<br><small>'+contentCheck.attFound+' Anhang/Anhaenge eingebettet</small>';
-    else if(attCount)msg+='<br>'+attCount+' Anhang/Anhänge';
+    // v5.3: kompakte Meldung - eine Zeile Ergebnis, Datei/Pfad nur aufklappbar
+    const nAtt=contentCheck.attFound||attCount;
+    let msg='<b>'+(verified?'✓ Abgelegt &amp; verifiziert':'✓ Abgelegt')+'</b>';
+    if(nAtt)msg+=' · '+nAtt+(nAtt===1?' Anhang':' Anhänge');
+    msg+='<br>→ '+esc(selectedFolderName);
+    msg+='<details><summary>Details</summary><div>'+(verified?'Byte-identisch geprüft<br>':'')
+       +esc(uploadResult.path_display||targetPath)+'</div></details>';
     if(emlWarnings.length){
       showStatus(msg+'<br><b>⚠ '+emlWarnings.join('<br>⚠ ')+'</b>','warn');
     }else{
@@ -1474,7 +1531,7 @@ const ATT_LIMIT=25*1024*1024;      // Exchange-Anhangslimit
 
 function applyComposeMode(){
   const hide=id=>{const e=document.getElementById(id);if(e)e.style.display='none';};
-  hide('lbl-mail'); hide('mail-card'); hide('btn-ablegen');
+  hide('lbl-mail'); hide('mail-card'); hide('btn-ablegen'); hide('bar-target');
   hide('card-opts'); hide('ms-banner');
   const lbl=document.getElementById('lbl-folder');
   if(lbl)lbl.textContent='Ordner';
