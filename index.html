@@ -334,7 +334,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v3.4.2 · 2026-09-15';
+const APP_BUILD='v3.5 · 2026-10-01';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -1632,10 +1632,10 @@ function UpMod({fid,onClose,onDone,isDemo}){
   const go=async()=>{setBusy(true);let ok=0;if(isDemo){await new Promise(r=>setTimeout(r,900));ok=files.length;}else for(const f of files){try{await DR.up(f,fid||'',p=>setProg(v=>({...v,[f.name]:p})));ok++;}catch{toast('Upload-Fehler: '+f.name,'e');}}setBusy(false);toast(`${ok} Datei(en) hochgeladen`,'s');onDone();onClose();};
   return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal"><h2><i className="fas fa-upload" style={{color:'var(--blue)'}}/>Dokument hochladen</h2><div className={`drop-zone ${drag?'dov':''}`} onDragOver={e=>{e.preventDefault();setDrag(true)}} onDragLeave={()=>setDrag(false)} onDrop={e=>{e.preventDefault();setDrag(false);setFiles(Array.from(e.dataTransfer.files))}} onClick={()=>ref.current?.click()}><i className="fas fa-cloud-upload-alt" style={{fontSize:36,display:'block',marginBottom:10}}/><p style={{fontWeight:500}}>Dateien ablegen oder klicken</p><p style={{fontSize:12,marginTop:4}}>PDF, Word, Excel, E-Mails, Bilder …</p></div><input ref={ref} type="file" multiple style={{display:'none'}} onChange={e=>setFiles(Array.from(e.target.files))}/>{files.length>0&&<div style={{marginTop:12}}>{files.map(f=>{const {i,c}=mi(f.type,f.name);return(<div key={f.name} style={{display:'flex',alignItems:'center',gap:8,padding:'7px 0',borderBottom:'1px solid #f0f0f0',fontSize:13}}><i className={`fas ${i}`} style={{color:c,width:18}}/><span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{f.name}</span><span style={{color:'var(--mut)'}}>{fs(f.size)}</span>{prog[f.name]!=null&&<span style={{color:'var(--blue)',fontSize:11}}>{prog[f.name]}%</span>}</div>);})}</div>}<div style={{display:'flex',gap:8,marginTop:20,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose} disabled={busy}>Abbrechen</button><button className="btn bp" onClick={go} disabled={busy||!files.length}>{busy?<><i className="fas fa-spinner fa-spin"/>Laedt…</>:<><i className="fas fa-upload"/>Hochladen</>}</button></div></div></div>);
 }
-function MkMod({par,onClose,onDone,isDemo}){
+function MkMod({par,parName,onClose,onDone,isDemo}){
   const [n,setN]=useState('');const [b,setB]=useState(false);const t=useContext(TC);
-  const go=async()=>{if(!n.trim())return;setB(true);try{if(!isDemo)await DR.mkdir(n,par||'');t('Ordner erstellt: '+n,'s');onDone();}catch{t('Fehler','e');}setB(false);onClose();};
-  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{width:400}}><h2><i className="fas fa-folder-plus" style={{color:'#8E8E93'}}/>Neuer Ordner</h2><div className="fg"><label>Name</label><input className="fc" autoFocus value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} placeholder="z.B. Rechnungen 2025"/></div><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose}>Abbrechen</button><button className="btn bp" onClick={go} disabled={b||!n.trim()}>{b?'…':'Erstellen'}</button></div></div></div>);
+  const go=async()=>{if(!n.trim())return;setB(true);try{if(!isDemo)await DR.mkdir(n.trim(),par||'');t('Ordner erstellt: '+n.trim(),'s');onDone(par||'');}catch{t('Fehler','e');}setB(false);onClose();};
+  return(<div className="ov" onClick={e=>e.target===e.currentTarget&&onClose()}><div className="modal" style={{width:400}}><h2><i className="fas fa-folder-plus" style={{color:'#8E8E93'}}/>Neuer Ordner</h2>{parName&&<div style={{fontSize:13,color:'var(--mut)',margin:'-6px 0 12px'}}>in <strong style={{color:'var(--txt)'}}>{parName}</strong></div>}<div className="fg"><label>Name</label><input className="fc" autoFocus value={n} onChange={e=>setN(e.target.value)} onKeyDown={e=>e.key==='Enter'&&go()} placeholder="z.B. Rechnungen 2025"/></div><div style={{display:'flex',gap:8,justifyContent:'flex-end'}}><button className="btn bs" onClick={onClose}>Abbrechen</button><button className="btn bp" onClick={go} disabled={b||!n.trim()}>{b?'…':'Erstellen'}</button></div></div></div>);
 }
 function RenMod({file,onClose,onDone,isDemo}){
   const [n,setN]=useState(file.name);const [b,setB]=useState(false);const t=useContext(TC);
@@ -2024,6 +2024,16 @@ function Main({onOut,isDemo}){
       if(cur.id===parentId)load(parentId); // Dateiliste aktualisieren
     }catch(e){toast('Fehler beim Erstellen','e');console.error(e);}
     setTreeNewFolder(null);
+  };
+  // Neuer Ordner per Kontextmenue: Zielordner merken, Dialog oeffnen
+  const [mkPar,setMkPar]=useState(null); // {id,name} oder null = aktueller Ordner
+  const newFolderIn=(f)=>{setMkPar(f?{id:f.id||'',name:f.name||'Dropbox'}:null);setModal('mk');};
+  const onFolderCreated=(parentId)=>{
+    if(isDemo){rf();return;}
+    setTreeCache(p=>{const n={...p};delete n[parentId];return n;});
+    loadTreeChildren(parentId);
+    setExp(p=>({...p,[parentId]:true}));
+    if(cur.id===parentId)load(parentId);
   };
   // In Outlook öffnen: lokaler Öffner, sonst Download der Originaldatei.
   const openInOutlook=async(file)=>{
@@ -2595,7 +2605,7 @@ function Main({onOut,isDemo}){
             )}
           </div>
           <div className="doc-list-head"><div className="doc-hrow"><span/><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('name')}>Name{sortArr('name')}</span><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('typ')}>Typ{sortArr('typ')}</span><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('korr')}>Korrespondent{sortArr('korr')}</span><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('date')}>Datum{sortArr('date')}</span><span style={{textAlign:'right',cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('size')}>Größe{sortArr('size')}</span></div></div>
-          <div className="doc-list">
+          <div className="doc-list" onContextMenu={e=>{if(nav!=='archive'||res!==null)return;e.preventDefault();setSel(null);setCtx({x:Math.min(e.clientX,window.innerWidth-195),y:Math.min(e.clientY,window.innerHeight-160),f:null});}}>
             {loading?<div className="ctr"><div className="spin"/><p>Lade…</p></div>
             :disp.length===0?<div className="ctr"><i className="fas fa-folder-open" style={{fontSize:52,color:'#D0D9E4'}}/><p style={{fontSize:13}}>{res!==null?'Keine Treffer':'Ordner leer'}</p></div>
             :disp.map(f=>{
@@ -2661,7 +2671,7 @@ function Main({onOut,isDemo}){
           <div className="as-item grn" onClick={()=>{doMove(sel);setShowActionSheet(false);}}><i className="fas fa-share-square"/>Verschieben nach…</div>
           <div className="as-item" onClick={()=>{setModal('ren');setShowActionSheet(false);}}><i className="fas fa-pencil"/>Umbenennen</div>
           <div className="as-item" onClick={()=>{setModal('up');setShowActionSheet(false);}}><i className="fas fa-upload"/>Hochladen</div>
-          <div className="as-item" onClick={()=>{setModal('mk');setShowActionSheet(false);}}><i className="fas fa-folder-plus"/>Neuer Ordner</div>
+          <div className="as-item" onClick={()=>{newFolderIn(sel.mimeType==='application/vnd.dropbox.folder'?sel:cur);setShowActionSheet(false);}}><i className="fas fa-folder-plus"/>{sel.mimeType==='application/vnd.dropbox.folder'?'Neuer Unterordner':'Neuer Ordner'}</div>
           {!isDemo&&sel&&<div className="as-item danger" onClick={()=>{if(window.confirm('"'+sel.name+'" loeschen?')){DR.del(sel.path_lower||sel.id).then(()=>{toast('Geloescht','i');rf();setSel(null);}).catch(()=>toast('Fehler','e'));}setShowActionSheet(false);}}><i className="fas fa-trash"/>Loeschen</div>}
         </div>
       </div>
@@ -2677,8 +2687,18 @@ function Main({onOut,isDemo}){
     </div>
 
     {/* KONTEXT-MENU */}
-    {ctx&&(
+    {ctx&&!ctx.f&&(
       <div className="ctx" style={{left:ctx.x,top:ctx.y}} onClick={e=>e.stopPropagation()}>
+        <div className="cxi" onClick={()=>{newFolderIn(cur);setCtx(null);}}><i className="fas fa-folder-plus" style={{color:'#8E8E93'}}/>Neuer Ordner</div>
+        <div className="cxi" onClick={()=>{setModal('up');setCtx(null);}}><i className="fas fa-upload"/>Hochladen</div>
+        <div className="cxs"/>
+        <div className="cxi" onClick={()=>{rf();setCtx(null);}}><i className="fas fa-sync-alt"/>Aktualisieren</div>
+      </div>
+    )}
+    {ctx&&ctx.f&&(
+      <div className="ctx" style={{left:ctx.x,top:ctx.y}} onClick={e=>e.stopPropagation()}>
+        <div className="cxi" onClick={()=>{newFolderIn(ctx.f.mimeType==='application/vnd.dropbox.folder'?ctx.f:cur);setCtx(null);}}><i className="fas fa-folder-plus" style={{color:'#8E8E93'}}/>{ctx.f.mimeType==='application/vnd.dropbox.folder'?'Neuer Unterordner':'Neuer Ordner'}</div>
+        <div className="cxs"/>
         <div className="cxi" onClick={()=>{setSel(ctx.f);setBig(true);setCtx(null);}}><i className="fas fa-eye"/>Vorschau</div>
         {isMailFile(ctx.f)&&<div className="cxi" onClick={()=>{openInOutlook(ctx.f);setCtx(null);}}><i className="fab fa-microsoft" style={{color:'#0078D4'}}/>In Outlook öffnen</div>}
         {ctx.f.mimeType!=='application/vnd.dropbox.folder'&&<div className="cxi" onClick={()=>{openIndex(ctx.f,'index');setCtx(null);}}><i className="fas fa-tags" style={{color:'#0061FF'}}/>Verschlagworten</div>}
@@ -2694,7 +2714,7 @@ function Main({onOut,isDemo}){
     {big&&sel&&<ExpandMod file={sel} isDemo={isDemo} onClose={()=>setBig(false)} onOutlook={openInOutlook} onReply={replyMail} onForward={forwardMail} outlookBusy={outlookBusy}/>}
     {indexFile&&<IndexMod file={indexFile.file} mode={indexFile.mode} isDemo={isDemo} onClose={()=>setIndexFile(null)} onDone={onIndexDone}/>}
     {modal==='up'&&<UpMod fid={nav==='inbox'?POSTEINGANG:cur.id} onClose={()=>setModal(null)} onDone={()=>{rf();loadInbox();}} isDemo={isDemo}/>}
-    {modal==='mk'&&<MkMod par={cur.id} onClose={()=>setModal(null)} onDone={rf} isDemo={isDemo}/>}
+    {modal==='mk'&&<MkMod par={mkPar?mkPar.id:cur.id} parName={mkPar?mkPar.name:cur.name} onClose={()=>{setModal(null);setMkPar(null);}} onDone={onFolderCreated} isDemo={isDemo}/>}
     {modal==='ren'&&sel&&<RenMod file={sel} onClose={()=>setModal(null)} onDone={()=>{rf();setModal(null);}} isDemo={isDemo}/>}
     {modal==='mail'&&sel&&<MailMod file={sel} onClose={()=>{setModal(null);setMailPrefill(null);}} isDemo={isDemo} prefill={mailPrefill}/>}
     {moveFile&&<MoveMod file={moveFile} curFolderId={cur.id} onClose={()=>setMoveFile(null)} onDone={onMoveDone} isDemo={isDemo}/>}
