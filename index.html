@@ -335,7 +335,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v3.6 · 2026-10-13';
+const APP_BUILD='v3.6.1 · 2026-10-13';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -2651,7 +2651,7 @@ function Main({onOut,isDemo}){
               const dty=md?dtOf(md.docType):null;
               const korr=(md&&md.fields&&md.fields.korrespondent)||'';
               const isDragOver=dragOverId===f.id&&isFd;
-              const openCtx=(f,e)=>{setSel(f);if(isMobile||isTouch){setShowActionSheet(true);}else{setCtx({x:Math.min(e.clientX,window.innerWidth-195),y:Math.min(e.clientY,window.innerHeight-220),f});}};
+              const openCtx=(f,e)=>{setSel(f);const pt=e?.nativeEvent?.pointerType;/* Maus-Rechtsklick auf Touchscreen-PC = normales Menue */if(isMobile||(pt?pt!=='mouse':isTouch)){setShowActionSheet(true);}else{setCtx({x:Math.min(e.clientX,window.innerWidth-195),y:Math.min(e.clientY,window.innerHeight-220),f});}};
               return(<div key={f.id}
                 className={`doc-row ${sel?.id===f.id||multiSel.some(s=>s.id===f.id)?'active':''} ${isDragOver?'drop-target':''}`}
                 draggable={!isMobile}
