@@ -141,6 +141,7 @@
     .doc-row:hover{background:rgba(0,122,255,.05)}
     .doc-row.active{background:rgba(0,122,255,.08);border-left:2px solid var(--pri);padding-left:10px}
     .doc-row.dragging{opacity:.4;background:#f0f0f0!important}
+    .bc.drop-target{background:rgba(52,199,89,.15);outline:2px dashed var(--grn);border-radius:4px}
     .doc-row.drop-target{background:rgba(52,199,89,.08)!important;outline:2px dashed var(--grn);outline-offset:-2px}
     /* ── PREVIEW ── */
     .prev-panel{background:#fff;border-left:.5px solid var(--bdr);display:flex;flex-direction:column;flex-shrink:0;overflow:hidden;min-height:0}
@@ -334,7 +335,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v3.5 · 2026-10-01';
+const APP_BUILD='v3.6 · 2026-10-13';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -2253,10 +2254,32 @@ function Main({onOut,isDemo}){
   /* ── DRAG & DROP ── */
   // Wichtig: dragRef.current statt dragFile-State in Event-Handlern
   // damit kein veralteter Closure-Wert gelesen wird.
+  // dragRef.current = Liste der gezogenen Elemente. Ist die gezogene Datei Teil der
+  // Mehrfachauswahl (Strg/Shift), wandert die ganze Auswahl mit.
   const onDragStart=(e,f)=>{
-    dragRef.current=f;
+    const items=multiSel.length>1&&multiSel.some(s=>s.id===f.id)?multiSel:[f];
+    dragRef.current=items;
     e.dataTransfer.effectAllowed='move';
-    e.dataTransfer.setData('text/plain',f.id);
+    e.dataTransfer.setData('text/plain',items.map(x=>x.id).join('\n'));
+    if(items.length>1){
+      // Eigenes Zieh-Bild "N Dateien", sonst zeigt der Browser nur die eine Zeile
+      const g=document.createElement('div');
+      g.textContent=items.length+' Dateien verschieben';
+      g.style.cssText='position:fixed;top:-100px;left:0;padding:6px 12px;background:#007AFF;color:#fff;border-radius:8px;font:600 13px -apple-system,Segoe UI,sans-serif';
+      document.body.appendChild(g);
+      e.dataTransfer.setDragImage(g,10,10);
+      setTimeout(()=>g.remove(),0);
+    }
+  };
+  // Elternpfad eines Dropbox-Pfads ('' = Wurzel)
+  const parentOf=p=>p?p.substring(0,p.lastIndexOf('/')):'';
+  // Nach dem Verschieben nur die betroffenen Ebenen neu laden statt den ganzen Baum zuzuklappen
+  const refreshAfterMove=(items,targetId)=>{
+    if(isDemo){rf();return;}
+    load(cur.id);
+    const touched=new Set([targetId]);
+    items.forEach(x=>{if(x.mimeType==='application/vnd.dropbox.folder')touched.add(parentOf(x.path_lower||x.id));});
+    touched.forEach(pid=>{if(treeCache[pid])DR.listSubfolders(pid).then(k=>setTreeCache(p=>({...p,[pid]:k}))).catch(()=>{});});
   };
   const onDragEnd=()=>{
     dragRef.current=null;
@@ -2269,7 +2292,11 @@ function Main({onOut,isDemo}){
     if(!targetFolder)return{};
     return{
       onDragOver:(e)=>{
-        if(!dragRef.current||dragRef.current.id===targetFolder.id)return;
+        const items=dragRef.current;
+        if(!items)return;
+        // Kein Ziel: der Ordner selbst oder einer seiner Unterordner
+        const t=targetFolder.id;
+        if(items.some(x=>{const p=x.path_lower||x.id;return p===t||(t+'/').startsWith(p+'/');}))return;
         e.preventDefault();
         e.stopPropagation();
         e.dataTransfer.dropEffect='move';
@@ -2285,17 +2312,26 @@ function Main({onOut,isDemo}){
         e.preventDefault();
         e.stopPropagation();
         setDragOverId(null);
-        const df=dragRef.current;
+        const items=dragRef.current;
         dragRef.current=null;
-        if(!df||df.id===targetFolder.id)return;
-        // Dropbox: derive parent from path_lower
-        const dfParent=df.path_lower?df.path_lower.substring(0,df.path_lower.lastIndexOf('/'))||'':cur.id||'';
-        if(dfParent===targetFolder.id){toast('Datei ist bereits in diesem Ordner','i');return;}
-        try{
-          if(!isDemo)await DR.move(df.id,targetFolder.id,df.name);
-          toast(`"${df.name}" nach "${targetFolder.name}" verschoben`,'s');
-          rf();if(sel?.id===df.id)setSel(null);
-        }catch(err){console.error(err);toast('Verschieben fehlgeschlagen','e');}
+        if(!items)return;
+        const t=targetFolder.id;
+        const todo=items.filter(x=>{
+          const p=x.path_lower||x.id;
+          if(p===t||(t+'/').startsWith(p+'/'))return false;     // in sich selbst
+          return parentOf(p)!==t;                                // liegt schon dort
+        });
+        if(!todo.length){toast(items.length>1?'Dateien sind bereits in diesem Ordner':'Datei ist bereits in diesem Ordner','i');return;}
+        let ok=0;const failed=[];
+        for(const x of todo){
+          try{if(!isDemo)await DR.move(x.path_lower||x.id,t,x.name);ok++;}
+          catch(err){console.error('move',x.name,err);failed.push(x.name);}
+        }
+        if(ok)toast(ok===1?`"${todo.find(x=>!failed.includes(x.name)).name}" nach "${targetFolder.name}" verschoben`:`${ok} Elemente nach "${targetFolder.name}" verschoben`,'s');
+        if(failed.length)toast(`Verschieben fehlgeschlagen: ${failed.join(', ')}`,'e');
+        if(sel&&todo.some(x=>x.id===sel.id))setSel(null);
+        setMultiSel([]);
+        refreshAfterMove(todo,t);
       }
     };
   };
@@ -2565,7 +2601,7 @@ function Main({onOut,isDemo}){
                   <div
                     className={`tree-item ${cur.id===node.id?'active':''} ${dragOverId===node.id?'drop-target':''}`}
                     style={{paddingLeft:12+depth*14}}
-                    draggable={!isTouch&&node.id!==''}
+                    draggable={!isMobile&&node.id!==''}
                     onDragStart={e=>onDragStart(e,fobj)}
                     onDragEnd={onDragEnd}
                     onClick={()=>go(fobj)}
@@ -2601,7 +2637,7 @@ function Main({onOut,isDemo}){
         <div className="doc-panel elo-list">
           <div className="breadcrumb">
             {res!==null?<><i className="fas fa-search" style={{marginRight:4}}/><strong>Suche:</strong>&nbsp;"{q}"&nbsp;<span style={{color:'var(--mut)'}}>({res.length} Treffer)</span></> :(
-              path.map((f,i)=><React.Fragment key={f.id}>{i>0&&<i className="fas fa-chevron-right" style={{fontSize:9,color:'var(--mut)'}}/>}<span className={`bc ${i===path.length-1?'cur':''}`} onClick={()=>i<path.length-1&&go(f)}>{f.name}</span></React.Fragment>)
+              path.map((f,i)=><React.Fragment key={f.id}>{i>0&&<i className="fas fa-chevron-right" style={{fontSize:9,color:'var(--mut)'}}/>}<span className={`bc ${i===path.length-1?'cur':''} ${i<path.length-1&&dragOverId===f.id?'drop-target':''}`} onClick={()=>i<path.length-1&&go(f)} {...(i<path.length-1?dropProps({...f,path_lower:f.id,mimeType:'application/vnd.dropbox.folder'}):{})}>{f.name}</span></React.Fragment>)
             )}
           </div>
           <div className="doc-list-head"><div className="doc-hrow"><span/><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('name')}>Name{sortArr('name')}</span><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('typ')}>Typ{sortArr('typ')}</span><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('korr')}>Korrespondent{sortArr('korr')}</span><span style={{cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('date')}>Datum{sortArr('date')}</span><span style={{textAlign:'right',cursor:'pointer',userSelect:'none'}} onClick={()=>onSort('size')}>Größe{sortArr('size')}</span></div></div>
@@ -2618,7 +2654,7 @@ function Main({onOut,isDemo}){
               const openCtx=(f,e)=>{setSel(f);if(isMobile||isTouch){setShowActionSheet(true);}else{setCtx({x:Math.min(e.clientX,window.innerWidth-195),y:Math.min(e.clientY,window.innerHeight-220),f});}};
               return(<div key={f.id}
                 className={`doc-row ${sel?.id===f.id||multiSel.some(s=>s.id===f.id)?'active':''} ${isDragOver?'drop-target':''}`}
-                draggable={!isTouch}
+                draggable={!isMobile}
                 onDragStart={e=>onDragStart(e,f)}
                 onDragEnd={onDragEnd}
                 {...(isFd?dropProps(f):{})}
