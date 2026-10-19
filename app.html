@@ -255,16 +255,66 @@
     /* ── SPINNER ───────────────────────────────────────── */
     @keyframes spin{to{transform:rotate(360deg)}}
     .spin{animation:spin .8s linear infinite;display:inline-block}
+
+    /* ══ v6.0 KLASSIK-OPTIK (wie alyDoc Klassik / ELOoffice) ══ */
+    body{font-family:"Segoe UI",system-ui,-apple-system,sans-serif;background:#fff;font-size:13px;color:#1b1b1b}
+    :root{--bg:#fff;--pri:#1d5fa8;--blue:#1d5fa8;--grn:#2e7d32;--sep:#d5d9de;--secondary:#5f6670;--tertiary:#9aa1aa;--fill:#f3f4f6}
+    .nav-bar{background:#1d5fa8;backdrop-filter:none;-webkit-backdrop-filter:none;border-bottom:1px solid #164a84;padding:7px 12px;color:#fff}
+    .nav-logo{background:#fff;color:#1d5fa8;border-radius:3px;box-shadow:none;width:26px;height:26px}
+    .nav-title{font-size:14px;font-weight:400;letter-spacing:0}
+    .nav-title b{font-weight:600}
+    .nav-sub{font-size:11px;opacity:.75;margin-left:6px}
+    .nav-user{color:rgba(255,255,255,.85)} .nav-version{color:rgba(255,255,255,.6)}
+    .screen{padding:10px 12px}
+    .section-label{font-size:11px;font-weight:600;color:#374151;text-transform:none;letter-spacing:0;margin:10px 0 4px}
+    .card{border:1px solid var(--sep);border-radius:2px;margin-bottom:10px}
+    .mail-subject-row{padding:8px 10px 4px}
+    .mail-subject{font-size:13px}
+    .mail-meta-row,.att-summary{padding:5px 10px;border-top:1px solid #eceef1}
+    .action-bar{top:41px;margin:0 -12px 8px;padding:8px 12px 6px;background:#f3f4f6;border-bottom:1px solid var(--sep)}
+    .btn{border-radius:2px;font-size:13px;font-weight:600;padding:9px 12px}
+    .action-bar .btn{padding:9px 12px}
+    .btn-success{background:#1d5fa8} .btn-success:not(:disabled):hover{background:#164a84} .btn-success:disabled{background:#9fb7d4}
+    .btn-tonal{background:#fff;color:#1d5fa8;border:1px solid #9fb7d4} .btn-tonal:hover{background:#e5f1fb}
+    .btn-primary{background:#1d5fa8}
+    .act-row{display:flex;gap:6px}
+    .act-row .btn{margin:0!important}
+    .act-row #btn-ablegen{flex:1.4}
+    .act-row #btn-postbox{flex:1}
+    .kb{display:flex;flex-direction:column;gap:3px;margin:0 0 8px}
+    .kb label{font-size:11px;font-weight:600;color:#374151}
+    .kb input,.opt select{width:100%;padding:6px 8px;border:1px solid #b9bec6;border-radius:2px;font:inherit;font-size:13px;outline:none;background:#fff}
+    .kb input:focus,.opt select:focus{border-color:#1d5fa8;box-shadow:0 0 0 1px #1d5fa8}
+    .recent{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0 2px;font-size:11px;align-items:center}
+    .recent .lbl{color:var(--secondary);margin-right:2px}
+    .chip{border:1px solid #c9d3df;background:#fff;border-radius:10px;padding:1px 8px;font-size:11px;cursor:pointer;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .chip:hover{background:#e5f1fb} .chip.on{background:#1d5fa8;color:#fff;border-color:#1d5fa8}
+    .search-wrap input{border:1px solid #b9bec6;border-radius:2px;font-size:13px;padding:6px 28px 6px 28px}
+    .tree-wrap{border:1px solid var(--sep);border-radius:2px;max-height:46vh}
+    .tree-item{padding:3px 8px;border-bottom:none;font-size:13px;gap:5px;min-height:24px}
+    .tree-item:hover{background:#e5f1fb}
+    .tree-item.selected{background:#cce4f7;outline:1px solid #97c4ea;outline-offset:-1px}
+    .tree-item.selected .name{color:#1b1b1b;font-weight:600}
+    .tree-item i.fa-folder,.tree-item i.fa-folder-open{color:#e8a92c}
+    .sel-folder{border-radius:2px;background:#e8f2fb;color:#1d5fa8;padding:6px 10px;margin-bottom:10px}
+    .sel-folder i{color:#1d5fa8}
+    .opt{padding:7px 10px;font-size:13px;border-bottom:1px solid #eceef1}
+    .opt input[type=checkbox]{width:16px;height:16px}
+    .status{border-radius:2px;padding:7px 10px;font-size:12px}
+    #new-folder-name,.btn-icon{border-radius:2px}
+    #new-folder-name{border:1px solid #b9bec6}
+    .progress{border-radius:0;height:3px}
+    .login-card{border:1px solid var(--sep);border-radius:2px}
   </style>
 </head>
 <body>
 
 <nav class="nav-bar">
   <div class="nav-logo">aly</div>
-  <div class="nav-title">alyDoc</div>
+  <div class="nav-title">alyDoc <b>Klassik</b><span class="nav-sub" id="nav-mode">Ablegen</span></div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version" id="nav-version">v5.4</div>
+    <div class="nav-version" id="nav-version">v6.0</div>
   </div>
 </nav>
 
@@ -308,6 +358,13 @@
     </div>
   </div>
 
+  <!-- v6.0: wie ELOoffice – Kurzbezeichnung frei editierbar, wird zum Dateinamen -->
+  <div id="filed-banner" class="status success" style="display:none;margin:8px 0 0"><i class="fas fa-check-circle"></i><span>Diese Mail ist bereits in alyDoc abgelegt.</span></div>
+  <div class="kb" id="doc-name-wrap" style="margin-top:8px">
+    <label for="doc-name">Kurzbezeichnung (Dateiname)</label>
+    <input type="text" id="doc-name" spellcheck="false" onkeydown="if(event.key==='Enter')ablegen()">
+  </div>
+
   <!-- Microsoft-Verbindung: ohne Graph-Token kann die Original-Mail (Anhänge, Inline-Bilder,
        korrekte Umlaute) nicht zuverlässig gespeichert werden -->
   <div id="ms-banner" class="status warn" style="display:none;align-items:center">
@@ -317,13 +374,19 @@
   </div>
 
   <div class="action-bar" id="action-bar">
-    <button class="btn btn-success" id="btn-ablegen" onclick="ablegen()">
-      <i class="fas fa-inbox"></i> In alyDoc ablegen
-    </button>
+    <div class="act-row">
+      <button class="btn btn-success" id="btn-ablegen" onclick="ablegen()" title="In den gewählten Ordner ablegen (Enter)">
+        <i class="fas fa-box-archive"></i> Ablegen
+      </button>
+      <button class="btn btn-tonal" id="btn-postbox" onclick="ablegenPostbox()" title="Erst in die Postbox – später in alyDoc Klassik einsortieren">
+        <i class="fas fa-inbox"></i> In Postbox
+      </button>
+    </div>
     <div class="bar-target" id="bar-target">
       <i class="fas fa-folder-open" style="color:var(--tertiary)"></i>
       <span id="bar-target-name">Kein Zielordner gewählt</span>
     </div>
+    <div class="recent" id="recent-wrap" style="display:none"></div>
 
     <div id="progress-wrap" style="display:none">
       <div class="progress"><div class="progress-bar" id="progress-bar" style="width:0%"></div></div>
@@ -333,7 +396,7 @@
     <div id="status-box" style="display:none"></div>
   </div>
 
-  <div class="section-label" id="lbl-folder">Zielordner</div>
+  <div class="section-label" id="lbl-folder">Ablageort im Archiv</div>
   <div class="search-wrap">
     <i class="fas fa-magnifying-glass search-icon"></i>
     <input type="text" id="folder-search" placeholder="Ordner suchen…" oninput="filterFolders(this.value)">
@@ -417,6 +480,14 @@
     <div class="opt">
       <input type="checkbox" id="opt-attachments">
       <label for="opt-attachments">Anhänge separat ablegen</label>
+    </div>
+    <div class="opt">
+      <input type="checkbox" id="opt-mark" onchange="try{localStorage.setItem('alydoc_mark',this.checked?'1':'0')}catch{}">
+      <label for="opt-mark">In Outlook als „alyDoc abgelegt“ markieren</label>
+    </div>
+    <div class="opt">
+      <label for="opt-postbox" style="flex:none">Postbox</label>
+      <select id="opt-postbox" onchange="try{localStorage.setItem('alydoc_postbox',this.value)}catch{}"></select>
     </div>
   </div>
 
@@ -585,7 +656,8 @@ let rootNsId=null;
 // Loesung: die alyDoc-Schluessel zusaetzlich in Office roamingSettings (liegen im
 // Exchange-Postfach) spiegeln und beim Start von dort zurueckholen.
 const ROAM_KEYS=['alydoc_dbx_token','alydoc_dbx_refresh','alydoc_dbx_expires','alydoc_dbx_user','alydoc_dbx_root_ns',
-  'alydoc_ms_token','alydoc_ms_expires','alydoc_ms_refresh','alydoc_lastFolder','alydoc_lastFolderName'];
+  'alydoc_ms_token','alydoc_ms_expires','alydoc_ms_refresh','alydoc_lastFolder','alydoc_lastFolderName',
+  'alydoc_recent','alydoc_postbox','alydoc_mark'];
 let _roam=null,_roamTimer=null;
 (function ensureLocalStorage(){
   // Falls localStorage komplett gesperrt ist: In-Memory-Ersatz, damit der Rest laeuft
@@ -657,6 +729,7 @@ function loadMailInfo(){
   document.getElementById('mail-date').textContent=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
 
   renderAttSummary();
+  setDocName(); checkFiled(); renderRecent();
 }
 
 function refreshMailInfo(){
@@ -668,6 +741,7 @@ function refreshMailInfo(){
   const d=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
   document.getElementById('mail-date').textContent=d.toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
   renderAttSummary();
+  setDocName(); checkFiled();
 }
 
 // v5.3: Anhaenge nur als eine Zeile ("16 Anhänge · 2,9 MB"), Einzelliste erst auf Klick.
@@ -975,6 +1049,7 @@ async function loadFolders(){
     });
     loadedParents.add('');
     renderTree();
+    fillPostbox();
   }catch(e){
     document.getElementById('folder-tree').innerHTML='<div style="padding:12px;color:var(--red);font-size:12px"><i class="fas fa-exclamation-triangle"></i> Fehler: '+e.message+'</div>';
   }
@@ -1173,6 +1248,7 @@ async function folderClick(path,name){
     if(!loadedParents.has(path))await loadChildren(path);
   }
   renderTree();
+  renderRecent();
   if(isCompose)loadFileList(path);
 }
 
@@ -1191,6 +1267,7 @@ function selectFolder(path,name){
   setBarTarget(name);
   document.getElementById('btn-ablegen').disabled=false;
   renderTree();
+  renderRecent();
   if(isCompose)loadFileList(path);
 }
 
@@ -1314,9 +1391,10 @@ async function checkEmlContent(blobOrString){
 }
 
 // ── ABLEGEN ───────────────────────────────────────────────────────────────────
-async function ablegen(){
+async function ablegen(target){
   if(!mailItem){showStatus('Keine Mail ausgewählt.','warn');return;}
-  if(selectedFolderPath===null){
+  const tPath=target?target.path:selectedFolderPath, tName=target?target.name:selectedFolderName;
+  if(tPath===null||tPath===undefined){
     showStatus('Bitte zuerst unten einen Zielordner anklicken.','warn');
     try{document.getElementById('folder-tree').scrollIntoView({behavior:'smooth',block:'start'});}catch{}
     return;
@@ -1324,6 +1402,7 @@ async function ablegen(){
   const saveAtts=document.getElementById('opt-attachments').checked;
 
   document.getElementById('btn-ablegen').disabled=true;
+  document.getElementById('btn-postbox').disabled=true;
   document.getElementById('progress-wrap').style.display='block';
   showStatus('Mail wird abgelegt…','info');
 
@@ -1344,8 +1423,11 @@ async function ablegen(){
     const created=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
     const dateStr=created.toISOString().slice(0,10).replace(/-/g,'_');
     const safeSubject=subject.replace(/[/\\:*?"<>|]/g,'_').substring(0,60);
-    const fileName=dateStr+'_'+safeSubject+'.eml';
-    const targetPath=(selectedFolderPath||'')+'/'+fileName;
+    // v6.0: Kurzbezeichnung aus dem Eingabefeld (wie ELOoffice), Standard = Datum_Betreff
+    let kb=(document.getElementById('doc-name').value||'').trim().replace(/[/\\:*?"<>|]/g,'_').replace(/\.eml$/i,'');
+    if(!kb)kb=dateStr+'_'+safeSubject;
+    const fileName=kb.substring(0,120)+'.eml';
+    const targetPath=(tPath||'')+'/'+fileName;
 
     _step='Inhalts-Pruefung';
     setProgress(55,'Inhalt wird geprueft…');
@@ -1372,7 +1454,7 @@ async function ablegen(){
       for(let i=0;i<atts.length;i++){
         const att=atts[i];
         setProgress(72+Math.round((i/atts.length)*18),'Anhang: '+att.name);
-        await saveAttachment(att,selectedFolderPath||'');
+        await saveAttachment(att,tPath||'');
       }
     }
 
@@ -1383,7 +1465,7 @@ async function ablegen(){
     const nAtt=contentCheck.attFound||attCount;
     let msg='<b>'+(verified?'✓ Abgelegt &amp; verifiziert':'✓ Abgelegt')+'</b>';
     if(nAtt)msg+=' · '+nAtt+(nAtt===1?' Anhang':' Anhänge');
-    msg+='<br>→ '+esc(selectedFolderName);
+    msg+='<br>→ '+esc(tName);
     msg+='<details><summary>Details</summary><div>'+(verified?'Byte-identisch geprüft<br>':'')
        +esc(uploadResult.path_display||targetPath)+'</div></details>';
     if(emlWarnings.length){
@@ -1393,13 +1475,17 @@ async function ablegen(){
     }
 
     document.getElementById('btn-ablegen').disabled=false;
+    document.getElementById('btn-postbox').disabled=false;
     document.getElementById('progress-wrap').style.display='none';
+    if(!(target&&target.postbox))pushRecent(tPath,tName); // Postbox ist kein Ablageort
+    if(document.getElementById('opt-mark').checked)await markFiled();
     refreshMailInfo();
 
   }catch(e){
     console.error('[alyDoc] Fehler bei "'+_step+'":', e);
     showStatus('Fehler ['+_step+']: '+e.message,'error');
     document.getElementById('btn-ablegen').disabled=false;
+    document.getElementById('btn-postbox').disabled=false;
     document.getElementById('progress-wrap').style.display='none';
   }
 }
@@ -1585,6 +1671,76 @@ async function saveAttachment(att,folderPath){
   }catch(e){console.warn('Anhang Fehler:',e);}
 }
 
+
+// ══ v6.0 KLASSIK: Kurzbezeichnung, Postbox, zuletzt verwendete Ablageorte, Markierung ══
+const FILED_CAT='alyDoc abgelegt';
+function defaultDocName(){
+  if(!mailItem)return'';
+  const created=mailItem.dateTimeCreated?new Date(mailItem.dateTimeCreated):new Date();
+  const dateStr=created.toISOString().slice(0,10).replace(/-/g,'_');
+  return dateStr+'_'+(mailItem.subject||'Mail').replace(/[/\\:*?"<>|]/g,'_').substring(0,60);
+}
+function setDocName(){const el=document.getElementById('doc-name');if(el)el.value=defaultDocName();}
+function getRecent(){try{return JSON.parse(localStorage.getItem('alydoc_recent')||'[]');}catch{return[];}}
+function pushRecent(path,name){
+  if(path===null||path===undefined)return;
+  const list=[{path,name},...getRecent().filter(r=>r.path!==path)].slice(0,6);
+  try{localStorage.setItem('alydoc_recent',JSON.stringify(list));}catch{}
+  renderRecent();
+}
+function renderRecent(){
+  const w=document.getElementById('recent-wrap');if(!w||isCompose)return;
+  const list=getRecent();
+  if(!list.length){w.style.display='none';return;}
+  w.style.display='flex';
+  w.innerHTML='<span class="lbl">Zuletzt:</span>'+list.map((r,i)=>
+    `<span class="chip${r.path===selectedFolderPath?' on':''}" title="${esc(r.name)}" onclick="pickRecent(${i})">${esc(r.name.split(' / ').slice(-1)[0])}</span>`).join('');
+}
+function pickRecent(i){const r=getRecent()[i];if(r){selectFolder(r.path,r.name);renderRecent();}}
+function fillPostbox(){
+  const sel=document.getElementById('opt-postbox');if(!sel)return;
+  const pbs=folders.filter(f=>f.parentPath===''&&/^(postbox|posteingang)/i.test(f.name));
+  let cur='';try{cur=localStorage.getItem('alydoc_postbox')||'';}catch{}
+  if(!cur){const d=pbs.find(f=>/^postbox alysee$/i.test(f.name))||pbs[0];cur=d?d.path:'';}
+  sel.innerHTML=pbs.map(f=>`<option value="${esc(f.path)}"${f.path===cur?' selected':''}>${esc(f.name)}</option>`).join('')||'<option value="">(keine Postbox gefunden)</option>';
+  const b=document.getElementById('btn-postbox');if(b)b.disabled=!pbs.length;
+}
+function ablegenPostbox(){
+  const sel=document.getElementById('opt-postbox');
+  const path=sel&&sel.value;
+  if(!path){showStatus('Keine Postbox gefunden (Ordner „Postbox …“ in der obersten Ebene).','warn');return;}
+  const f=folders.find(x=>x.path===path);
+  ablegen({path,name:f?f.name:path,postbox:true});
+}
+// Outlook-Kategorie wie die ELO-Markierung: man sieht in der Mailliste, was schon abgelegt ist
+function markFiled(){
+  return new Promise(res=>{
+    try{
+      const it=Office.context.mailbox.item;
+      if(!it||!it.categories||!Office.context.mailbox.masterCategories){res(false);return;}
+      const add=()=>it.categories.addAsync([FILED_CAT],r=>{if(r.status!=='succeeded')console.warn('[alyDoc] Kategorie:',r.error);else showFiled(true);res(r.status==='succeeded');});
+      Office.context.mailbox.masterCategories.getAsync(r=>{
+        const have=r.status==='succeeded'&&(r.value||[]).some(c=>c.displayName===FILED_CAT);
+        if(have)add();
+        else Office.context.mailbox.masterCategories.addAsync([{displayName:FILED_CAT,color:Office.MailboxEnums.CategoryColor.Preset4}],()=>add());
+      });
+    }catch(e){console.warn('[alyDoc] markFiled',e);res(false);}
+  });
+}
+function showFiled(on){const b=document.getElementById('filed-banner');if(b)b.style.display=on?'flex':'none';}
+function checkFiled(){
+  showFiled(false);
+  try{
+    const it=Office.context.mailbox.item;
+    if(!it||!it.categories||isCompose)return;
+    it.categories.getAsync(r=>{if(r.status==='succeeded')showFiled((r.value||[]).some(c=>c.displayName===FILED_CAT));});
+  }catch{}
+}
+(function initKlassikOpts(){
+  const apply=()=>{const m=document.getElementById('opt-mark');if(!m)return;let v='1';try{v=localStorage.getItem('alydoc_mark')||'1';}catch{}m.checked=v!=='0';};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply);else apply();
+})();
+
 // ── HELPERS ───────────────────────────────────────────────────────────────────
 function showScreen(id){
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
@@ -1630,6 +1786,8 @@ function applyComposeMode(){
   const hide=id=>{const e=document.getElementById(id);if(e)e.style.display='none';};
   hide('lbl-mail'); hide('mail-card'); hide('btn-ablegen'); hide('bar-target');
   hide('card-opts'); hide('ms-banner');
+  hide('btn-postbox'); hide('doc-name-wrap'); hide('recent-wrap'); hide('filed-banner');
+  const nm=document.getElementById('nav-mode'); if(nm)nm.textContent='Anhängen';
   const lbl=document.getElementById('lbl-folder');
   if(lbl)lbl.textContent='Ordner';
   const cw=document.getElementById('compose-wrap');
