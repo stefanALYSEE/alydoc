@@ -6,7 +6,7 @@ import Preview from './Preview.jsx';
 import { PromptDialog, ConfirmDialog, TagDialog, FilingDialog } from './Dialogs.jsx';
 import { sortNodes, iconOf, displayName, docDate, fmtDate, kindOf, parentKey, parentPath, downloadBlob, store } from './util.js';
 
-export const BUILD = 'Klassik 1.2 · 2026-10-19';
+export const BUILD = 'Klassik 1.3 · 2026-10-19';
 const PB_RX = /^(postbox|posteingang)/i;
 const OPEN_QUEUE = '/APPS/alydoc-open-requests';
 const ROW_H = 22;
@@ -613,7 +613,7 @@ function Main({ onSignOut }) {
           </>)}
         </div>
 
-        {showPreview && <div className="split" onMouseDown={startSplit} />}
+        {showPreview && <div className="split" onMouseDown={startSplit} onDoubleClick={() => setTreeW(440)} title="Ziehen = Breite von Baum und Vorschau ändern · Doppelklick = Standard" />}
         {showPreview && (
           <div className={'right' + (fullPv ? ' full' : '')}>
             <Preview node={cur} api={api} demo={isDemo} meta={meta} onAction={a => act(a)} registerPrint={fn => { printRef.current = fn; }} full={fullPv} onFull={() => setFullPv(v => !v)} />

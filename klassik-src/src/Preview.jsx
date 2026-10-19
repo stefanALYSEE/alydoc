@@ -7,6 +7,9 @@ import { dtOf } from './meta.js';
 const Model3D = lazy(() => import('./Cad3D.jsx').then(m => ({ default: m.Model3D })));
 const Dxf2D = lazy(() => import('./Cad3D.jsx').then(m => ({ default: m.Dxf2D })));
 const BIG_3D = 150e6;
+const ZOOMS = [0.5, 0.67, 0.8, 1, 1.25, 1.5, 2, 3];
+function applyFrameZoom(f, z) { try { const b = f?.contentDocument?.body; if (b) b.style.zoom = z; } catch { } }
+const loadZoom = () => { try { return parseFloat(localStorage.getItem('klassik_zoom')) || 1; } catch { return 1; } };
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
@@ -20,39 +23,63 @@ function pdfLib() {
   return lib;
 }
 
-function PdfView({ blob }) {
+function PdfView({ blob, zoom }) {
   const ref = useRef(null);
+  const docRef = useRef(null);
   const [info, setInfo] = useState('');
+  const [ready, setReady] = useState(0);
+  const [width, setWidth] = useState(0);
+  // Breite des Vorschaufensters beobachten (Trennlinie ziehen, Vollbild) – entprellt
   useEffect(() => {
-    let cancelled = false, doc = null;
-    const host = ref.current; host.innerHTML = '';
+    const el = ref.current?.parentElement?.parentElement; if (!el) return;
+    let t = 0;
+    const ro = new ResizeObserver(() => { clearTimeout(t); t = setTimeout(() => setWidth(el.clientWidth), 150); });
+    ro.observe(el); setWidth(el.clientWidth);
+    return () => { ro.disconnect(); clearTimeout(t); };
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
     (async () => {
       const lib = pdfLib();
       if (!lib) { setInfo('PDF-Anzeige nicht geladen'); return; }
-      doc = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
-      if (cancelled) return;
+      const doc = await lib.getDocument({ data: new Uint8Array(await blob.arrayBuffer()) }).promise;
+      if (cancelled) { doc.destroy(); return; }
+      docRef.current = doc;
       setInfo(doc.numPages + (doc.numPages === 1 ? ' Seite' : ' Seiten'));
-      const width = Math.max(300, host.clientWidth - 24);
+      setReady(r => r + 1);
+    })().catch(e => !cancelled && setInfo('PDF konnte nicht angezeigt werden: ' + e.message));
+    return () => { cancelled = true; docRef.current?.destroy?.(); docRef.current = null; };
+  }, [blob]);
+  useEffect(() => {
+    const doc = docRef.current, host = ref.current;
+    if (!doc || !host || !width) return;
+    let cancelled = false;
+    const tasks = [];
+    (async () => {
+      const w = Math.max(200, (width - 26) * zoom);
+      const frag = [];
       for (let i = 1; i <= doc.numPages && !cancelled; i++) {
         const page = await doc.getPage(i);
         const base = page.getViewport({ scale: 1 });
-        const scale = width / base.width;
         const dpr = window.devicePixelRatio || 1;
-        const vp = page.getViewport({ scale: scale * dpr });
+        const vp = page.getViewport({ scale: (w / base.width) * dpr });
         const c = document.createElement('canvas');
         c.width = vp.width; c.height = vp.height;
-        c.style.width = width + 'px'; c.style.height = (vp.height / dpr) + 'px';
+        c.style.width = w + 'px'; c.style.height = (vp.height / dpr) + 'px';
         c.className = 'pdf-page';
-        host.appendChild(c);
-        await page.render({ canvasContext: c.getContext('2d'), viewport: vp }).promise;
+        if (i === 1) host.innerHTML = '';
+        host.appendChild(c); frag.push(c);
+        const task = page.render({ canvasContext: c.getContext('2d'), viewport: vp }); tasks.push(task);
+        await task.promise.catch(() => { });
       }
-    })().catch(e => !cancelled && setInfo('PDF konnte nicht angezeigt werden: ' + e.message));
-    return () => { cancelled = true; doc?.destroy?.(); };
-  }, [blob]);
+    })();
+    return () => { cancelled = true; tasks.forEach(t => t.cancel?.()); };
+  }, [ready, width, zoom]);
   return <div className="pdf-wrap"><div className="pdf-info">{info}</div><div ref={ref} className="pdf-pages" /></div>;
 }
 
-function MailView({ mail, frameRef }) {
+function MailView({ mail, frameRef, zoom }) {
+  useEffect(() => { applyFrameZoom(frameRef.current, zoom); }, [zoom]);
   const openAtt = a => {
     const blob = new Blob([a.content], { type: a.mimeType || 'application/octet-stream' });
     if (/pdf|image/.test(a.mimeType || '')) window.open(URL.createObjectURL(blob), '_blank');
@@ -72,7 +99,7 @@ function MailView({ mail, frameRef }) {
           <button key={i} className="att" onClick={() => openAtt(a)} title="Öffnen / Speichern">{a.filename || 'Anhang'}{a.content ? ' · ' + fmtSize(a.content.byteLength || a.content.length) : ''}</button>
         ))}</div>
       )}
-      <iframe ref={frameRef} className="mail-body" title="Mail" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-modals" srcDoc={mail.html} />
+      <iframe ref={frameRef} className="mail-body" title="Mail" sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-modals" srcDoc={mail.html} onLoad={e => applyFrameZoom(e.currentTarget, zoom)} />
     </div>
   );
 }
@@ -121,6 +148,17 @@ async function parseMsg(blob) {
 export default function Preview({ node, api, demo, meta, onAction, registerPrint, full, onFull }) {
   const [state, setState] = useState({ status: 'idle' });
   const [force, setForce] = useState(0);
+  const [zoom, setZoomRaw] = useState(loadZoom);
+  const setZoom = z => { const v = Math.max(0.5, Math.min(3, Math.round(z * 100) / 100)); setZoomRaw(v); try { localStorage.setItem('klassik_zoom', String(v)); } catch { } };
+  const step = d => { const i = ZOOMS.findIndex(z => z >= zoom - 0.001); setZoom(ZOOMS[Math.max(0, Math.min(ZOOMS.length - 1, (i < 0 ? ZOOMS.length - 1 : i) + d))]); };
+  const bodyRef = useRef(null);
+  // Strg + Mausrad in der Vorschau = Zoom (wie in Acrobat/ELO)
+  useEffect(() => {
+    const el = bodyRef.current; if (!el) return;
+    const wh = e => { if (!e.ctrlKey) return; e.preventDefault(); step(e.deltaY < 0 ? 1 : -1); };
+    el.addEventListener('wheel', wh, { passive: false });
+    return () => el.removeEventListener('wheel', wh);
+  });
   const frameRef = useRef(null);
 
   useEffect(() => {
@@ -153,6 +191,7 @@ export default function Preview({ node, api, demo, meta, onAction, registerPrint
     return () => { cancelled = true; };
   }, [node?.key, node?.id, force]);
   useEffect(() => setForce(0), [node?.key]);
+  useEffect(() => { if (state.type === 'html') applyFrameZoom(frameRef.current, zoom); }, [zoom, state.type]);
 
   // Drucken: PDF über unsichtbaren iframe, Mails/Text direkt aus dem Vorschau-iframe
   useEffect(() => {
@@ -187,7 +226,14 @@ export default function Preview({ node, api, demo, meta, onAction, registerPrint
   return (
     <div className="pv">
       <div className="pv-head">
-        <div className="pv-tools"><button onClick={onFull} title="Vorschau groß (Esc schließt)">{full ? '✕ Schließen' : '⛶ Vollbild'}</button></div>
+        <div className="pv-tools">
+          {state.status === 'ok' && ['pdf', 'image', 'mail', 'html', 'text'].includes(state.type) && (<span className="zoom">
+            <button onClick={() => step(-1)} title="Verkleinern (Strg + Mausrad)">−</button>
+            <button className="zv" onClick={() => setZoom(1)} title="Auf Fensterbreite (100 %)">{Math.round(zoom * 100)} %</button>
+            <button onClick={() => step(1)} title="Vergrößern (Strg + Mausrad)">+</button>
+          </span>)}
+          <button onClick={onFull} title="Vorschau groß (Esc schließt)">{full ? '✕ Schließen' : '⛶ Vollbild'}</button>
+        </div>
         <div className="pv-name" title={node.path}>{iconOf(node)} {displayName(node)}</div>
         <div className="pv-sub">{fmtDate(docDate(node))} · {fmtSize(node.size)} · {node.path}</div>
         {entry && (
@@ -198,10 +244,10 @@ export default function Preview({ node, api, demo, meta, onAction, registerPrint
           </div>
         )}
       </div>
-      <div className="pv-body">
+      <div className="pv-body" ref={bodyRef}>
         {state.status === 'loading' && <div className="pv-msg">Lade Vorschau …</div>}
         {state.status === 'error' && <div className="pv-msg err">Vorschau nicht möglich: {state.error}<br /><button onClick={() => onAction('open')}>Datei öffnen</button></div>}
-        {state.status === 'ok' && state.type === 'pdf' && <PdfView blob={state.blob} />}
+        {state.status === 'ok' && state.type === 'pdf' && <PdfView blob={state.blob} zoom={zoom} />}
         {state.status === 'ok' && (state.type === '3d' || state.type === 'dxf') && (
           <Suspense fallback={<div className="pv-msg">Lade 3D-Anzeige …</div>}>
             {state.type === '3d' ? <Model3D blob={state.blob} ext={state.ext} /> : <Dxf2D blob={state.blob} />}
@@ -209,10 +255,10 @@ export default function Preview({ node, api, demo, meta, onAction, registerPrint
         )}
         {state.status === 'ok' && state.type === 'big' && <div className="pv-msg">Große CAD-Datei ({fmtSize(node.size)}).<br /><button onClick={() => setForce(1)}>Trotzdem anzeigen</button></div>}
         {state.status === 'ok' && state.type === 'cad' && <div className="pv-msg">🧊<br />Für {extOf(node.name).toUpperCase()}-Dateien gibt es im Browser keine Vorschau.<br /><span className="muted">Tipp: als 3DM, STEP oder DXF exportieren – die werden hier angezeigt.</span><br /><button onClick={() => onAction('open')}>Datei speichern</button></div>}
-        {state.status === 'ok' && state.type === 'image' && <div className="pv-img"><img src={state.url} alt="" /></div>}
-        {state.status === 'ok' && state.type === 'mail' && <MailView mail={state.mail} frameRef={frameRef} />}
-        {state.status === 'ok' && state.type === 'html' && <iframe ref={frameRef} className="pv-frame" title="Vorschau" sandbox="allow-same-origin allow-modals" srcDoc={state.html} />}
-        {state.status === 'ok' && state.type === 'text' && <pre className="pv-text">{state.text}</pre>}
+        {state.status === 'ok' && state.type === 'image' && <div className="pv-img"><img src={state.url} alt="" style={{ maxWidth: 'none', width: (zoom * 100) + '%' }} /></div>}
+        {state.status === 'ok' && state.type === 'mail' && <MailView mail={state.mail} frameRef={frameRef} zoom={zoom} />}
+        {state.status === 'ok' && state.type === 'html' && <iframe ref={frameRef} className="pv-frame" title="Vorschau" sandbox="allow-same-origin allow-modals" srcDoc={state.html} onLoad={e => applyFrameZoom(e.currentTarget, zoom)} />}
+        {state.status === 'ok' && state.type === 'text' && <pre className="pv-text" style={{ fontSize: 12 * zoom }}>{state.text}</pre>}
         {state.status === 'ok' && state.type === 'none' && <div className="pv-msg">Für diesen Dateityp gibt es keine Vorschau.<br /><button onClick={() => onAction('open')}>Datei öffnen / speichern</button></div>}
       </div>
     </div>

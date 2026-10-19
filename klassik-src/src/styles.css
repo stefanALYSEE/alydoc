@@ -174,3 +174,14 @@ button.big { padding: 9px 22px; font-size: 14px; margin: 10px 0; }
 .right.full { position: fixed; inset: 0; z-index: 40; }
 .pv-tools { float: right; margin-left: 8px; }
 .pv-tools button { border: 1px solid var(--line); background: #fff; padding: 1px 8px; font-size: 12px; border-radius: 2px; }
+
+/* Zoom in der Vorschau */
+.pv-tools { display: flex; gap: 6px; align-items: center; }
+.zoom { display: inline-flex; border: 1px solid var(--line); border-radius: 2px; background: #fff; }
+.pv-tools .zoom button { border: 0; border-radius: 0; padding: 1px 8px; min-width: 24px; }
+.pv-tools .zoom button + button { border-left: 1px solid var(--line); }
+.pv-tools .zoom .zv { min-width: 52px; font-variant-numeric: tabular-nums; }
+.pv-img { overflow: auto; }
+/* Trennlinie Baum | Vorschau: breiter, mit Griff */
+.split { width: 7px; position: relative; }
+.split::after { content: ''; position: absolute; left: 2px; top: 50%; height: 36px; margin-top: -18px; width: 3px; border-left: 1px dotted #8a9099; border-right: 1px dotted #8a9099; }
