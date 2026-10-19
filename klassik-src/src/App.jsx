@@ -6,8 +6,8 @@ import Preview from './Preview.jsx';
 import { PromptDialog, ConfirmDialog, TagDialog, FilingDialog } from './Dialogs.jsx';
 import { sortNodes, iconOf, displayName, docDate, fmtDate, kindOf, parentKey, parentPath, downloadBlob, store } from './util.js';
 
-export const BUILD = 'Klassik 1.0 · 2026-10-19';
-const POSTBOX = '/Posteingang';
+export const BUILD = 'Klassik 1.1 · 2026-10-19';
+const PB_RX = /^(postbox|posteingang)/i;
 const OPEN_QUEUE = '/APPS/alydoc-open-requests';
 const ROW_H = 22;
 const isDemo = new URLSearchParams(location.search).has('demo');
@@ -63,6 +63,10 @@ function Main({ onSignOut }) {
   const [showPreview, setShowPreview] = useState(() => store.get('klassik_preview', true));
   const [history, setHistory] = useState({ list: [], pos: -1 });
   const [inbox, setInbox] = useState(null);
+  // Postbox = frei wählbarer Eingangsordner der obersten Ebene (Postbox alysee, Postbox Privat, Posteingang …)
+  const [postbox, setPostbox] = useState(() => store.get('klassik_postbox', null));
+  const POSTBOX = postbox || '/Postbox alysee';
+  const pbChoices = (children[''] || []).filter(n => n.tag === 'folder' && PB_RX.test(n.name));
   const [query, setQuery] = useState('');
   const [results, setResults] = useState(null);
   const [searching, setSearching] = useState(false);
@@ -350,7 +354,13 @@ function Main({ onSignOut }) {
       return list;
     } catch (e) { say('Postbox: ' + e.message, 'e'); setInbox([]); return []; }
   };
-  useEffect(() => { loadInbox(); }, []);
+  useEffect(() => { loadInbox(); }, [POSTBOX]);
+  useEffect(() => {
+    if (postbox || !children['']) return;
+    const c = pbChoices.find(n => /^postbox alysee$/i.test(n.name)) || pbChoices[0];
+    if (c && c.path !== POSTBOX) setPostbox(c.path);
+  }, [children['']]);
+  const choosePostbox = p => { setPostbox(p); store.set('klassik_postbox', p); setFocusNode(null); setInbox(null); };
 
   // ── Suche ──
   const runSearch = async e => {
@@ -578,7 +588,10 @@ function Main({ onSignOut }) {
             {listView(klemm, 'Leer. Eintrag markieren → „Auf das Klemmbrett legen“.')}
           </>)}
           {view === 'postbox' && (<>
-            <div className="pane-head">Postbox <span className="muted">– {POSTBOX}</span><span className="grow" /><button onClick={() => act('upload')}>Hochladen</button></div>
+            <div className="pane-head">Postbox
+              <select className="pb-sel" value={POSTBOX} onChange={e => choosePostbox(e.target.value)}>
+                {[...new Set([POSTBOX, ...pbChoices.map(n => n.path)])].map(p => <option key={p} value={p}>{p.replace(/^\//, '')}</option>)}
+              </select><span className="grow" /><button onClick={() => act('upload')}>Hochladen</button></div>
             {inbox === false
               ? <div className="list-empty">Ordner {POSTBOX} gibt es noch nicht.<br /><button className="primary" onClick={async () => { await api.mkdir('', POSTBOX.slice(1)); await loadKids('', '', true); loadInbox(); }}>Postbox anlegen</button></div>
               : <div className="list" onDragOver={e => { if ([...e.dataTransfer.types].includes('Files')) e.preventDefault(); }} onDrop={e => { e.preventDefault(); if (e.dataTransfer.files?.length) uploadFiles(e.dataTransfer.files, { path: POSTBOX, key: POSTBOX.toLowerCase(), name: 'Postbox' }); }}>
