@@ -156,3 +156,21 @@ button.big { padding: 9px 22px; font-size: 14px; margin: 10px 0; }
   .split { display: none; } .right { flex: 1 1 100%; height: 55%; border-top: 1px solid var(--line); }
 }
 .pb-sel { font-weight: 400; padding: 2px 4px; margin-left: 6px; max-width: 220px; }
+
+/* 3D-/CAD-Vorschau */
+.v3 { position: relative; flex: 1; min-height: 320px; display: flex; background: #f2f3f5; }
+.v3-canvas { position: absolute; inset: 0; }
+.v3-canvas canvas { display: block; }
+.v3-over { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; background: rgba(242,243,245,.85); color: var(--muted); line-height: 1.8; padding: 20px; }
+.v3-over.err { color: var(--red); }
+.v3-bar { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 3px; z-index: 2; }
+.v3-b { width: 30px; height: 28px; border: 1px solid #c4c9d0; background: rgba(255,255,255,.95); border-radius: 2px; font-size: 13px; color: var(--blue); padding: 0; }
+.v3-b:hover { background: var(--blue-ll); }
+.v3-b.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+.v3-sep { height: 5px; }
+.v3-info { position: absolute; left: 8px; bottom: 6px; font-size: 11px; color: #4b5563; background: rgba(255,255,255,.85); padding: 2px 7px; border-radius: 2px; z-index: 2; }
+
+/* Vollbild-Vorschau */
+.right.full { position: fixed; inset: 0; z-index: 40; }
+.pv-tools { float: right; margin-left: 8px; }
+.pv-tools button { border: 1px solid var(--line); background: #fff; padding: 1px 8px; font-size: 12px; border-radius: 2px; }

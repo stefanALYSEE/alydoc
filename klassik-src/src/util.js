@@ -3,12 +3,17 @@ export const ext = name => { const i = (name || '').lastIndexOf('.'); return i <
 const OFFICE = ['doc', 'docx', 'docm', 'xls', 'xlsx', 'xlsm', 'ppt', 'pptx', 'pps', 'ppsx', 'rtf', 'odt', 'ods', 'odp', 'csv'];
 const IMG = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
 const THUMB = ['heic', 'tif', 'tiff'];
+export const MODEL3D = ['stl', 'obj', 'ply', 'fbx', '3mf', 'glb', 'gltf', 'wrl', '3dm', 'step', 'stp', 'igs', 'iges'];
+const CAD_NONE = ['dwg', 'skp', 'f3d', 'crv', 'sldprt', 'sldasm', 'ipt', 'iam', 'blend', 'max', 'c4d'];
 const TEXT = ['txt', 'md', 'json', 'xml', 'log', 'ini', 'html', 'htm'];
 
 export function kindOf(name) {
   const e = ext(name);
   if (e === 'pdf') return 'pdf';
   if (e === 'eml') return 'eml';
+  if (MODEL3D.includes(e)) return '3d';
+  if (e === 'dxf') return 'dxf';
+  if (CAD_NONE.includes(e)) return 'cad';
   if (e === 'msg') return 'msg';
   if (IMG.includes(e)) return 'image';
   if (THUMB.includes(e)) return 'thumb';
@@ -17,7 +22,7 @@ export function kindOf(name) {
   return 'other';
 }
 
-export const ICON = { folder: '📁', pdf: '📕', eml: '✉️', msg: '✉️', image: '🖼️', thumb: '🖼️', office: '📄', text: '📝', other: '📄' };
+export const ICON = { '3d': '🧊', dxf: '📐', cad: '📐', folder: '📁', pdf: '📕', eml: '✉️', msg: '✉️', image: '🖼️', thumb: '🖼️', office: '📄', text: '📝', other: '📄' };
 export const iconOf = n => n.tag === 'folder' ? ICON.folder : ICON[kindOf(n.name)];
 
 // Dokumentdatum wie in ELO vor den Namen stellen.

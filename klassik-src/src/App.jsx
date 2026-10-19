@@ -6,7 +6,7 @@ import Preview from './Preview.jsx';
 import { PromptDialog, ConfirmDialog, TagDialog, FilingDialog } from './Dialogs.jsx';
 import { sortNodes, iconOf, displayName, docDate, fmtDate, kindOf, parentKey, parentPath, downloadBlob, store } from './util.js';
 
-export const BUILD = 'Klassik 1.1 · 2026-10-19';
+export const BUILD = 'Klassik 1.2 · 2026-10-19';
 const PB_RX = /^(postbox|posteingang)/i;
 const OPEN_QUEUE = '/APPS/alydoc-open-requests';
 const ROW_H = 22;
@@ -61,6 +61,7 @@ function Main({ onSignOut }) {
   const [toast, setToast] = useState(null);
   const [treeW, setTreeW] = useState(() => store.get('klassik_tree_w', 440));
   const [showPreview, setShowPreview] = useState(() => store.get('klassik_preview', true));
+  const [fullPv, setFullPv] = useState(false);
   const [history, setHistory] = useState({ list: [], pos: -1 });
   const [inbox, setInbox] = useState(null);
   // Postbox = frei wählbarer Eingangsordner der obersten Ebene (Postbox alysee, Postbox Privat, Posteingang …)
@@ -404,7 +405,8 @@ function Main({ onSignOut }) {
   };
   useEffect(() => {
     const g = e => {
-      if (e.key === 'F5') { e.preventDefault(); act('refresh'); }
+      if (e.key === 'Escape' && fullPv && !dialog) { setFullPv(false); }
+      else if (e.key === 'F5') { e.preventDefault(); act('refresh'); }
       else if (e.ctrlKey && e.key.toLowerCase() === 'f') { e.preventDefault(); setView('suche'); setTimeout(() => document.getElementById('q')?.focus(), 30); }
       else if (e.altKey && e.key === 'ArrowLeft') { e.preventDefault(); act('back'); }
       else if (e.altKey && e.key === 'ArrowRight') { e.preventDefault(); act('fwd'); }
@@ -613,8 +615,8 @@ function Main({ onSignOut }) {
 
         {showPreview && <div className="split" onMouseDown={startSplit} />}
         {showPreview && (
-          <div className="right">
-            <Preview node={cur} api={api} demo={isDemo} meta={meta} onAction={a => act(a)} registerPrint={fn => { printRef.current = fn; }} />
+          <div className={'right' + (fullPv ? ' full' : '')}>
+            <Preview node={cur} api={api} demo={isDemo} meta={meta} onAction={a => act(a)} registerPrint={fn => { printRef.current = fn; }} full={fullPv} onFull={() => setFullPv(v => !v)} />
           </div>
         )}
       </div>

@@ -1,7 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import PostalMime from 'postal-mime';
-import { kindOf, fmtDateTime, fmtSize, fmtDate, docDate, displayName, downloadBlob, iconOf } from './util.js';
+import { ext as extOf, kindOf, fmtDateTime, fmtSize, fmtDate, docDate, displayName, downloadBlob, iconOf } from './util.js';
 import { dtOf } from './meta.js';
+
+// 3D/CAD erst bei Bedarf laden (three.js + Loader ≈ 1 MB)
+const Model3D = lazy(() => import('./Cad3D.jsx').then(m => ({ default: m.Model3D })));
+const Dxf2D = lazy(() => import('./Cad3D.jsx').then(m => ({ default: m.Dxf2D })));
+const BIG_3D = 150e6;
 
 const esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const b64 = u8 => { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
@@ -113,8 +118,9 @@ async function parseMsg(blob) {
   return { from: [d.senderName, d.senderEmail && `<${d.senderEmail}>`].filter(Boolean).join(' '), to, cc: '', subject: d.subject || '(kein Betreff)', date: dt ? fmtDateTime(dt) : '', atts, html: MAIL_CSS + body };
 }
 
-export default function Preview({ node, api, demo, meta, onAction, registerPrint }) {
+export default function Preview({ node, api, demo, meta, onAction, registerPrint, full, onFull }) {
   const [state, setState] = useState({ status: 'idle' });
+  const [force, setForce] = useState(0);
   const frameRef = useRef(null);
 
   useEffect(() => {
@@ -126,7 +132,11 @@ export default function Preview({ node, api, demo, meta, onAction, registerPrint
     setState({ status: 'loading' });
     (async () => {
       let res;
-      if (kind === 'pdf') res = { type: 'pdf', blob: await api.download(node.path) };
+      if ((kind === '3d' || kind === 'dxf') && node.size > BIG_3D && !force) res = { type: 'big' };
+      else if (kind === '3d') res = { type: '3d', blob: await api.download(node.path), ext: extOf(node.name) };
+      else if (kind === 'dxf') res = { type: 'dxf', blob: await api.download(node.path) };
+      else if (kind === 'cad') res = { type: 'cad' };
+      else if (kind === 'pdf') res = { type: 'pdf', blob: await api.download(node.path) };
       else if (kind === 'image') res = { type: 'image', url: URL.createObjectURL(await api.download(node.path)) };
       else if (kind === 'thumb') res = { type: 'image', url: URL.createObjectURL(await api.thumbnail(node.path)) };
       else if (kind === 'eml') res = { type: 'mail', mail: await parseEml(await api.download(node.path)) };
@@ -141,7 +151,8 @@ export default function Preview({ node, api, demo, meta, onAction, registerPrint
       if (!cancelled) setState({ status: 'ok', ...res });
     })().catch(e => !cancelled && setState({ status: 'error', error: e.message }));
     return () => { cancelled = true; };
-  }, [node?.key, node?.id]);
+  }, [node?.key, node?.id, force]);
+  useEffect(() => setForce(0), [node?.key]);
 
   // Drucken: PDF über unsichtbaren iframe, Mails/Text direkt aus dem Vorschau-iframe
   useEffect(() => {
@@ -176,6 +187,7 @@ export default function Preview({ node, api, demo, meta, onAction, registerPrint
   return (
     <div className="pv">
       <div className="pv-head">
+        <div className="pv-tools"><button onClick={onFull} title="Vorschau groß (Esc schließt)">{full ? '✕ Schließen' : '⛶ Vollbild'}</button></div>
         <div className="pv-name" title={node.path}>{iconOf(node)} {displayName(node)}</div>
         <div className="pv-sub">{fmtDate(docDate(node))} · {fmtSize(node.size)} · {node.path}</div>
         {entry && (
@@ -190,6 +202,13 @@ export default function Preview({ node, api, demo, meta, onAction, registerPrint
         {state.status === 'loading' && <div className="pv-msg">Lade Vorschau …</div>}
         {state.status === 'error' && <div className="pv-msg err">Vorschau nicht möglich: {state.error}<br /><button onClick={() => onAction('open')}>Datei öffnen</button></div>}
         {state.status === 'ok' && state.type === 'pdf' && <PdfView blob={state.blob} />}
+        {state.status === 'ok' && (state.type === '3d' || state.type === 'dxf') && (
+          <Suspense fallback={<div className="pv-msg">Lade 3D-Anzeige …</div>}>
+            {state.type === '3d' ? <Model3D blob={state.blob} ext={state.ext} /> : <Dxf2D blob={state.blob} />}
+          </Suspense>
+        )}
+        {state.status === 'ok' && state.type === 'big' && <div className="pv-msg">Große CAD-Datei ({fmtSize(node.size)}).<br /><button onClick={() => setForce(1)}>Trotzdem anzeigen</button></div>}
+        {state.status === 'ok' && state.type === 'cad' && <div className="pv-msg">🧊<br />Für {extOf(node.name).toUpperCase()}-Dateien gibt es im Browser keine Vorschau.<br /><span className="muted">Tipp: als 3DM, STEP oder DXF exportieren – die werden hier angezeigt.</span><br /><button onClick={() => onAction('open')}>Datei speichern</button></div>}
         {state.status === 'ok' && state.type === 'image' && <div className="pv-img"><img src={state.url} alt="" /></div>}
         {state.status === 'ok' && state.type === 'mail' && <MailView mail={state.mail} frameRef={frameRef} />}
         {state.status === 'ok' && state.type === 'html' && <iframe ref={frameRef} className="pv-frame" title="Vorschau" sandbox="allow-same-origin allow-modals" srcDoc={state.html} />}

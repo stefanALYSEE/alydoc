@@ -34,7 +34,7 @@ add('/Posteingang/Rechnung Telekom 10-2026.txt', 'file', 0, 'Telekom Rechnung Ok
 
 const parentOf = k => k.slice(0, k.lastIndexOf('/'));
 const pause = (ms = 120) => new Promise(r => setTimeout(r, ms));
-const clone = n => { const { text, ...rest } = n; return { ...rest }; };
+const clone = n => { const { text, blob, ...rest } = n; return { ...rest }; };
 
 export const demo = {
   async list(path) {
@@ -46,14 +46,15 @@ export const demo = {
     await pause();
     const f = files[path.toLowerCase()];
     if (!f) throw new Error('nicht gefunden');
-    return new Blob([f.text || ''], { type: 'application/octet-stream' });
+    return f.blob || new Blob([f.text || ''], { type: 'application/octet-stream' });
   },
   async preview() { throw new Error('Im Demo nicht verfügbar'); },
   async thumbnail() { throw new Error('Im Demo nicht verfügbar'); },
   async upload(path, data) {
-    const text = typeof data === 'string' ? data : '(Datei)';
-    add(path, 'file', 0, text);
-    return clone(files[path.toLowerCase()]);
+    add(path, 'file', 0, typeof data === 'string' ? data : '');
+    const f = files[path.toLowerCase()];
+    if (typeof data !== 'string') { f.blob = data; f.size = data.size; }
+    return clone(f);
   },
   async move(fromPath, toFolder, name) {
     const fk = fromPath.toLowerCase();
