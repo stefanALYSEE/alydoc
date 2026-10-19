@@ -6,7 +6,7 @@ import Preview from './Preview.jsx';
 import { PromptDialog, ConfirmDialog, TagDialog, FilingDialog } from './Dialogs.jsx';
 import { sortNodes, iconOf, displayName, docDate, fmtDate, kindOf, parentKey, parentPath, downloadBlob, store } from './util.js';
 
-export const BUILD = 'Klassik 1.3 · 2026-10-19';
+export const BUILD = 'Klassik 1.3.1 · 2026-10-19';
 const PB_RX = /^(postbox|posteingang)/i;
 const OPEN_QUEUE = '/APPS/alydoc-open-requests';
 const ROW_H = 22;
@@ -435,6 +435,30 @@ function Main({ onSignOut }) {
   };
   const dragEnd = () => { dragNode.current = null; setDropKey(null); clearTimeout(hoverTimer.current); };
 
+  // Touch (iPad/iPhone): langes Drücken = Kontextmenü, Doppeltippen = öffnen/aufklappen
+  const touch = useRef({ timer: 0, long: false, x: 0, y: 0, last: 0, lastKey: null, type: 'mouse' });
+  const coarse = useMemo(() => { try { return matchMedia('(hover: none)').matches; } catch { return false; } }, []);
+  const touchHandlers = (n, onDouble) => ({
+    onPointerDown: e => {
+      const T = touch.current; T.type = e.pointerType;
+      if (e.pointerType !== 'touch') return;
+      T.long = false; T.x = e.clientX; T.y = e.clientY; clearTimeout(T.timer);
+      T.timer = setTimeout(() => { T.long = true; openCtx({ preventDefault() { }, clientX: T.x, clientY: T.y }, n); try { navigator.vibrate?.(10); } catch { } }, 550);
+    },
+    onPointerMove: e => { const T = touch.current; if (Math.abs(e.clientX - T.x) + Math.abs(e.clientY - T.y) > 12) clearTimeout(T.timer); },
+    onPointerUp: () => clearTimeout(touch.current.timer),
+    onPointerCancel: () => clearTimeout(touch.current.timer),
+    onDoubleTap: e => {
+      const T = touch.current;
+      if (T.long) { T.long = false; e.stopPropagation(); return true; }
+      if (T.type !== 'touch') return false;
+      const now = Date.now(), dbl = T.lastKey === n.key && now - T.last < 380;
+      T.last = dbl ? 0 : now; T.lastKey = n.key;
+      if (dbl) { onDouble(); return true; }
+      return false;
+    },
+  });
+
   const openCtx = (e, n) => {
     e.preventDefault();
     if (view === 'archiv') select(n); else setFocusNode(n);
@@ -464,13 +488,16 @@ function Main({ onSignOut }) {
     const n = r.n;
     const sel = list ? focusNode?.key === n.key : selected?.key === n.key;
     const open = expanded.has(n.key);
+    const dbl = () => list ? (n.tag === 'folder' || view === 'suche' || view === 'klemmbrett' ? reveal(n.path) : act('open', n)) : (n.tag === 'folder' ? toggle(n) : act('open', n));
+    const th = touchHandlers(n, dbl);
     return (
       <div key={r.key || (n.key + n.id)} className={'row' + (sel ? ' sel' : '') + (cut?.key === n.key ? ' cut' : '') + (dropKey === n.key ? ' drop' : '')}
         style={list ? undefined : { paddingLeft: 4 + r.depth * 18, position: 'absolute', top: r.i * ROW_H, left: 0, right: 0 }}
-        draggable onDragStart={e => dragStart(e, n)} onDragEnd={dragEnd}
+        draggable={!coarse} onDragStart={e => dragStart(e, n)} onDragEnd={dragEnd}
+        onPointerDown={th.onPointerDown} onPointerMove={th.onPointerMove} onPointerUp={th.onPointerUp} onPointerCancel={th.onPointerCancel}
         onDragOver={list ? undefined : e => dragOver(e, n)} onDragLeave={() => dropKey === n.key && setDropKey(null)} onDrop={list ? undefined : e => drop(e, n)}
-        onClick={() => list ? setFocusNode(n) : select(n)}
-        onDoubleClick={() => list ? (n.tag === 'folder' || view === 'suche' || view === 'klemmbrett' ? reveal(n.path) : act('open', n)) : (n.tag === 'folder' ? toggle(n) : act('open', n))}
+        onClick={e => { if (th.onDoubleTap(e)) return; list ? setFocusNode(n) : select(n); }}
+        onDoubleClick={() => { if (touch.current.type !== 'touch') dbl(); }}
         onContextMenu={e => openCtx(e, n)} title={n.path}>
         {!list && <span className="tw" onClick={e => { e.stopPropagation(); toggle(n); }}>{n.tag === 'folder' ? (open ? '▾' : '▸') : ''}</span>}
         <span className="ic">{iconOf(n)}</span>

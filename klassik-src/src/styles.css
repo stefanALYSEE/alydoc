@@ -185,3 +185,6 @@ button.big { padding: 9px 22px; font-size: 14px; margin: 10px 0; }
 /* Trennlinie Baum | Vorschau: breiter, mit Griff */
 .split { width: 7px; position: relative; }
 .split::after { content: ''; position: absolute; left: 2px; top: 50%; height: 36px; margin-top: -18px; width: 3px; border-left: 1px dotted #8a9099; border-right: 1px dotted #8a9099; }
+
+/* Touch: kein iOS-Textmenü beim langen Drücken, kein Doppeltipp-Zoom */
+.row { -webkit-touch-callout: none; touch-action: manipulation; }
