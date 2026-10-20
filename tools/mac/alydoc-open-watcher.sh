@@ -32,6 +32,25 @@ json_get() {  # json_get <datei> <schluessel>  -> Wert oder leer (plutil kann JS
   /usr/bin/plutil -extract "$2" raw -o - "$1" 2>/dev/null
 }
 
+# Dropbox (File Provider) legt neue Dateien oft nur als Platzhalter ab ("nur online").
+# plutil scheitert daran sofort ("couldn't be opened"). cat liest dagegen den Inhalt und
+# loest dabei den Download aus -> Auftrag erst in eine lokale Kopie lesen (gemessen 2026-10-20).
+TMP_REQ="${TMPDIR:-/tmp}/alydoc-open-req.$$"
+read_request() {  # read_request <datei>  -> 0, wenn $TMP_REQ den Auftrag enthaelt
+  local i=0
+  while [ $i -lt 20 ]; do
+    if /bin/cat "$1" > "$TMP_REQ" 2>/dev/null && [ -s "$TMP_REQ" ]; then return 0; fi
+    sleep 0.5; i=$((i+1))
+  done
+  return 1
+}
+declare -a WARNED=()
+warn_once() {  # nur einmal je Datei protokollieren
+  local k="$1"; shift
+  case " ${WARNED[*]} " in *" $k "*) return ;; esac
+  WARNED+=("$k"); log "$*"
+}
+
 now_ms() { echo $(( $(date +%s) * 1000 )); }
 
 file_age_sec() {  # Alter nach Aenderungsdatum
@@ -77,15 +96,17 @@ while true; do
       warned_access=0
       for f in "$QUEUE"/*.json; do
         [ -e "$f" ] || continue
-        path=$(json_get "$f" path)
         age_file=$(file_age_sec "$f")
+        path=""
+        if read_request "$f"; then path=$(json_get "$TMP_REQ" path); fi
         if [ -z "$path" ]; then
+          warn_once "${f##*/}" "Auftrag noch nicht lesbar (Dropbox laedt?): ${f##*/}"
           # evtl. noch im Sync - erst nach 1 h als Muell entfernen
           if [ "$age_file" -gt $GARBAGE_SEC ]; then rm -f "$f" && log "entfernt (unlesbar/alt): ${f##*/}"; fi
           continue
         fi
-        target=$(json_get "$f" target); [ -z "$target" ] && target="win"
-        ts=$(json_get "$f" ts)
+        target=$(json_get "$TMP_REQ" target); [ -z "$target" ] && target="win"
+        ts=$(json_get "$TMP_REQ" ts)
         if [ -n "$ts" ]; then age=$(( ( $(now_ms) - ${ts%.*} ) / 1000 )); else age=$age_file; fi
 
         if [ "$target" != "mac" ]; then
