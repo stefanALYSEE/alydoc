@@ -1,0 +1,2 @@
+# Shell-Skripte laufen auf dem Mac – immer LF
+*.sh text eol=lf
