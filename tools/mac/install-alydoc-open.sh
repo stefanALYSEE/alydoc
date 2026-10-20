@@ -99,7 +99,8 @@ echo "  Agent    : $PLIST"
 echo "  Log      : $LOG"
 echo "--- letzte Log-Zeilen:"
 tail -n 3 "$LOG" 2>/dev/null || true
-if grep -q "KEIN ZUGRIFF" "$LOG" 2>/dev/null; then
+# nur Meldungen seit diesem Start pruefen (alte Zeilen im Log sind sonst ein Fehlalarm)
+if tail -n 3 "$LOG" 2>/dev/null | grep -q "KEIN ZUGRIFF"; then
   echo ""
   echo "!! macOS blockiert den Zugriff auf den Dropbox-Ordner."
   echo "   Systemeinstellungen > Datenschutz & Sicherheit > Festplattenvollzugriff > + > /bin/bash hinzufuegen,"
