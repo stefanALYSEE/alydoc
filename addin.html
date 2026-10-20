@@ -314,7 +314,7 @@
   <div class="nav-title">alyDoc <b>Klassik</b><span class="nav-sub" id="nav-mode">Ablegen</span></div>
   <div class="nav-right">
     <div class="nav-user" id="user-name"></div>
-    <div class="nav-version" id="nav-version">v6.0</div>
+    <div class="nav-version" id="nav-version">v6.1</div>
   </div>
 </nav>
 
@@ -484,6 +484,10 @@
     <div class="opt">
       <input type="checkbox" id="opt-mark" onchange="try{localStorage.setItem('alydoc_mark',this.checked?'1':'0')}catch{}">
       <label for="opt-mark">In Outlook als „alyDoc abgelegt“ markieren</label>
+    </div>
+    <div class="opt" title="Nur wenn die Ablage byte-genau geprüft ist und keine Warnung vorliegt. Die Mail landet in „Gelöschte Elemente“ und ist dort wiederherstellbar.">
+      <input type="checkbox" id="opt-delete" onchange="try{localStorage.setItem('alydoc_delete',this.checked?'1':'0')}catch{};updateAblegenLabel()">
+      <label for="opt-delete">Nach geprüfter Ablage in Outlook löschen <span style="color:var(--secondary)">(→ Gelöschte Elemente)</span></label>
     </div>
     <div class="opt">
       <label for="opt-postbox" style="flex:none">Postbox</label>
@@ -657,7 +661,7 @@ let rootNsId=null;
 // Exchange-Postfach) spiegeln und beim Start von dort zurueckholen.
 const ROAM_KEYS=['alydoc_dbx_token','alydoc_dbx_refresh','alydoc_dbx_expires','alydoc_dbx_user','alydoc_dbx_root_ns',
   'alydoc_ms_token','alydoc_ms_expires','alydoc_ms_refresh','alydoc_lastFolder','alydoc_lastFolderName',
-  'alydoc_recent','alydoc_postbox','alydoc_mark'];
+  'alydoc_recent','alydoc_postbox','alydoc_mark','alydoc_delete'];
 let _roam=null,_roamTimer=null;
 (function ensureLocalStorage(){
   // Falls localStorage komplett gesperrt ist: In-Memory-Ersatz, damit der Rest laeuft
@@ -712,6 +716,7 @@ Office.onReady(info=>{
         isCompose=!!(mailItem&&typeof mailItem.addFileAttachmentAsync==='function');
         // v5.3: Meldung der vorigen Mail ausblenden, sonst wirkt die neue schon abgelegt
         const sb=document.getElementById('status-box');if(sb)sb.style.display='none';
+        if(lastNote){showStatus(lastNote,'success');lastNote='';}
         if(isCompose)applyComposeMode(); else refreshMailInfo();
       });
     }catch(e){console.warn('ItemChanged handler not supported:',e);}
@@ -1479,6 +1484,23 @@ async function ablegen(target){
     document.getElementById('progress-wrap').style.display='none';
     if(!(target&&target.postbox))pushRecent(tPath,tName); // Postbox ist kein Ablageort
     if(document.getElementById('opt-mark').checked)await markFiled();
+
+    // v6.1: wie ELOoffice-Connector – Original nach Kontrolle löschen.
+    // Kontrolle = Dropbox content_hash == lokaler Hash (byte-identisch) UND alle Anhänge im EML UND keine Warnung.
+    if(document.getElementById('opt-delete').checked){
+      if(verified&&emlWarnings.length===0){
+        const d=await deleteMailInOutlook();
+        if(d.ok){
+          lastNote='<b>✓ Abgelegt &amp; verifiziert, in Outlook gelöscht</b> · '+esc(subject)+'<br>→ '+esc(tName)
+            +'<br><span style="opacity:.75">Wiederherstellbar unter „Gelöschte Elemente“.</span>';
+          showStatus(lastNote,'success');
+        }else{
+          showStatus(msg+'<br><b>⚠ Nicht gelöscht: '+esc(d.reason)+'</b>'+(d.login?'<br><button onclick="msLogin()" style="margin-top:6px;background:#0067b8;color:#fff;border:none;border-radius:2px;padding:5px 10px;cursor:pointer">Microsoft neu verbinden</button>':''),'warn');
+        }
+      }else{
+        showStatus(msg+'<br><b>⚠ Mail bleibt in Outlook</b> – Ablage nicht vollständig geprüft'+(emlWarnings.length?':<br>⚠ '+emlWarnings.join('<br>⚠ '):'.'),'warn');
+      }
+    }
     refreshMailInfo();
 
   }catch(e){
@@ -1671,6 +1693,47 @@ async function saveAttachment(att,folderPath){
   }catch(e){console.warn('Anhang Fehler:',e);}
 }
 
+
+
+// ══ v6.1: Mail nach geprüfter Ablage in Outlook löschen (Graph move → deleteditems) ══
+let lastNote='';
+function updateAblegenLabel(){
+  const b=document.getElementById('btn-ablegen');const d=document.getElementById('opt-delete');
+  if(b&&d&&!isCompose)b.innerHTML='<i class="fas fa-box-archive"></i> '+(d.checked?'Ablegen &amp; löschen':'Ablegen');
+}
+// Eigenes Token nur fürs Verschieben: Mail.ReadWrite wird separat angefragt, damit das
+// normale Token (Mail.Read/Send) nicht ausfällt, solange die neue Berechtigung noch fehlt.
+async function getRwToken(){
+  const rt=localStorage.getItem('alydoc_ms_refresh');
+  if(!rt)return null;
+  try{
+    const body=new URLSearchParams({grant_type:'refresh_token',refresh_token:rt,client_id:MS_CLIENT_ID,scope:'Mail.ReadWrite offline_access'});
+    const r=await fetch('https://login.microsoftonline.com/'+MS_TENANT_ID+'/oauth2/v2.0/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:body.toString()});
+    if(!r.ok)return null;
+    const d=await r.json();
+    if(d.refresh_token)try{localStorage.setItem('alydoc_ms_refresh',d.refresh_token);}catch{}
+    return d.access_token||null;
+  }catch(e){console.warn('[alyDoc] getRwToken',e);return null;}
+}
+async function deleteMailInOutlook(){
+  try{
+    const tok=await getRwToken();
+    if(!tok)return{ok:false,login:true,reason:'Berechtigung zum Löschen fehlt – einmal neu mit Microsoft verbinden und zustimmen'};
+    const restId=Office.context.mailbox.convertToRestId(mailItem.itemId,Office.MailboxEnums.RestVersion.v2_0);
+    const r=await fetch('https://graph.microsoft.com/v1.0/me/messages/'+encodeURIComponent(restId)+'/move',{
+      method:'POST',headers:{'Authorization':'Bearer '+tok,'Content-Type':'application/json'},
+      body:JSON.stringify({destinationId:'deleteditems'})
+    });
+    if(r.status===403||r.status===401)return{ok:false,login:true,reason:'keine Schreibberechtigung'};
+    if(r.status===404)return{ok:false,reason:'Mail nicht im eigenen Postfach (z. B. freigegebenes Postfach)'};
+    if(!r.ok)return{ok:false,reason:'Outlook meldet Fehler '+r.status};
+    return{ok:true};
+  }catch(e){return{ok:false,reason:e.message};}
+}
+(function initDeleteOpt(){
+  const apply=()=>{const d=document.getElementById('opt-delete');if(!d)return;let v='0';try{v=localStorage.getItem('alydoc_delete')||'0';}catch{}d.checked=v==='1';updateAblegenLabel();};
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',apply);else apply();
+})();
 
 // ══ v6.0 KLASSIK: Kurzbezeichnung, Postbox, zuletzt verwendete Ablageorte, Markierung ══
 const FILED_CAT='alyDoc abgelegt';
