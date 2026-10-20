@@ -335,7 +335,7 @@
 const {useState,useEffect,useCallback,useRef,createContext,useContext}=React;
 const TC=createContext(()=>{});
 // Sichtbare Build-Version – bei jedem Deploy hochzählen, damit man im Browser erkennt welcher Stand laeuft
-const APP_BUILD='v3.8 · 2026-10-20';
+const APP_BUILD='v3.9 · 2026-10-20';
 
 const fd=s=>s?new Date(s).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'}):'–';
 const fdt=s=>s?new Date(s).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'–';
@@ -380,10 +380,12 @@ function _dbxToFile(e){
     path_display:e.path_display,
   };
 }
+// Dropbox-Konfliktkopien heissen "x.msg~K3505Q7N" – fuer die Typerkennung den Anhang abschneiden
+function _realName(n){return(n||'').replace(/~[A-Z0-9]{8}$/i,'');}
 function _mimeFromName(n){
   if(!n)return'application/octet-stream';
-  const ext=n.toLowerCase().split('.').pop();
-  const m={pdf:'application/pdf',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xls:'application/vnd.ms-excel',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',svg:'image/svg+xml',mp4:'video/mp4',mov:'video/quicktime',avi:'video/x-msvideo',mp3:'audio/mpeg',zip:'application/zip',eml:'message/rfc822',msg:'message/rfc822',txt:'text/plain',csv:'text/csv',html:'text/html',stl:'model/stl',obj:'model/obj',gltf:'model/gltf+json',glb:'model/gltf-binary','3mf':'application/3mf',fbx:'application/octet-stream',step:'application/step',stp:'application/step',dxf:'application/dxf',dwg:'application/dwg',ply:'application/ply'};
+  const ext=_realName(n).toLowerCase().split('.').pop();
+  const m={pdf:'application/pdf',doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',xls:'application/vnd.ms-excel',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',ppt:'application/vnd.ms-powerpoint',pptx:'application/vnd.openxmlformats-officedocument.presentationml.presentation',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',svg:'image/svg+xml',mp4:'video/mp4',mov:'video/quicktime',avi:'video/x-msvideo',mp3:'audio/mpeg',zip:'application/zip',eml:'message/rfc822',msg:'application/vnd.ms-outlook',txt:'text/plain',csv:'text/csv',html:'text/html',stl:'model/stl',obj:'model/obj',gltf:'model/gltf+json',glb:'model/gltf-binary','3mf':'application/3mf',fbx:'application/octet-stream',step:'application/step',stp:'application/step',dxf:'application/dxf',dwg:'application/dwg',ply:'application/ply'};
   return m[ext]||'application/octet-stream';
 }
 const DR={
@@ -925,7 +927,7 @@ function MoveMod({file,curFolderId,onClose,onDone,isDemo}){
 
 /* ── CAD/3D ERKENNUNG & VIEWER ── */
 const CAD3D_EXT=['.stl','.obj','.gltf','.glb','.3mf','.fbx','.step','.stp','.3dm','.iges','.igs','.dxf','.dwg','.ply','.wrl'];
-function isCad3d(name){if(!name)return false;const n=name.toLowerCase();return CAD3D_EXT.some(e=>n.endsWith(e));}
+function isCad3d(name){if(!name)return false;const n=_realName(name).toLowerCase();return CAD3D_EXT.some(e=>n.endsWith(e));}
 function getCadExt(name){if(!name)return'';const n=name.toLowerCase();return CAD3D_EXT.find(e=>n.endsWith(e))||'';}
 
 // Inline 3D-Viewer Komponente (Three.js fuer STL/OBJ/GLTF/GLB)
@@ -1219,16 +1221,18 @@ function PdfViewer({url,blobUrl}){
 
 function isOfficeFile(f){
   if(!f||!f.name)return false;
-  const n=f.name.toLowerCase();
+  const n=_realName(f.name).toLowerCase();
   return n.endsWith('.docx')||n.endsWith('.doc')||n.endsWith('.xlsx')||n.endsWith('.xls')||n.endsWith('.pptx')||n.endsWith('.ppt');
 }
 function isEmlFile(f){
   if(!f)return false;
-  return(f.mimeType&&f.mimeType.includes('rfc822'))||(f.name&&f.name.toLowerCase().endsWith('.eml'));
+  // .msg ist OLE-Binaer – nie durch den EML-Textparser (bis v3.8 lief er wegen msg→rfc822 darueber: Zeichensalat/Haenger)
+  if(isMsgFile(f))return false;
+  return(f.mimeType&&f.mimeType.includes('rfc822'))||(f.name&&_realName(f.name).toLowerCase().endsWith('.eml'));
 }
 function isMsgFile(f){
   if(!f)return false;
-  return(f.name&&f.name.toLowerCase().endsWith('.msg'))||f.mimeType==='application/vnd.ms-outlook';
+  return(f.name&&_realName(f.name).toLowerCase().endsWith('.msg'))||f.mimeType==='application/vnd.ms-outlook';
 }
 // ── EML/MIME Decoding Helpers ────────────────────────────────────────────────
 function _binToBytes(bin){const b=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)b[i]=bin.charCodeAt(i);return b;}
@@ -1519,7 +1523,7 @@ function useMsgPreview(file,isDemo){
 }
 function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower,onIndex,onOutlook,onReply,onForward,outlookBusy}){
   const [tab,setTab]=useState('prev');
-  const isPdf=file&&(file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf')));
+  const isPdf=file&&(file.mimeType==='application/pdf'||(file.name&&_realName(file.name).toLowerCase().endsWith('.pdf')));
   const isImg=file&&file.mimeType&&file.mimeType.startsWith('image/');
   const isOffice=isOfficeFile(file);
   const isEml=isEmlFile(file);
@@ -1611,7 +1615,7 @@ function PrevPanel({file,isDemo,onExpand,width,onWider,onNarrower,onIndex,onOutl
 
 function ExpandMod({file,isDemo,onClose,onOutlook,onReply,onForward,outlookBusy}){
   const {i,c}=mi(file.mimeType,file.name);
-  const isPdf=file.mimeType==='application/pdf'||(file.name&&file.name.toLowerCase().endsWith('.pdf'));
+  const isPdf=file.mimeType==='application/pdf'||(file.name&&_realName(file.name).toLowerCase().endsWith('.pdf'));
   const isEml=isEmlFile(file);
   const isImg=file&&file.mimeType&&file.mimeType.startsWith('image/');
   const isOffice=isOfficeFile(file);
@@ -2225,7 +2229,9 @@ function Main({onOut,isDemo}){
       let fileHits=[];
       if(qry&&qry.trim()){fileHits=isDemo?DF.filter(x=>x.name.toLowerCase().includes(qry.toLowerCase())):await DR.find(qry);}
       const seen=new Set(mdHits.map(x=>x.path_lower||x.id));
-      setRes([...mdHits,...fileHits.filter(x=>!seen.has(x.path_lower||x.id))]);
+      // Aussortierte Dropbox-Konfliktkopien (Ordner "_Duplikate_tilde", 2026-10-20) nicht als Treffer zeigen
+      const noDup=x=>!/\/_duplikate_tilde(\/|$)/.test(x.path_lower||'');
+      setRes([...mdHits,...fileHits.filter(x=>!seen.has(x.path_lower||x.id))].filter(noDup));
     }catch(e){console.error(e);toast('Suche fehlgeschlagen','e');}
     setSrc(false);
   };
