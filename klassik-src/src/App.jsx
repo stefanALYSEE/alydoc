@@ -6,7 +6,7 @@ import Preview from './Preview.jsx';
 import { PromptDialog, ConfirmDialog, TagDialog, FilingDialog } from './Dialogs.jsx';
 import { sortNodes, iconOf, displayName, docDate, fmtDate, kindOf, parentKey, parentPath, downloadBlob, store } from './util.js';
 
-export const BUILD = 'Klassik 1.3.1 · 2026-10-19';
+export const BUILD = 'Klassik 1.4 · 2026-10-20';
 const PB_RX = /^(postbox|posteingang)/i;
 const OPEN_QUEUE = '/APPS/alydoc-open-requests';
 const ROW_H = 22;
@@ -227,6 +227,15 @@ function Main({ onSignOut }) {
 
   const openInOutlook = async n => {
     const target = /Macintosh|Mac OS X/.test(navigator.userAgent) ? 'mac' : 'win';
+    // Mac: direkter Link an die App „alyDoc Öffner“ (Dropbox-Auftrag brauchte dort 3–4 Minuten).
+    // Windows: weiter per Dropbox-Auftrag – Chrome gab alydoc-open: auf dem Precision nicht an Windows weiter.
+    if (target === 'mac') {
+      const a = document.createElement('a');
+      a.href = 'alydoc-open:?p=' + encodeURIComponent(n.path);
+      document.body.appendChild(a); a.click(); a.remove();
+      say('Wird in Outlook geöffnet …');
+      return;
+    }
     await api.upload(`${OPEN_QUEUE}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`, JSON.stringify({ path: n.path, ts: Date.now(), target }));
     say('Wird in Outlook geöffnet … (wenige Sekunden)');
   };
