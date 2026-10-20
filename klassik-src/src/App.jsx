@@ -6,7 +6,7 @@ import Preview from './Preview.jsx';
 import { PromptDialog, ConfirmDialog, TagDialog, FilingDialog } from './Dialogs.jsx';
 import { sortNodes, iconOf, displayName, docDate, fmtDate, kindOf, parentKey, parentPath, downloadBlob, store } from './util.js';
 
-export const BUILD = 'Klassik 1.4 · 2026-10-20';
+export const BUILD = 'Klassik 1.4.1 · 2026-10-20';
 const PB_RX = /^(postbox|posteingang)/i;
 const OPEN_QUEUE = '/APPS/alydoc-open-requests';
 const ROW_H = 22;
@@ -381,7 +381,9 @@ function Main({ onSignOut }) {
       const fromIndex = meta.search(q).filter(x => x.path_display).map(x => ({ id: x.id, name: x.name, path: x.path_display, key: x.path_lower, tag: 'file', size: 0, modified: x.updatedAt, fromIndex: true }));
       const found = await api.search(q);
       const seen = new Set(found.map(f => f.key));
-      setResults([...fromIndex.filter(x => !seen.has(x.key)), ...found]);
+      // Aussortierte Dropbox-Konfliktkopien (Ordner „_Duplikate_tilde“, 2026-10-20) nicht als Treffer zeigen
+      const noDup = x => !/\/_duplikate_tilde(\/|$)/i.test(x.key || x.path || '');
+      setResults([...fromIndex.filter(x => !seen.has(x.key)), ...found].filter(noDup));
     } catch (err) { say('Suche fehlgeschlagen: ' + err.message, 'e'); setResults([]); }
     setSearching(false);
   };

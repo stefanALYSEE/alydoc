@@ -1,4 +1,5 @@
-export const ext = name => { const i = (name || '').lastIndexOf('.'); return i < 0 ? '' : name.slice(i + 1).toLowerCase(); };
+// Dropbox-Konfliktkopien heißen „x.msg~K3505Q7N“ – für die Typerkennung den Anhang abschneiden
+export const ext = name => { const n = (name || '').replace(/~[A-Z0-9]{8}$/i, ''); const i = n.lastIndexOf('.'); return i < 0 ? '' : n.slice(i + 1).toLowerCase(); };
 
 const OFFICE = ['doc', 'docx', 'docm', 'xls', 'xlsx', 'xlsm', 'ppt', 'pptx', 'pps', 'ppsx', 'rtf', 'odt', 'ods', 'odp', 'csv'];
 const IMG = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'];
